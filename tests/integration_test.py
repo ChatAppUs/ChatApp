@@ -9,6 +9,7 @@ import json
 import struct
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 import urllib.request
 import urllib.error
 
@@ -345,6 +346,39 @@ def social2_flow(alice_tok, bob_tok, conv):
           dm_msgs and dm_msgs[0].get("story_id") == story_id, f"{dm_msgs}")
     s, r = req("POST", f"/api/stories/{story_id}/reply", {"body": "self reply"}, token=alice_tok)
     check("self story reply rejected", s == 400, f"{s} {r}")
+
+    # scheduled messages
+    send_at = (datetime.now(timezone.utc) + timedelta(seconds=6)).isoformat()
+    s, r = req("POST", f"/api/conversations/{conv}/schedule",
+               {"body": "scheduled hello", "send_at": send_at}, token=alice_tok)
+    sched_id = r.get("id")
+    check("schedule message", s == 201 and sched_id, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/scheduled", token=alice_tok)
+    check("scheduled listed", s == 200 and any(x["id"] == sched_id for x in r.get("scheduled", [])),
+          f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/scheduled", token=bob_tok)
+    check("scheduled private to sender",
+          s == 200 and not any(x["id"] == sched_id for x in r.get("scheduled", [])), f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=bob_tok)
+    check("not delivered before send_at",
+          not any(m["body"] == "scheduled hello" for m in r.get("messages", [])), f"{s}")
+    time.sleep(8)
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=bob_tok)
+    check("delivered after send_at",
+          any(m["body"] == "scheduled hello" for m in r.get("messages", [])), f"{s}")
+    # cancel flow
+    send_at2 = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    s, r = req("POST", f"/api/conversations/{conv}/schedule",
+               {"body": "cancel me", "send_at": send_at2}, token=alice_tok)
+    cancel_id = r.get("id")
+    s, r = req("DELETE", f"/api/scheduled/{cancel_id}", token=bob_tok)
+    check("cancel by non-sender rejected", s == 404, f"{s} {r}")
+    s, r = req("DELETE", f"/api/scheduled/{cancel_id}", token=alice_tok)
+    check("cancel scheduled", s == 200, f"{s} {r}")
+    s, r = req("POST", f"/api/conversations/{conv}/schedule",
+               {"body": "too soon", "send_at": datetime.now(timezone.utc).isoformat()},
+               token=alice_tok)
+    check("past send_at rejected", s == 400, f"{s} {r}")
 
 
 def grant_superadmin(username):

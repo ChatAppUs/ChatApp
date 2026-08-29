@@ -67,6 +67,9 @@ infra/
   (deduped view tracking, author-only viewer list, emoji reactions, story
   replies as DMs), and a composer audience selector (public/followers/only me)
   enforced in every feed query.
+- **Chat parity batch 3**: scheduled messages with a multi-node-safe delivery
+  worker (SKIP LOCKED claiming), voice messages (MediaRecorder → media
+  service → inline audio player), and per-conversation message drafts.
 - **i18n**: English, Español, Français, Deutsch, Português, العربية (RTL),
   हिन्दी, 中文.
 

@@ -122,3 +122,13 @@ The following gaps from this document are now implemented in ChatApp:
 - **Saved Messages** self-chat (POST /api/conversations/saved, one per user, private)
 - **Story engagement**: view tracking (deduped), viewer list (author only), emoji reactions, story replies delivered as DMs with story reference
 - **Audience selector** in the composer (public / followers / only me), enforced in feed queries
+
+## Shipped in ChatApp (2026-08 parity batch 3)
+
+- **Scheduled messages** ("send later"): schedule/list/cancel REST API, 2s
+  delivery worker with SKIP LOCKED claiming (multi-node safe), WS fanout on
+  delivery, sender-only visibility
+- **Voice messages**: MediaRecorder capture in chat, uploaded to the media
+  service, rendered as inline audio players
+- **Per-conversation drafts**: chat input persists unsent text per
+  conversation (restored on reopen, cleared on send)

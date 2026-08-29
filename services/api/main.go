@@ -52,6 +52,7 @@ func main() {
 
 	app := &App{cfg: cfg, db: db, hub: newHub()}
 	app.startCluster()
+	app.startScheduler()
 	app.smtp = &Mailer{host: cfg.SMTPHost, port: cfg.SMTPPort, user: cfg.SMTPUser, pass: cfg.SMTPPass}
 
 	if cfg.TwilioSID != "" && cfg.TwilioToken != "" && cfg.TwilioVerifySID != "" {
@@ -138,6 +139,9 @@ func main() {
 	mux.HandleFunc("GET /api/conversations", app.requireAuth(app.handleListConversations))
 	mux.HandleFunc("GET /api/conversations/{id}/messages", app.requireAuth(app.handleListMessages))
 	mux.HandleFunc("POST /api/conversations/{id}/read", app.requireAuth(app.handleMarkRead))
+	mux.HandleFunc("POST /api/conversations/{id}/schedule", app.requireAuth(app.handleScheduleMessage))
+	mux.HandleFunc("GET /api/conversations/{id}/scheduled", app.requireAuth(app.handleListScheduled))
+	mux.HandleFunc("DELETE /api/scheduled/{id}", app.requireAuth(app.handleCancelScheduled))
 	mux.HandleFunc("GET /api/conversations/{id}/reads", app.requireAuth(app.handleReadState))
 	mux.HandleFunc("POST /api/conversations/{id}/members", app.requireAuth(app.handleAddMember))
 	mux.HandleFunc("DELETE /api/conversations/{id}/members/{uid}", app.requireAuth(app.handleRemoveMember))

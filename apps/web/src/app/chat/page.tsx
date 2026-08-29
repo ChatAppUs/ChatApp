@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, getAccessToken, getUserId, wsURL } from "@/lib/api";
+import { api, getAccessToken, getUserId, uploadMedia, wsURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import {
   publishIdentityKey, hasIdentityKey, encryptFor, decryptFrom, looksEncrypted,
@@ -44,6 +44,11 @@ export default function ChatPage() {
   const [reads, setReads] = useState<Record<string, string>>({});
   const [pins, setPins] = useState<Message[]>([]);
   const [forwardingId, setForwardingId] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [scheduled, setScheduled] = useState<{ id: string; body: string; send_at: string }[]>([]);
+  const [scheduleAt, setScheduleAt] = useState("");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const activeRef = useRef<Conversation | null>(null);
   const peerRef = useRef<string | null>(null);
@@ -189,6 +194,67 @@ export default function ChatPage() {
     });
   };
 
+  const loadScheduled = (convId: string) => {
+    api<{ scheduled: { id: string; body: string; send_at: string }[] }>(
+      `/api/conversations/${convId}/scheduled`
+    ).then((d) => setScheduled(d.scheduled)).catch(() => setScheduled([]));
+  };
+
+  const scheduleMessage = async () => {
+    if (!active || !draft.trim() || !scheduleAt) return;
+    await api(`/api/conversations/${active.id}/schedule`, {
+      method: "POST",
+      body: JSON.stringify({ body: draft, send_at: new Date(scheduleAt).toISOString() }),
+    }).catch(() => {});
+    setDraft("");
+    setScheduleAt("");
+    saveDraft(active.id, "");
+    loadScheduled(active.id);
+  };
+
+  const cancelScheduled = async (id: string) => {
+    await api(`/api/scheduled/${id}`, { method: "DELETE" }).catch(() => {});
+    if (active) loadScheduled(active.id);
+  };
+
+  const draftKey = (convId: string) => `chatapp.draft.${convId}`;
+  const saveDraft = (convId: string, text: string) => {
+    try {
+      if (text) localStorage.setItem(draftKey(convId), text);
+      else localStorage.removeItem(draftKey(convId));
+    } catch { /* storage unavailable */ }
+  };
+
+  const toggleRecording = async () => {
+    if (recording) {
+      recorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => e.data.size > 0 && chunksRef.current.push(e.data);
+      rec.onstop = async () => {
+        stream.getTracks().forEach((tr) => tr.stop());
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        if (blob.size === 0 || !activeRef.current) return;
+        const ext = rec.mimeType.includes("ogg") ? "ogg" : "webm";
+        const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type });
+        try {
+          const url = await uploadMedia(file);
+          wsRef.current?.send(JSON.stringify({
+            type: "message", conversation_id: activeRef.current.id, body: "", media_url: url,
+          }));
+        } catch { /* upload failed */ }
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch { /* mic permission denied */ }
+  };
+
   const openConversation = async (c: Conversation) => {
     setActive(c);
     activeRef.current = c;
@@ -201,6 +267,12 @@ export default function ChatPage() {
     markRead(c.id);
     loadReads(c.id);
     loadPins(c.id);
+    loadScheduled(c.id);
+    try {
+      setDraft(localStorage.getItem(draftKey(c.id)) ?? "");
+    } catch {
+      setDraft("");
+    }
     // For DMs, find the peer for E2EE + presence.
     if (!c.is_group && !c.is_channel) {
       const other = ordered.find((m) => m.sender_id !== getUserId())?.sender_id ?? null;
@@ -234,10 +306,12 @@ export default function ChatPage() {
       type: "message", conversation_id: active.id, body, is_encrypted: isEncrypted,
     }));
     setDraft("");
+    saveDraft(active.id, "");
   };
 
   const onDraftChange = (v: string) => {
     setDraft(v);
+    if (active) saveDraft(active.id, v);
     if (active && wsRef.current?.readyState === WebSocket.OPEN) {
       if (typingTimer.current) clearTimeout(typingTimer.current);
       typingTimer.current = setTimeout(() => {
@@ -383,9 +457,13 @@ export default function ChatPage() {
                   {m.forwarded_from && <div style={{ fontSize: 10, opacity: 0.7 }}>↪ forwarded</div>}
                   {m.story_id && <div style={{ fontSize: 10, opacity: 0.7 }}>📸 story reply</div>}
                   {m.body}
-                  {m.media_url && (
+                  {m.media_url && (/\.(ogg|mp3|wav|m4a)(\?|$)/i.test(m.media_url) || /voice-[^/]*\.webm/i.test(m.media_url)) ? (
+                    <audio src={m.media_url} controls style={{ maxWidth: "100%", marginTop: 4 }} />
+                  ) : m.media_url && /\.(mp4|mov|webm)(\?|$)/i.test(m.media_url) ? (
+                    <video src={m.media_url} controls style={{ maxWidth: "100%", borderRadius: 8, marginTop: 4 }} />
+                  ) : m.media_url ? (
                     <img src={m.media_url} alt="" style={{ maxWidth: "100%", borderRadius: 8, marginTop: 4 }} />
-                  )}
+                  ) : null}
                   <div className="row" style={{ marginTop: 4, gap: 6 }}>
                     {m.is_encrypted && <span title="end-to-end encrypted">🔒</span>}
                     {m.edited_at && <span style={{ fontSize: 10, opacity: 0.7 }}>(edited)</span>}
@@ -439,6 +517,17 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
+            {scheduled.length > 0 && (
+              <div className="col" style={{ fontSize: 12, gap: 4 }}>
+                {scheduled.map((s) => (
+                  <div key={s.id} className="row">
+                    <span className="muted">🕒 {new Date(s.send_at).toLocaleString()} — {s.body.slice(0, 40)}</span>
+                    <div className="spacer" />
+                    <button className="secondary small" onClick={() => cancelScheduled(s.id)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="chat-input">
               {editingId && <span className="badge yellow">editing</span>}
               <input
@@ -453,9 +542,36 @@ export default function ChatPage() {
                   <button className="secondary" onClick={() => { setEditingId(null); setDraft(""); }}>✕</button>
                 </>
               ) : (
-                <button onClick={send}>{t("send")}</button>
+                <>
+                  <button
+                    className={recording ? "small" : "secondary"}
+                    title={recording ? "Stop & send voice message" : "Record voice message"}
+                    onClick={toggleRecording}
+                  >
+                    {recording ? "⏹" : "🎤"}
+                  </button>
+                  <button onClick={send}>{t("send")}</button>
+                </>
               )}
             </div>
+            {!editingId && (
+              <div className="row" style={{ marginTop: 4 }}>
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                  style={{ fontSize: 12 }}
+                  aria-label="Schedule send time"
+                />
+                <button
+                  className="secondary small"
+                  disabled={!scheduleAt || !draft.trim()}
+                  onClick={scheduleMessage}
+                >
+                  🕒 Schedule
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <div className="muted" style={{ textAlign: "center", marginTop: 40 }}>
