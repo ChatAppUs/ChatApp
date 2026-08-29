@@ -1,0 +1,12 @@
+{
+  "name": "ChatApp",
+  "short_name": "ChatApp",
+  "description": "Social, messaging, creator and payments platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

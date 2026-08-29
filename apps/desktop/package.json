@@ -1,0 +1,22 @@
+{
+  "name": "chatapp-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ChatApp desktop client (Electron wrapper around the web app)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "dev.chatapp.desktop",
+    "productName": "ChatApp",
+    "linux": { "target": ["AppImage"] },
+    "win": { "target": ["nsis"] },
+    "mac": { "target": ["dmg"] }
+  }
+}
