@@ -8,14 +8,14 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 |---|---|---|
 | Short posts (tweets) | ✅ | |
 | Long posts (Premium long-form) | 🚧 | content_limit 5000 chars; gap: articles entity |
-| Threads (connected posts) | ❌ | Gap: thread_parent_id on posts |
-| Reply / quote / repost | 🚧 | Comments ≈ replies; gap: quote + repost entities |
+| Threads (connected posts) | ✅ | thread_parent_id + GET /api/posts/{id}/thread |
+| Reply / quote / repost | ✅ | Comment replies, quote posts, repost toggle with counts |
 | Post reactions (like) | ✅ | |
 | Bookmarks (+ folders) | 🚧 | Bookmarks exist; gap: folders |
 | Polls | ✅ | 2–4 options, upsert votes |
 | Community Notes | ❌ | Gap: crowdsourced fact-check entity |
 | Post scheduling | ❌ | Gap: publish_at + worker |
-| Edit post (time-limited) | ❌ | Gap: edited_at + window enforcement |
+| Edit post (time-limited) | 🚧 | Editing shipped (edited marker); gap: time-window enforcement |
 | Drafts | ❌ | Gap: server-side drafts |
 | Location on posts | ❌ | Gap: geo metadata |
 | Content warnings / sensitive media flag | ❌ | Gap: flag + blur UI |
@@ -59,9 +59,9 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | DM realtime chat | ✅ | |
 | Encrypted DMs | ✅ | E2EE key relay |
 | DM reactions/replies | ✅ | |
-| DM search | ❌ | Gap: message full-text search |
+| DM search | ✅ | Per-conversation search (member-only, 50 recent hits) |
 | Message requests inbox | ❌ | Gap: pending-request state |
-| Voice messages | ❌ | Gap: audio message type |
+| Voice messages | ✅ | Recorder + inline player |
 
 ## Monetization & verification
 
@@ -87,7 +87,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 
 | Feature | Status | Notes |
 |---|---|---|
-| Block / mute (accounts, words) | ❌ | Gap: blocks + mutes tables |
+| Block / mute (accounts, words) | 🚧 | Blocks shipped; gap: mutes + word filters |
 | Report flows | ✅ | |
 | Reply limiting (who can reply) | ❌ | Gap: reply_policy on posts |
 | Hidden replies | ❌ | Gap: author can hide replies |

@@ -92,8 +92,21 @@ export async function api<T = unknown>(
 }
 
 export async function uploadMedia(file: File): Promise<string> {
+  // The media edge requires a short-lived signed grant when signed URLs are
+  // enforced (production). Fetch one; if the signing service is not deployed
+  // (local dev), upload unsigned — the edge accepts it only in that mode.
+  let grant = "";
+  try {
+    const t = await api<{ expires: number; signature: string }>(
+      "/api/media/upload-token",
+      { method: "POST" }
+    );
+    grant = `&exp=${t.expires}&sig=${encodeURIComponent(t.signature)}`;
+  } catch {
+    // dev mode: media edge without SECURITY_SERVICE_URL accepts unsigned uploads
+  }
   const res = await fetch(
-    `${MEDIA_URL}/upload?filename=${encodeURIComponent(file.name)}`,
+    `${MEDIA_URL}/upload?filename=${encodeURIComponent(file.name)}${grant}`,
     { method: "POST", body: file }
   );
   if (!res.ok) throw new ApiError(res.status, "upload failed");

@@ -58,6 +58,7 @@ services:
       SFU_HOST: localhost
       SFU_SECRET: change-me-sfu-secret
       TURN_SECRET: change-me-turn-secret
+      SECURITY_SERVICE_URL: http://security:8090
     ports:
       - "8080:8080"
     depends_on:
@@ -80,11 +81,16 @@ services:
 
   security:
     build: ./services/security
+    environment:
+      SIGNING_SECRET: ${SIGNING_SECRET:-dev-signing-secret}
+      APP_ENV: ${APP_ENV:-development}
     ports:
       - "8090:8090"
 
   media:
     build: ./services/media
+    environment:
+      SECURITY_SERVICE_URL: http://security:8090
     ports:
       - "8100:8100"
     volumes:

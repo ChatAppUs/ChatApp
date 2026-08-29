@@ -14,10 +14,10 @@ target/
 *.log
 .DS_Store
 uploads/
-data/
 
 # service binaries
 services/api/api
 services/security/security
 services/media-edge/media-edge
 services/sfu/sfu
+*.tsbuildinfo

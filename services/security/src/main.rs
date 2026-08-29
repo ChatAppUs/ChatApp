@@ -143,10 +143,22 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>) {
 }
 
 fn main() {
-    let secret = std::env::var("SIGNING_SECRET").unwrap_or_else(|_| {
-        eprintln!("WARNING: SIGNING_SECRET not set; using development default");
-        "dev-signing-secret".to_string()
-    });
+    let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+    let secret = match std::env::var("SIGNING_SECRET") {
+        Ok(s) if s.len() >= 32 => s,
+        Ok(_) => {
+            eprintln!("FATAL: SIGNING_SECRET must be at least 32 random bytes");
+            std::process::exit(1);
+        }
+        Err(_) => {
+            if app_env == "production" {
+                eprintln!("FATAL: SIGNING_SECRET must be set in production");
+                std::process::exit(1);
+            }
+            eprintln!("WARNING: SIGNING_SECRET not set; using development default");
+            "dev-signing-secret".to_string()
+        }
+    };
     let port = std::env::var("SECURITY_PORT").unwrap_or_else(|_| "8090".to_string());
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("bind failed");
     println!("chatapp-security listening on :{}", port);

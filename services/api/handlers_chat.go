@@ -70,9 +70,11 @@ func (h *Hub) sendTo(userID string, payload []byte) {
 	}
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true }, // tighten to app origins in production
-}
+// upgrader.CheckOrigin is installed in main() from cfg.AllowedOrigins:
+// browser cross-site connections are restricted to our own app origins;
+// native clients (no Origin header) are always allowed. Token auth in the
+// query string is the primary defense; this blocks CSWSH from web pages.
+var upgrader = websocket.Upgrader{}
 
 func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")

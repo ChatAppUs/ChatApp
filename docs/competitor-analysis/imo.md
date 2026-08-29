@@ -23,13 +23,13 @@ rooms. These are the differentiators to match.
 | Feature | Status | Notes |
 |---|---|---|
 | Text/photo/video messages | ✅ | |
-| Voice messages | ❌ | Gap: recorder + audio message type |
+| Voice messages | ✅ | MediaRecorder capture, inline audio player |
 | Stickers (big catalog) | ❌ | Gap: sticker packs |
 | Group chats (up to 100k) | 🚧 | Groups exist; gap: scale validation |
 | Stories | ✅ | |
 | Chat backup/restore | ❌ | Gap: export/import |
 | Message translation | ❌ | Gap: translation hook |
-| Disappearing messages | ❌ | Gap: TTL sweeper |
+| Disappearing messages | ✅ | Per-conversation TTL + sweeper with live WS removal |
 
 ## Discovery & social (imo's engagement layer)
 
@@ -49,13 +49,13 @@ rooms. These are the differentiators to match.
 | Phone-number-first registration | ✅ | 245 countries, flags, verification codes |
 | Low-end Android support | 🚧 | Native app exists; gap: APK size/memory budget |
 | Offline message delivery | ✅ | Server-persisted, sync on connect |
-| Multi-language UI | 🚧 | 5 locales; gap: imo ships 30+ (BN, HI, UR, AR dialects…) |
+| Multi-language UI | 🚧 | 8 locales (EN/ES/FR/DE/PT/AR/HI/ZH, RTL); gap: imo ships 30+ |
 
 ## Privacy
 
 | Feature | Status | Notes |
 |---|---|---|
-| Block contacts | ❌ | Gap: blocks table |
+| Block contacts | ✅ | Block/unblock enforced in messaging |
 | Last-seen / online privacy | ❌ | Gap: privacy settings |
 | Screenshot alert (secret chats) | ❌ | Gap: best-effort client signal |
 | Encrypted chats | ✅ | E2EE key relay |
@@ -64,7 +64,7 @@ rooms. These are the differentiators to match.
 
 1. Low-bandwidth call profile (simulcast + adaptive audio-only downgrade)
 2. Group voice rooms (SFU) — imo's stickiest feature
-3. Voice messages
-4. Blocks + presence privacy
-5. Locale expansion to 30+ languages
-6. People-nearby with strict privacy defaults
+3. Presence privacy granularity
+4. Locale expansion to 30+ languages
+5. People-nearby with strict privacy defaults
+6. Profile visitors + gamification

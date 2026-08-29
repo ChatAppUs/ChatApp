@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 )
@@ -13,6 +14,7 @@ type Config struct {
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 	AppEnv          string
+	AllowedOrigins  string // comma-separated CORS origins; empty = dev wildcard
 	MediaServiceURL string
 	MLServiceURL    string
 	SecuritySvcURL  string
@@ -47,13 +49,24 @@ func getenv(key, def string) string {
 }
 
 func loadConfig() Config {
+	appEnv := getenv("APP_ENV", "development")
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if appEnv == "production" {
+		if len(jwtSecret) < 32 {
+			log.Fatal("FATAL: JWT_SECRET must be at least 32 random bytes in production")
+		}
+	} else if jwtSecret == "" {
+		jwtSecret = "dev-only-insecure-secret"
+		log.Println("WARNING: JWT_SECRET not set; using development default")
+	}
 	return Config{
 		Port:            getenv("API_PORT", "8080"),
 		DatabaseURL:     getenv("DATABASE_URL", "postgres://chatapp:chatapp@localhost:5432/chatapp?sslmode=disable"),
-		JWTSecret:       []byte(getenv("JWT_SECRET", "change-me-in-production")),
+		JWTSecret:       []byte(jwtSecret),
 		AccessTokenTTL:  15 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour,
-		AppEnv:          getenv("APP_ENV", "development"),
+		AppEnv:          appEnv,
+		AllowedOrigins:  os.Getenv("ALLOWED_ORIGINS"),
 		MediaServiceURL: getenv("MEDIA_SERVICE_URL", "http://localhost:8100"),
 		MLServiceURL:    getenv("ML_SERVICE_URL", "http://localhost:8200"),
 		SecuritySvcURL:  getenv("SECURITY_SERVICE_URL", "http://localhost:8090"),

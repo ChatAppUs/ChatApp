@@ -8,17 +8,17 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 |---|---|---|
 | Cloud chats (multi-device sync) | ✅ | Server-persisted, WS realtime |
 | Secret chats (E2EE) | ✅ | ECDH P-256 key relay |
-| Self-destruct timer (secret chats) | ❌ | Gap: ttl_seconds on messages + sweeper |
+| Self-destruct timer (secret chats) | ✅ | Per-conversation TTL (1m/1h/24h/7d) + 30s sweeper with live WS removal |
 | Message edit (with "edited" mark) | ✅ | |
 | Delete for everyone / for me | 🚧 | delete-for-everyone exists; gap: per-user deletion |
 | Reactions (custom emoji sets) | 🚧 | Basic reactions; gap: custom emoji |
-| Replies with quote | ❌ | Gap: reply_to_id + quote rendering |
-| Forward with attribution | ❌ | Gap: forwarded_from on messages |
-| Pin messages (multiple, in chats/groups) | ❌ | Gap: pinned_messages table |
-| Saved Messages (self-chat) | ❌ | Gap: conversation kind=saved |
-| Scheduled messages | ❌ | Gap: send_at + scheduler |
+| Replies with quote | ✅ | reply_to_id persisted, quote rendered in chat |
+| Forward with attribution | ✅ | POST /api/messages/{id}/forward; encrypted messages cannot be forwarded |
+| Pin messages (multiple, in chats/groups) | ✅ | pin/unpin/list + WS fanout + pinned banner |
+| Saved Messages (self-chat) | ✅ | POST /api/conversations/saved, one private self-chat per user |
+| Scheduled messages | ✅ | schedule/list/cancel + SKIP LOCKED delivery worker |
 | Silent messages (no notification) | ❌ | Gap: silent flag |
-| Drafts synced across devices | ❌ | Gap: drafts table + WS sync |
+| Drafts synced across devices | 🚧 | Per-conversation drafts persist on the client; gap: cross-device server sync |
 | Hashtags in chat search | 🚧 | Global hashtags exist; gap: per-chat filter |
 | Mentions @username in groups | ✅ | |
 | Spoilers (hidden text) | ❌ | Gap: formatting marker |
@@ -33,8 +33,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | Photo/video messages | ✅ | media_urls |
-| Files up to 2GB (4GB Premium) | ❌ | Gap: chunked upload + 16MB cap removal |
-| Voice messages with waveform | ❌ | Gap: audio recorder + waveform data |
+| Files up to 2GB (4GB Premium) | 🚧 | 2 GiB cap at media edge; gap: chunked resumable upload |
+| Voice messages with waveform | 🚧 | Voice messages shipped (recorder + inline player); gap: waveform data |
 | Video messages (round) | ❌ | Gap: recorder UI |
 | Stickers (static/animated/video) | ❌ | Gap: sticker packs entity |
 | GIF search | ❌ | Gap: Tenor/GIPHY integration |
@@ -96,19 +96,19 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | 2FA (cloud password) | ✅ | TOTP; Telegram uses SRP password — equivalent strength |
 | Passkey/biometric app lock | 🚧 | Passkey login exists; gap: local app-lock screen |
 | Phone number privacy (who can see/find) | ❌ | Gap: privacy settings matrix |
-| Blocked users | ❌ | Gap: blocks table |
+| Blocked users | ✅ | POST/DELETE /api/users/{id}/block, enforced in messaging |
 | Auto-delete account if away | ❌ | Gap: account TTL worker |
 | Report spam | ✅ | |
 
 ## Implementation priority for ChatApp
 
-1. Saved Messages + drafts sync (daily-use retention)
-2. Reply-with-quote + forward with attribution (messaging basics)
-3. Pin messages + message formatting entities
-4. Voice messages (recorder + waveform)
-5. Invite links + public group handles (growth mechanic)
-6. Bot API (platform/ecosystem moat)
-7. Group voice chats via SFU
+1. Invite links + public group handles (growth mechanic)
+2. Bot API (platform/ecosystem moat)
+3. Group voice chats via SFU
+4. Message formatting entities (bold/italic/mono/spoiler)
+5. Cross-device draft sync
+6. Chat folders + archive
+7. Location & contact message types
 
 ## Shipped in ChatApp (2026-08 parity batch 2)
 

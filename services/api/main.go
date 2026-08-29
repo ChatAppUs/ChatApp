@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -57,27 +58,52 @@ func main() {
 	app.smtp = &Mailer{host: cfg.SMTPHost, port: cfg.SMTPPort, user: cfg.SMTPUser, pass: cfg.SMTPPass}
 	app.otp = NewOTPService(app, cfg.AppEnv == "development")
 
+	origins := map[string]bool{}
+	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
+		if o = strings.TrimSpace(o); o != "" && o != "*" {
+			origins[o] = true
+		}
+	}
+	upgrader.CheckOrigin = func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // native/mobile clients send no Origin
+		}
+		return len(origins) == 0 || origins[origin]
+	}
+
 	mux := http.NewServeMux()
+
+	// Rate limiters for abuse-sensitive public endpoints (per client IP).
+	// Generous enough for legitimate bursts, tight enough to blunt
+	// credential stuffing, SMS bombing and reset-token brute force.
+	loginLimiter := newRateLimiter(15, 5)
+	registerLimiter := newRateLimiter(10, 3)
+	resetLimiter := newRateLimiter(5, 2)
+	smsSendLimiter := newRateLimiter(5, 2)
+	smsCheckLimiter := newRateLimiter(15, 5)
+	oauthLimiter := newRateLimiter(60, 20)
+	qrLimiter := newRateLimiter(20, 5)
 
 	// public
 	mux.HandleFunc("GET /health", app.handleHealth)
 	mux.HandleFunc("GET /api/countries", app.handleCountries)
-	mux.HandleFunc("POST /api/auth/register", app.handleRegister)
-	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
-	mux.HandleFunc("POST /api/admin/login", app.handleAdminLogin)
+	mux.HandleFunc("POST /api/auth/register", registerLimiter.limit(app.handleRegister))
+	mux.HandleFunc("POST /api/auth/login", loginLimiter.limit(app.handleLogin))
+	mux.HandleFunc("POST /api/admin/login", loginLimiter.limit(app.handleAdminLogin))
 	mux.HandleFunc("POST /api/auth/refresh", app.handleRefresh)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
-	mux.HandleFunc("POST /api/auth/forgot-password", app.handleForgotPassword)
-	mux.HandleFunc("POST /api/auth/reset-password", app.handleResetPassword)
-	mux.HandleFunc("POST /api/auth/phone/send-code", app.handlePhoneSendCode)
-	mux.HandleFunc("POST /api/auth/phone/check-code", app.handlePhoneCheckCode)
+	mux.HandleFunc("POST /api/auth/forgot-password", resetLimiter.limit(app.handleForgotPassword))
+	mux.HandleFunc("POST /api/auth/reset-password", resetLimiter.limit(app.handleResetPassword))
+	mux.HandleFunc("POST /api/auth/phone/send-code", smsSendLimiter.limit(app.handlePhoneSendCode))
+	mux.HandleFunc("POST /api/auth/phone/check-code", smsCheckLimiter.limit(app.handlePhoneCheckCode))
 
 	// federated identity, passkeys, QR login
-	mux.HandleFunc("POST /api/auth/google", app.handleGoogleAuth)
-	mux.HandleFunc("POST /api/auth/passkey/login/begin", app.handlePasskeyLoginBegin)
-	mux.HandleFunc("POST /api/auth/passkey/login/finish", app.handlePasskeyLoginFinish)
-	mux.HandleFunc("POST /api/auth/qr/new", app.handleQRLoginNew)
-	mux.HandleFunc("GET /api/auth/qr/{token}", app.handleQRLoginStatus)
+	mux.HandleFunc("POST /api/auth/google", oauthLimiter.limit(app.handleGoogleAuth))
+	mux.HandleFunc("POST /api/auth/passkey/login/begin", oauthLimiter.limit(app.handlePasskeyLoginBegin))
+	mux.HandleFunc("POST /api/auth/passkey/login/finish", oauthLimiter.limit(app.handlePasskeyLoginFinish))
+	mux.HandleFunc("POST /api/auth/qr/new", qrLimiter.limit(app.handleQRLoginNew))
+	mux.HandleFunc("GET /api/auth/qr/{token}", qrLimiter.limit(app.handleQRLoginStatus))
 
 	// cluster engine
 	mux.HandleFunc("POST /api/cluster/heartbeat", app.handleClusterHeartbeat)
@@ -210,6 +236,9 @@ func main() {
 	// reports
 	mux.HandleFunc("POST /api/reports", app.requireAuth(app.handleCreateReport))
 
+	// media upload grant (signed by the Rust security service)
+	mux.HandleFunc("POST /api/media/upload-token", app.requireAuth(app.handleMediaUploadToken))
+
 	// admin (role-gated)
 	mux.HandleFunc("GET /api/admin/stats", app.requireAdmin("superadmin", "moderator", "support", "finance", "ads_reviewer")(app.handleAdminStats))
 	mux.HandleFunc("GET /api/admin/users", app.requireAdmin("superadmin", "support")(app.handleAdminListUsers))
@@ -230,7 +259,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           withCORS(mux),
+		Handler:           withSecurityHeaders(withCORS(mux, cfg.AllowedOrigins)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("ChatApp API listening on :%s (env=%s)", cfg.Port, cfg.AppEnv)

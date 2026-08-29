@@ -20,16 +20,16 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | Text/image/video posts | ✅ | |
-| Post audience selector (public/friends/only me/custom) | 🚧 | Gap: per-post audience enum + feed filtering |
+| Post audience selector (public/friends/only me/custom) | ✅ | public/followers/only-me enforced in feed queries; gap: custom lists |
 | Feeling/activity stickers on posts | ❌ | Gap: metadata enum, low effort |
 | Location check-in on posts | ❌ | Gap: lat/lng + place name on posts |
 | Tag people in posts (not just @mention text) | 🚧 | Mentions exist; formal post_tags table missing |
 | Reactions beyond like (love/haha/wow/sad/angry) | 🚧 | Message reactions exist; post reactions are like-only |
-| Comment threads (nested replies) | 🚧 | Comments flat; gap: parent_id threading |
+| Comment threads (nested replies) | ✅ | parent_id threading + comment likes |
 | Comment ranking (top/newest) | ❌ | Gap: sort options |
-| Share/repost with quote | ❌ | Gap: shares table + counter |
+| Share/repost with quote | ✅ | Repost toggle + quote posts with embedded preview + share_count |
 | Pinned post on profile | ❌ | Gap: users.pinned_post_id |
-| Post editing with history | ❌ | Gap: posts.edited_at |
+| Post editing with history | 🚧 | Editing shipped (author-only, edited marker); gap: edit history |
 | Scheduled posts | ❌ | Gap: publish_at column + worker |
 | Albums / multi-photo grid | 🚧 | media_urls JSON array exists; no album entity |
 | 3D photos / avatars | ❌ | Gap: out of scope, low value |
@@ -49,11 +49,11 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | 24h photo/video stories | ✅ | |
-| Story replies (DM from story) | ❌ | Gap: story_id on message |
-| Story reactions | ❌ | Gap: story_reactions table |
+| Story replies (DM from story) | ✅ | Replies delivered as DMs with story reference |
+| Story reactions | ✅ | Emoji reactions on stories |
 | Story highlights (permanent collections) | ❌ | Gap: highlights entity |
 | Story privacy (close friends) | ❌ | Gap: audience flag |
-| Story viewer list | ❌ | Gap: story_views tracking |
+| Story viewer list | ✅ | Deduped view tracking, author-only viewer list |
 | Text stories / stickers / music | ❌ | Gap: composer tools |
 
 ## Reels / video
@@ -75,7 +75,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Message edit/delete/reactions | ✅ | |
 | Typing indicators, read receipts, presence | ✅ | |
 | E2EE | ✅ | ECDH key relay; client-side cipher |
-| Voice messages | ❌ | Gap: audio message type + recorder UI |
+| Voice messages | ✅ | Recorder + inline player |
 | Video notes | ❌ | Gap: recorder UI |
 | Message requests (non-friends) | ❌ | Gap: request inbox before chat opens |
 | Nicknames per chat | ❌ | Gap: low effort |

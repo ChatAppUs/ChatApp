@@ -14,7 +14,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | "Not interested" feedback | ❌ | Gap: negative signal endpoint |
 | Following feed (video-only) | 🚧 | Gap: filter reels by follows |
 | Search (video, users, sounds, hashtags) | 🚧 | Users/hashtags exist; gap: video & sound search |
-| Comments with likes & replies | 🚧 | Post comments exist; gap: reel comments |
+| Comments with likes & replies | ✅ | Comment likes + nested reply threads; reels are posts, so reel comments included |
 | Auto-captions | ❌ | Gap: speech-to-text worker (Python service) |
 | Video playback speed control | ❌ | Gap: client player control |
 

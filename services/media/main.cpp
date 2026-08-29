@@ -21,6 +21,7 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -46,10 +47,11 @@ static std::string mimeFor(const std::string& path) {
 }
 
 static std::string randomId() {
-    static thread_local std::mt19937_64 rng{std::random_device{}()};
-    std::uniform_int_distribution<uint64_t> dist;
+    // Media IDs double as the access token for downloads, so they must be
+    // unguessable: draw every bit from the OS CSPRNG, not a seeded PRNG.
+    std::random_device rd;
     std::ostringstream oss;
-    oss << std::hex << dist(rng) << dist(rng);
+    oss << std::hex << (uint64_t{rd()} << 32 | rd()) << (uint64_t{rd()} << 32 | rd());
     return oss.str();
 }
 
@@ -77,13 +79,22 @@ static void respond(int fd, int code, const std::string& status,
 // Minimal blocking HTTP client for security-service verification.
 static std::string httpPost(const std::string& host, int port, const std::string& path,
                             const std::string& body) {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    addrinfo hints{};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    std::string portStr = std::to_string(port);
+    if (::getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0) return "";
+    int fd = -1;
+    for (addrinfo* ai = res; ai; ai = ai->ai_next) {
+        fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) continue;
+        if (::connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) break;
+        ::close(fd);
+        fd = -1;
+    }
+    ::freeaddrinfo(res);
     if (fd < 0) return "";
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) != 1) { ::close(fd); return ""; }
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) { ::close(fd); return ""; }
     std::ostringstream req;
     req << "POST " << path << " HTTP/1.1\r\nHost: " << host << "\r\n"
         << "Content-Type: application/json\r\nContent-Length: " << body.size()
@@ -166,7 +177,11 @@ static void handleClient(int fd) {
         respond(fd, 200, "OK", "{\"status\":\"ok\"}");
     } else if (method == "POST" && path == "/upload") {
         std::string filename = queryParam(target, "filename");
-        if (!safeName(filename)) {
+        std::string upSig = queryParam(target, "sig");
+        std::string upExp = queryParam(target, "exp");
+        if (!g_securityURL.empty() && !verifySignature("/upload", upExp, upSig)) {
+            respond(fd, 403, "Forbidden", "{\"error\":\"upload requires a signed grant from POST /api/media/upload-token\"}");
+        } else if (!safeName(filename)) {
             respond(fd, 400, "Bad Request", "{\"error\":\"invalid filename\"}");
         } else {
             size_t contentLength = 0;
@@ -209,9 +224,13 @@ static void handleClient(int fd) {
         if (!safeName(name)) {
             respond(fd, 400, "Bad Request", "{\"error\":\"invalid name\"}");
         } else {
+            // Downloads are served by unguessable 128-bit random IDs
+            // (same model as Discord/Telegram CDN links); uploads are the
+            // authenticated operation. A sig, when supplied, is still
+            // honored for future private-media gating.
             std::string sig = queryParam(target, "sig");
             std::string exp = queryParam(target, "exp");
-            if (!g_securityURL.empty() && !verifySignature("/media/" + name, exp, sig)) {
+            if (!sig.empty() && !verifySignature("/media/" + name, exp, sig)) {
                 respond(fd, 403, "Forbidden", "{\"error\":\"invalid or expired signature\"}");
             } else {
                 std::string full = g_uploadDir + "/" + name;

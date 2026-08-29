@@ -22,7 +22,7 @@ newsroom posts, and feature reports (2024–2026).
 
 ### ChatApp already matches or exceeds
 
-- Multi-identity accounts (email/username/phone, 245 country codes + flags)
+- Multi-identity accounts (email/username/phone, 238 country codes + flags)
 - Google OAuth, passkeys (fingerprint/face/PIN), TOTP 2FA, QR login
 - Posts, comments, @mentions, likes, follows, hashtags, trending, bookmarks
 - Stories (24h), reels with view counts, polls
@@ -33,35 +33,34 @@ newsroom posts, and feature reports (2024–2026).
 - Multi-chain wallet, KYC-gated P2P transfers, creator earnings
 - Ads with geo/locale targeting, budgets, admin review
 - Admin RBAC panel
-- i18n (EN/ES/AR/PT/FR), web + Android + iOS + desktop clients
+- i18n (EN/ES/FR/DE/PT/AR/HI/ZH, RTL), web + Android + iOS + desktop clients
 
 ### Highest-impact gaps (ranked by competitor importance)
 
 1. **Media pipeline** — real transcoding (HLS/ABR), image resizing, progressive
    upload, video compression. Every competitor's core experience depends on it.
+   (Planned as a C++ service — see ../CPP_CONVERSION_PLAN.md.)
 2. **Groups & Pages** (Facebook-style communities/business pages) — our groups
    are chat-only; no public content groups, pages, or events.
-3. **Saved Messages / cloud drafts** (Telegram) — self-chat + cross-device
-   draft sync.
-4. **Voice/video messages** (round video notes, voice notes with waveform).
-5. **Advanced messaging**: pinning, forwarding with attribution, scheduled
-   messages, silent send, spoiler formatting, quote-reply, link previews.
-6. **Stories replies/reactions + highlights** (permanent story collections).
-7. **Reels creation tools**: trimming, filters/effects, duet/stitch, sounds
-   library, captions.
-8. **Push notifications** (FCM/APNs/Web Push) — currently in-app + WS only.
-9. **Content discovery**: reel-level recommendation signals (watch time,
+3. **Reels creation tools**: trimming, filters/effects, duet/stitch, sounds
+   library, captions; round video notes.
+4. **Push notifications** (FCM/APNs/Web Push) — currently in-app + WS only.
+5. **Content discovery**: reel-level recommendation signals (watch time,
    rewatches), "For You" surface, suggested users/communities.
-10. **Monetization depth**: subscriptions (fan→creator), tips, stars/gifts,
-    ad revenue share payouts beyond flat RPM.
-11. **Bots & mini-apps platform** (Telegram) — bot API, inline bots, web apps.
-12. **Calls**: SFU for >8 participants, call recording, screen share, noise
-    suppression, group call scheduling, live streaming (Live Audio Rooms /
-    Spaces / Lives).
-13. **Privacy suite**: granular audience per post (public/friends/only-me/
-    custom), block list, restricted list, profile lock, active-status control,
-    message requests inbox.
-14. **Accessibility & safety**: alt text, captions, content warnings, comment
+6. **Monetization depth**: subscriptions (fan→creator), tips, stars/gifts,
+   ad revenue share payouts beyond flat RPM.
+7. **Bots & mini-apps platform** (Telegram) — bot API, inline bots, web apps.
+8. **Calls**: SFU for >8 participants (C++ plan), call recording, screen share,
+   noise suppression, group call scheduling, live streaming (Live Audio Rooms /
+   Spaces / Lives).
+9. **Advanced messaging polish**: silent send, spoiler/formatting entities,
+   link previews, cross-device draft sync, per-user delete, custom emoji,
+   invite links/public group handles, slow mode, topics.
+10. **Stories**: highlights (permanent collections), text/music composer tools,
+    close-friends audience.
+11. **Privacy suite**: custom audience lists, restricted list, profile lock,
+    active-status control, message requests inbox, mutes/word filters.
+12. **Accessibility & safety**: alt text, captions, content warnings, comment
     filters, anti-spam reputation, report categories, transparency dashboard.
 
 Each file lists the full feature inventory per competitor with status and an

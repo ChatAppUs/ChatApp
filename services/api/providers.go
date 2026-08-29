@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/smtp"
+	"strings"
+	"time"
 )
 
 // ---- Email ----
@@ -59,4 +65,55 @@ func sendMailTLS(addr, host string, auth smtp.Auth, from string, to []string, ms
 		return err
 	}
 	return c.Quit()
+}
+
+// ---- Media upload signing (Rust security service) ----
+
+var securityClient = &http.Client{Timeout: 3 * time.Second}
+
+type uploadTicket struct {
+	Expires   int64  `json:"expires"`
+	Signature string `json:"signature"`
+}
+
+// signUpload asks the Rust security service for an HMAC-signed upload grant.
+func (a *App) signUpload(ctx context.Context) (*uploadTicket, error) {
+	if a.cfg.SecuritySvcURL == "" {
+		return nil, errors.New("security service not configured")
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		a.cfg.SecuritySvcURL+"/sign",
+		strings.NewReader(`{"payload":"/upload","expires_in":300}`))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := securityClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("security service status %d", resp.StatusCode)
+	}
+	var out struct {
+		Expires   int64  `json:"expires"`
+		Signature string `json:"signature"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return &uploadTicket{Expires: out.Expires, Signature: out.Signature}, nil
+}
+
+// handleMediaUploadToken mints a short-lived signed upload grant. Clients
+// append exp+sig to the media-edge /upload URL; the C++ edge verifies them
+// against the security service before accepting bytes.
+func (a *App) handleMediaUploadToken(w http.ResponseWriter, r *http.Request) {
+	t, err := a.signUpload(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "upload signing unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
 }
