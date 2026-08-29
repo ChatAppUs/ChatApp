@@ -20,3 +20,4 @@ data/
 services/api/api
 services/security/security
 services/media-edge/media-edge
+services/sfu/sfu
