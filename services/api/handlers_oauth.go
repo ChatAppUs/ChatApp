@@ -291,6 +291,7 @@ func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not create account (email may already exist unverified)")
 		return
 	}
+	a.bootstrapFirstAdmin(ctx, userID)
 	if _, err := a.db.Exec(ctx,
 		`INSERT INTO oauth_accounts (user_id, provider, provider_sub, email)
 		 VALUES ($1,'google',$2,$3)`, userID, claims.Sub, claims.Email); err != nil {

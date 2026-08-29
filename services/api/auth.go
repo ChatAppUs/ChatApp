@@ -155,6 +155,19 @@ func userIDFrom(r *http.Request) string {
 	return ""
 }
 
+// bootstrapFirstAdmin grants superadmin to the very first account on a fresh
+// deployment (standard bootstrap: Mastodon, Discourse). After that, roles are
+// granted only by existing superadmins.
+func (a *App) bootstrapFirstAdmin(ctx context.Context, userID string) {
+	var anyAdmin bool
+	if err := a.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM admin_roles)`).Scan(&anyAdmin); err != nil || anyAdmin {
+		return
+	}
+	_, _ = a.db.Exec(ctx,
+		`INSERT INTO admin_roles (user_id, role, granted_by) VALUES ($1,'superadmin',$1) ON CONFLICT DO NOTHING`,
+		userID)
+}
+
 func (a *App) issueTokens(ctx context.Context, userID, userAgent, ip string) (map[string]any, error) {
 	now := time.Now()
 	access, err := signJWT(a.cfg.JWTSecret, Claims{

@@ -52,7 +52,14 @@ infra/
   funding from wallet balance, admin review workflow, targeted serving with
   impression/click event tracking.
 - **Admin**: RBAC (superadmin/moderator/support/finance), platform stats, user
-  search/suspend, report resolution, KYC review, ad review, audit log.
+  search/suspend, report resolution, KYC review, ad review, audit log. The
+  first registered account on a fresh deployment is bootstrapped as superadmin.
+- **Cluster engine**: multi-node global expansion — node registry with
+  heartbeats and dead-node reaping, least-loaded region routing for client
+  bootstrap (`GET /api/cluster/route`), rendezvous (HRW) consistent-hash
+  sharding for sticky conversation/media placement, weight + spare-capacity
+  aware balancing, and superadmin fleet management (list/drain/remove nodes).
+  Single-node deployments behave exactly as before.
 - **i18n**: English, Español, Français, Deutsch, Português, العربية (RTL),
   हिन्दी, 中文.
 

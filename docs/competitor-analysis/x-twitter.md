@@ -1,0 +1,103 @@
+# X (Twitter) — feature inventory vs ChatApp
+
+Legend: ✅ implemented · 🚧 partial · ❌ missing
+
+## Core posting
+
+| Feature | Status | Notes |
+|---|---|---|
+| Short posts (tweets) | ✅ | |
+| Long posts (Premium long-form) | 🚧 | content_limit 5000 chars; gap: articles entity |
+| Threads (connected posts) | ❌ | Gap: thread_parent_id on posts |
+| Reply / quote / repost | 🚧 | Comments ≈ replies; gap: quote + repost entities |
+| Post reactions (like) | ✅ | |
+| Bookmarks (+ folders) | 🚧 | Bookmarks exist; gap: folders |
+| Polls | ✅ | 2–4 options, upsert votes |
+| Community Notes | ❌ | Gap: crowdsourced fact-check entity |
+| Post scheduling | ❌ | Gap: publish_at + worker |
+| Edit post (time-limited) | ❌ | Gap: edited_at + window enforcement |
+| Drafts | ❌ | Gap: server-side drafts |
+| Location on posts | ❌ | Gap: geo metadata |
+| Content warnings / sensitive media flag | ❌ | Gap: flag + blur UI |
+| Alt text on images | ❌ | Gap: media alt_text, accessibility |
+
+## Discovery
+
+| Feature | Status | Notes |
+|---|---|---|
+| Hashtags + trending | ✅ | |
+| For You algorithmic feed | 🚧 | ML-ranked feed exists; gap: engagement signals depth |
+| Following feed (chronological) | ✅ | /api/feed |
+| Lists (curated user groups) | ❌ | Gap: lists entity + list feed |
+| Topics / interests following | ❌ | Gap: topics entity |
+| Advanced search (operators: from:, since:, filter:) | 🚧 | Basic search; gap: operator parser |
+| Moments / curated news | ❌ | Gap: editorial product, low priority |
+
+## Communities & social graph
+
+| Feature | Status | Notes |
+|---|---|---|
+| Followers/following | ✅ | |
+| Communities (reddit-like groups) | ❌ | Gap: same entity as FB groups |
+| Super Follows / subscriptions | ❌ | Gap: recurring fan subscription |
+| Verified organizations / affiliations | ❌ | Gap: org badges |
+| Who-to-follow suggestions | ❌ | Gap: ML candidate generator |
+
+## Spaces (live audio)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Live audio rooms with speakers/listeners | ❌ | Gap: room entity + SFU audio; our group calls are mesh |
+| Space recording & replay | ❌ | Gap: SFU recording |
+| Scheduled spaces | ❌ | Gap: scheduling metadata |
+| Ticketed spaces | ❌ | Gap: payment gate on room join |
+
+## DMs
+
+| Feature | Status | Notes |
+|---|---|---|
+| DM realtime chat | ✅ | |
+| Encrypted DMs | ✅ | E2EE key relay |
+| DM reactions/replies | ✅ | |
+| DM search | ❌ | Gap: message full-text search |
+| Message requests inbox | ❌ | Gap: pending-request state |
+| Voice messages | ❌ | Gap: audio message type |
+
+## Monetization & verification
+
+| Feature | Status | Notes |
+|---|---|---|
+| Verified badge (subscription) | 🚧 | is_verified flag exists; gap: paid verification flow |
+| Ad revenue share for creators | 🚧 | RPM earnings; gap: true ad-share |
+| Tips | ❌ | Gap: wallet-backed tip button |
+| Creator subscriptions | ❌ | Gap: recurring payments |
+| Premium tiers (feature gating) | ❌ | Gap: subscription plans entity |
+
+## Media
+
+| Feature | Status | Notes |
+|---|---|---|
+| Image/video/GIF upload | ✅ | |
+| Multi-image posts (4-grid) | ✅ | media_urls array |
+| Video transcoding + adaptive bitrate | ❌ | Gap: media pipeline (C++ edge) |
+| Live video streaming | ❌ | Gap: RTMP ingest + HLS out |
+| GIF picker (GIPHY/Tenor) | ❌ | Gap: third-party API integration |
+
+## Moderation & safety
+
+| Feature | Status | Notes |
+|---|---|---|
+| Block / mute (accounts, words) | ❌ | Gap: blocks + mutes tables |
+| Report flows | ✅ | |
+| Reply limiting (who can reply) | ❌ | Gap: reply_policy on posts |
+| Hidden replies | ❌ | Gap: author can hide replies |
+| Safety mode (auto-block) | ❌ | Gap: reputation-driven auto-block |
+
+## Implementation priority for ChatApp
+
+1. Repost/quote (the core X viral mechanic)
+2. Threads (thread_parent_id)
+3. Block/mute + reply limiting (safety fundamentals)
+4. Lists (power-user retention)
+5. Live audio spaces (SFU audio rooms)
+6. Advanced search operators

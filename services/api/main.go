@@ -51,6 +51,7 @@ func main() {
 	defer db.Close()
 
 	app := &App{cfg: cfg, db: db, hub: newHub()}
+	app.startCluster()
 	app.smtp = &Mailer{host: cfg.SMTPHost, port: cfg.SMTPPort, user: cfg.SMTPUser, pass: cfg.SMTPPass}
 
 	if cfg.TwilioSID != "" && cfg.TwilioToken != "" && cfg.TwilioVerifySID != "" {
@@ -104,6 +105,10 @@ func main() {
 	mux.HandleFunc("POST /api/auth/passkey/login/finish", app.handlePasskeyLoginFinish)
 	mux.HandleFunc("POST /api/auth/qr/new", app.handleQRLoginNew)
 	mux.HandleFunc("GET /api/auth/qr/{token}", app.handleQRLoginStatus)
+
+	// cluster engine
+	mux.HandleFunc("POST /api/cluster/heartbeat", app.handleClusterHeartbeat)
+	mux.HandleFunc("GET /api/cluster/route", app.handleClusterRoute)
 
 	// authenticated: profile & social
 	mux.HandleFunc("GET /api/me", app.requireAuth(app.handleMe))
@@ -172,6 +177,9 @@ func main() {
 	mux.HandleFunc("GET /api/auth/passkeys", app.requireAuth(app.handlePasskeyList))
 	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", app.requireAuth(app.handlePasskeyDelete))
 	mux.HandleFunc("POST /api/auth/qr/{token}/approve", app.requireAuth(app.handleQRLoginApprove))
+	mux.HandleFunc("GET /api/cluster/nodes", app.requireRole("superadmin")(app.handleClusterNodes))
+	mux.HandleFunc("POST /api/cluster/nodes/{id}/drain", app.requireRole("superadmin")(app.handleClusterDrain))
+	mux.HandleFunc("DELETE /api/cluster/nodes/{id}", app.requireRole("superadmin")(app.handleClusterRemove))
 	mux.HandleFunc("POST /api/auth/qr/{token}/reject", app.requireAuth(app.handleQRLoginReject))
 	mux.HandleFunc("PUT /api/e2e/key", app.requireAuth(app.handleE2EPublishKey))
 	mux.HandleFunc("GET /api/e2e/keys", app.requireAuth(app.handleE2EGetKeys))

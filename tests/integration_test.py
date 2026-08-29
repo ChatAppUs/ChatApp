@@ -234,8 +234,92 @@ def main():
     # --- passkeys: full WebAuthn ceremony with a software authenticator ---
     passkey_flow(alice_tok, alice)
 
+    # --- cluster engine: heartbeat, routing, admin management ---
+    grant_superadmin(alice)
+    s, r = req("POST", "/api/auth/login", {"identifier": alice, "password": "Passw0rd!123"})
+    alice_tok = r.get("access_token")  # fresh token (role read from DB per request)
+    cluster_flow(alice_tok)
+
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+def grant_superadmin(username):
+    """Grant superadmin directly in the DB (test bootstrap; the product path is
+    first-user bootstrap + superadmin grants)."""
+    import subprocess
+    dburl = os.environ.get("DATABASE_URL",
+                           "postgres://chatapp:chatapp@localhost:5432/chatapp?sslmode=disable")
+    sql = (f"INSERT INTO admin_roles (user_id, role, granted_by) "
+           f"SELECT id, 'superadmin', id FROM users WHERE username='{username}' "
+           f"ON CONFLICT DO NOTHING")
+    subprocess.run(["psql", dburl, "-c", sql], check=True,
+                   capture_output=True)
+
+
+def cluster_flow(admin_tok):
+    secret = os.environ.get("CLUSTER_SECRET", "test-cluster-secret")
+
+    def creq(method, path, body=None, hdr_secret=None):
+        url = BASE + path
+        data = json.dumps(body).encode() if body is not None else None
+        r = urllib.request.Request(url, data=data, method=method)
+        r.add_header("Content-Type", "application/json")
+        if hdr_secret:
+            r.add_header("X-Cluster-Secret", hdr_secret)
+        try:
+            with urllib.request.urlopen(r) as resp:
+                return resp.status, json.loads(resp.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.loads(e.read() or b"{}")
+            except Exception:
+                return e.code, {}
+
+    # bad secret rejected
+    s, r = creq("POST", "/api/cluster/heartbeat",
+                {"node_id": "n-evil", "region": "us", "api_url": "http://evil"},
+                hdr_secret="wrong")
+    check("cluster heartbeat bad secret rejected", s == 403, f"{s} {r}")
+
+    # register two sibling nodes
+    for nid, region, load in (("n-us-1", "us", 10), ("n-eu-1", "eu", 50)):
+        s, r = creq("POST", "/api/cluster/heartbeat",
+                    {"node_id": nid, "region": region,
+                     "api_url": f"http://{nid}.internal", "load": load},
+                    hdr_secret=secret)
+        check(f"cluster heartbeat {nid}", s == 200, f"{s} {r}")
+
+    # region routing prefers least-loaded node in region
+    s, r = req("GET", "/api/cluster/route?region=us")
+    check("cluster route region", s == 200 and r.get("node_id") == "n-us-1", f"{s} {r}")
+    # unknown region falls back to global least-loaded
+    s, r = req("GET", "/api/cluster/route?region=zz")
+    check("cluster route fallback", s == 200 and r.get("node_id") == "n-us-1", f"{s} {r}")
+    # shard key routing is deterministic
+    s, r1 = req("GET", "/api/cluster/route?key=conv-42")
+    s2, r2 = req("GET", "/api/cluster/route?key=conv-42")
+    check("cluster shard deterministic",
+          s == 200 and r1.get("node_id") == r2.get("node_id"), f"{r1} {r2}")
+
+    # admin node list + drain + remove
+    s, r = req("GET", "/api/cluster/nodes", token=admin_tok)
+    check("cluster nodes listed (admin)",
+          s == 200 and len(r.get("nodes", [])) >= 2, f"{s} {r}")
+    s, r = req("POST", "/api/cluster/nodes/n-eu-1/drain", {}, token=admin_tok)
+    check("cluster drain", s == 200, f"{s} {r}")
+    s, r = req("GET", "/api/cluster/route?region=eu")
+    check("drained node not routed", s == 200 and r.get("node_id") != "n-eu-1", f"{s} {r}")
+    s, r = req("DELETE", "/api/cluster/nodes/n-eu-1", token=admin_tok)
+    check("cluster remove", s == 200, f"{s} {r}")
+
+    # non-admin cannot manage fleet
+    s, r = req("POST", "/api/auth/register",
+               {"username": f"plain{int(time.time())}", "email": f"plain{int(time.time())}@test.dev",
+                "password": "Passw0rd!x", "display_name": "Plain"})
+    plain_tok = r.get("access_token")
+    s, r = req("GET", "/api/cluster/nodes", token=plain_tok)
+    check("cluster nodes forbidden for non-admin", s == 403, f"{s} {r}")
 
 
 # ---- minimal CBOR encoder (definite-length only) ----

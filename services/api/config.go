@@ -31,6 +31,11 @@ type Config struct {
 	WebAuthnRPID    string
 	WebAuthnRPName  string
 	WebAuthnOrigins string // comma-separated allowed origins
+	ClusterNodeID   string
+	ClusterRegion   string
+	ClusterAPIURL   string
+	ClusterMediaURL string
+	ClusterSecret   string
 }
 
 func getenv(key, def string) string {
@@ -61,6 +66,11 @@ func loadConfig() Config {
 		StripeSecret:    os.Getenv("STRIPE_SECRET_KEY"),
 		SumsubAppToken:  os.Getenv("SUMSUB_APP_TOKEN"),
 		SumsubSecretKey: os.Getenv("SUMSUB_SECRET_KEY"),
+		ClusterNodeID:   os.Getenv("CLUSTER_NODE_ID"),
+		ClusterRegion:   getenv("CLUSTER_REGION", "us-east"),
+		ClusterAPIURL:   os.Getenv("CLUSTER_API_URL"),
+		ClusterMediaURL: os.Getenv("CLUSTER_MEDIA_URL"),
+		ClusterSecret:   os.Getenv("CLUSTER_SECRET"),
 		CreatorRPM:      atof(getenv("CREATOR_RPM", "0.50")),
 		GoogleClientID:  os.Getenv("GOOGLE_CLIENT_ID"),
 		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "localhost"),

@@ -95,6 +95,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "registration failed")
 		return
 	}
+	a.bootstrapFirstAdmin(r.Context(), id)
 	tokens, err := a.issueTokens(r.Context(), id, r.UserAgent(), clientIP(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "session creation failed")

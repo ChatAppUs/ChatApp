@@ -238,6 +238,69 @@ func TestCOSEES256Verify(t *testing.T) {
 	}
 }
 
+func TestRendezvousPick(t *testing.T) {
+	nodes := []ClusterNode{
+		{NodeID: "a", Region: "us", Weight: 100, Capacity: 100, Load: 10},
+		{NodeID: "b", Region: "eu", Weight: 100, Capacity: 100, Load: 10},
+		{NodeID: "c", Region: "ap", Weight: 100, Capacity: 100, Load: 10},
+	}
+	// determinism: same key always maps to same node
+	first := rendezvousPick(nodes, "conv-123")
+	for i := 0; i < 50; i++ {
+		if rendezvousPick(nodes, "conv-123") != first {
+			t.Fatal("non-deterministic pick")
+		}
+	}
+	// distribution: keys spread across all nodes
+	seen := map[string]int{}
+	for i := 0; i < 300; i++ {
+		n := rendezvousPick(nodes, string(rune(i))+":"+strings.Repeat("k", i%7))
+		if n == nil {
+			t.Fatal("nil pick")
+		}
+		seen[n.NodeID]++
+	}
+	if len(seen) < 2 {
+		t.Fatalf("poor distribution: %v", seen)
+	}
+	// minimal disruption: removing one node remaps roughly 1/3 of keys
+	remapped := 0
+	for i := 0; i < 300; i++ {
+		key := string(rune(i)) + ":" + strings.Repeat("k", i%7)
+		before := rendezvousPick(nodes, key)
+		after := rendezvousPick(nodes[:2], key)
+		if before != nil && after != nil && before.NodeID != after.NodeID {
+			remapped++
+		}
+	}
+	if remapped > 200 {
+		t.Fatalf("excessive remapping: %d/300", remapped)
+	}
+	// zero spare capacity is skipped
+	full := []ClusterNode{{NodeID: "x", Weight: 100, Capacity: 10, Load: 10}}
+	if rendezvousPick(full, "k") != nil {
+		t.Fatal("full node picked")
+	}
+}
+
+func TestPickRegionNode(t *testing.T) {
+	nodes := []ClusterNode{
+		{NodeID: "us-1", Region: "us", Capacity: 100, Load: 90},
+		{NodeID: "us-2", Region: "us", Capacity: 100, Load: 5},
+		{NodeID: "eu-1", Region: "eu", Capacity: 100, Load: 1},
+	}
+	if n := pickRegionNode(nodes, "us"); n == nil || n.NodeID != "us-2" {
+		t.Fatalf("expected least-loaded us node, got %+v", n)
+	}
+	// unknown region falls back to global least-loaded
+	if n := pickRegionNode(nodes, "zz"); n == nil || n.NodeID != "eu-1" {
+		t.Fatalf("expected global fallback, got %+v", n)
+	}
+	if pickRegionNode(nil, "us") != nil {
+		t.Fatal("empty pool should be nil")
+	}
+}
+
 func TestParseAuthData(t *testing.T) {
 	rpHash := sha256.Sum256([]byte("localhost"))
 	buf := append([]byte{}, rpHash[:]...)

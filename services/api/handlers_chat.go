@@ -28,6 +28,17 @@ func newHub() *Hub {
 	return &Hub{clients: map[string]map[*wsClient]bool{}}
 }
 
+// connCount reports the live WebSocket connection count (cluster load metric).
+func (h *Hub) connCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := 0
+	for _, conns := range h.clients {
+		n += len(conns)
+	}
+	return n
+}
+
 func (h *Hub) add(c *wsClient) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
