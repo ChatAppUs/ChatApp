@@ -53,6 +53,7 @@ func main() {
 	app := &App{cfg: cfg, db: db, hub: newHub()}
 	app.startCluster()
 	app.startScheduler()
+	app.startExpirySweeper()
 	app.smtp = &Mailer{host: cfg.SMTPHost, port: cfg.SMTPPort, user: cfg.SMTPUser, pass: cfg.SMTPPass}
 
 	if cfg.TwilioSID != "" && cfg.TwilioToken != "" && cfg.TwilioVerifySID != "" {
@@ -155,6 +156,9 @@ func main() {
 	mux.HandleFunc("POST /api/conversations/saved", app.requireAuth(app.handleSavedMessages))
 	mux.HandleFunc("POST /api/conversations/{id}/pins/{messageId}", app.requireAuth(app.handlePinMessage))
 	mux.HandleFunc("DELETE /api/conversations/{id}/pins/{messageId}", app.requireAuth(app.handleUnpinMessage))
+	mux.HandleFunc("PUT /api/conversations/{id}/ttl", app.requireAuth(app.handleSetTTL))
+	mux.HandleFunc("GET /api/conversations/{id}/ttl", app.requireAuth(app.handleGetTTL))
+	mux.HandleFunc("GET /api/conversations/{id}/members", app.requireAuth(app.handleListMembers))
 	mux.HandleFunc("GET /api/conversations/{id}/pins", app.requireAuth(app.handleListPins))
 	mux.HandleFunc("DELETE /api/messages/{id}", app.requireAuth(app.handleDeleteMessage))
 	mux.HandleFunc("POST /api/messages/{id}/reactions", app.requireAuth(app.handleReactMessage))

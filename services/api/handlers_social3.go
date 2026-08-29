@@ -72,7 +72,9 @@ func (a *App) handleSearchMessages(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT m.id, m.sender_id, u.display_name, m.body, m.media_url, m.created_at
 		 FROM messages m JOIN users u ON u.id = m.sender_id
-		 WHERE m.conversation_id=$1 AND m.deleted_at IS NULL AND m.body ILIKE '%' || $2 || '%'
+		 WHERE m.conversation_id=$1 AND m.deleted_at IS NULL
+		   AND (m.expires_at IS NULL OR m.expires_at > now())
+		   AND m.body ILIKE '%' || $2 || '%'
 		 ORDER BY m.created_at DESC LIMIT 50`, convID, q)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "search failed")

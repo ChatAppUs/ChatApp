@@ -74,6 +74,9 @@ infra/
   nested reply threads in the UI, share-post-to-DM with conversation picker,
   in-conversation message search, group creation UI, and a notifications
   center (`/notifications`) with mark-all-read.
+- **Privacy & group parity**: disappearing messages per conversation
+  (1m/1h/24h/7d timers, live WS removal, 30s sweeper), member list with
+  roles, and add/remove member management in the chat UI.
 - **i18n**: English, Español, Français, Deutsch, Português, العربية (RTL),
   हिन्दी, 中文.
 

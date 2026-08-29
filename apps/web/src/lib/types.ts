@@ -76,6 +76,7 @@ export interface Message {
   forwarded_from?: string;
   story_id?: string;
   pinned?: boolean;
+  expires_at?: string | null;
   created_at: string;
   edited_at?: string | null;
   reactions?: Record<string, number>;

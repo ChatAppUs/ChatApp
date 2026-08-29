@@ -24,6 +24,9 @@ interface WSEvent {
   action?: string;
   created_at?: string;
   at?: string;
+  ids?: string[];
+  ttl_seconds?: number;
+  expires_at?: string | null;
 }
 
 export default function ChatPage() {
@@ -52,6 +55,9 @@ export default function ChatPage() {
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [ttl, setTtl] = useState(0);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [members, setMembers] = useState<{ id: string; username: string; display_name: string; role: string }[]>([]);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -123,6 +129,11 @@ export default function ChatPage() {
         setMessages((prev) => prev.map((m) => (m.id === data.id ? { ...m, body: data.body ?? m.body } : m)));
       } else if (data.type === "message_deleted" && conv && data.conversation_id === conv.id) {
         setMessages((prev) => prev.filter((m) => m.id !== data.id));
+      } else if (data.type === "messages_expired" && conv && data.conversation_id === conv.id) {
+        const ids = new Set((data.ids as string[]) ?? []);
+        setMessages((prev) => prev.filter((m) => !ids.has(m.id)));
+      } else if (data.type === "ttl_changed" && conv && data.conversation_id === conv.id) {
+        setTtl((data.ttl_seconds as number) ?? 0);
       } else if (data.type === "reaction" && conv && data.conversation_id === conv.id) {
         setMessages((prev) => prev.map((m) => {
           if (m.id !== data.message_id) return m;
@@ -295,11 +306,56 @@ export default function ChatPage() {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
 
+  const TTL_OPTIONS = [0, 60, 3600, 86400, 604800];
+  const TTL_LABELS: Record<number, string> = {
+    0: "off", 60: "1m", 3600: "1h", 86400: "24h", 604800: "7d",
+  };
+
+  const cycleTtl = async () => {
+    if (!active) return;
+    const next = TTL_OPTIONS[(TTL_OPTIONS.indexOf(ttl) + 1) % TTL_OPTIONS.length];
+    const d = await api<{ ttl_seconds: number }>(`/api/conversations/${active.id}/ttl`, {
+      method: "PUT",
+      body: JSON.stringify({ ttl_seconds: next }),
+    }).catch(() => null);
+    if (d) setTtl(d.ttl_seconds);
+  };
+
+  const loadMembers = async () => {
+    if (!active) return;
+    if (!membersOpen) {
+      const d = await api<{ members: typeof members }>(
+        `/api/conversations/${active.id}/members`).catch(() => null);
+      if (d) setMembers(d.members);
+    }
+    setMembersOpen(!membersOpen);
+  };
+
+  const removeMember = async (uid: string) => {
+    if (!active) return;
+    await api(`/api/conversations/${active.id}/members/${uid}`, { method: "DELETE" }).catch(() => {});
+    setMembers((prev) => prev.filter((m) => m.id !== uid));
+  };
+
+  const addMemberToActive = async (uid: string) => {
+    if (!active) return;
+    await api(`/api/conversations/${active.id}/members`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: uid }),
+    }).catch(() => {});
+    const d = await api<{ members: typeof members }>(
+      `/api/conversations/${active.id}/members`).catch(() => null);
+    if (d) setMembers(d.members);
+  };
+
   const openConversation = async (c: Conversation) => {
     setActive(c);
     activeRef.current = c;
     setMsgQuery("");
     setMsgHits(null);
+    setMembersOpen(false);
+    api<{ ttl_seconds: number }>(`/api/conversations/${c.id}/ttl`)
+      .then((d) => setTtl(d.ttl_seconds)).catch(() => setTtl(0));
     setMessages([]);
     setTypingUsers(new Set());
     const data = await api<{ messages: Message[] }>(`/api/conversations/${c.id}/messages`);
@@ -513,7 +569,47 @@ export default function ChatPage() {
               <button className="secondary small" onClick={() => router.push(`/call/${active.id}?video=0`)}>
                 {t("audioCall")}
               </button>
+              <button
+                className={ttl > 0 ? "small" : "secondary small"}
+                title="Disappearing messages timer"
+                onClick={cycleTtl}
+              >
+                ⏳ {TTL_LABELS[ttl]}
+              </button>
+              <button className="secondary small" title="Members" onClick={loadMembers}>
+                👥
+              </button>
             </div>
+            {membersOpen && (
+              <div className="card" style={{ padding: 8 }}>
+                <div className="row">
+                  <strong style={{ fontSize: 13 }}>Members ({members.length})</strong>
+                  <div className="spacer" />
+                  <button className="secondary small" onClick={() => setMembersOpen(false)}>✕</button>
+                </div>
+                {members.map((m) => (
+                  <div key={m.id} className="row" style={{ fontSize: 13 }}>
+                    <span>{m.display_name} <span className="muted">@{m.username}</span></span>
+                    {m.role !== "member" && <span className="badge">{m.role}</span>}
+                    <div className="spacer" />
+                    {active.is_group && m.id !== getUserId() && m.role !== "owner" && (
+                      <button className="secondary small" onClick={() => removeMember(m.id)}>Remove</button>
+                    )}
+                  </div>
+                ))}
+                {active.is_group && hits.length > 0 && (
+                  <div className="col" style={{ marginTop: 6 }}>
+                    <div className="muted" style={{ fontSize: 12 }}>Add from search results:</div>
+                    {hits.filter((u) => !members.some((m) => m.id === u.id)).map((u) => (
+                      <button key={u.id} className="secondary small" style={{ textAlign: "start" }}
+                        onClick={() => addMemberToActive(u.id)}>
+                        + {u.display_name} (@{u.username})
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <input
               placeholder="Search in conversation…"
               value={msgQuery}
@@ -556,6 +652,12 @@ export default function ChatPage() {
                   <div className="row" style={{ marginTop: 4, gap: 6 }}>
                     {m.is_encrypted && <span title="end-to-end encrypted">🔒</span>}
                     {m.edited_at && <span style={{ fontSize: 10, opacity: 0.7 }}>(edited)</span>}
+                    {m.expires_at && (
+                      <span style={{ fontSize: 10, opacity: 0.7 }}
+                        title={`Disappears ${new Date(m.expires_at).toLocaleString()}`}>
+                        ⏳
+                      </span>
+                    )}
                     {m.sender_id === getUserId() && (
                       <>
                         <span style={{ fontSize: 10, opacity: 0.7 }}>{myLastRead(m) ? "✓✓" : "✓"}</span>

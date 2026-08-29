@@ -431,6 +431,43 @@ def social2_flow(alice_tok, bob_tok, conv):
     check("shared post appears in chat",
           any(f"post:{post_id}" in m["body"] for m in r.get("messages", [])), f"{s}")
 
+    # disappearing messages (TTL)
+    s, r = req("PUT", f"/api/conversations/{conv}/ttl", {"ttl_seconds": 999}, token=alice_tok)
+    check("invalid ttl rejected", s == 400, f"{s} {r}")
+    s, r = req("PUT", f"/api/conversations/{conv}/ttl", {"ttl_seconds": 3600}, token=alice_tok)
+    check("set ttl", s == 200 and r.get("ttl_seconds") == 3600, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/ttl", token=bob_tok)
+    check("get ttl", s == 200 and r.get("ttl_seconds") == 3600, f"{s} {r}")
+    s, r = req("POST", f"/api/posts/{post_id}/share", {"conversation_id": conv}, token=bob_tok)
+    check("share with ttl active", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=alice_tok)
+    ttl_msgs = [m for m in r.get("messages", []) if m.get("expires_at")]
+    check("new message has expires_at", len(ttl_msgs) >= 1, f"{r.get('messages', [])[:1]}")
+    old_msgs = [m for m in r.get("messages", []) if not m.get("expires_at")]
+    check("pre-ttl messages unchanged", len(old_msgs) >= 1, f"{s}")
+    # expire one manually; it must disappear from list + search
+    exp_id = ttl_msgs[0]["id"]
+    dburl = os.environ.get("DATABASE_URL",
+                           "postgres://chatapp:chatapp@localhost:5432/chatapp?sslmode=disable")
+    import subprocess as sp
+    sp.run(["psql", dburl, "-c",
+            f"UPDATE messages SET expires_at = now() - interval '1 minute' WHERE id='{exp_id}'"],
+           check=True, capture_output=True)
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=alice_tok)
+    check("expired message hidden from list",
+          all(m["id"] != exp_id for m in r.get("messages", [])), f"{s}")
+    s, r = req("GET", f"/api/conversations/{conv}/search?q=Shared", token=alice_tok)
+    check("expired message hidden from search",
+          all(m["id"] != exp_id for m in r.get("messages", [])), f"{s}")
+    s, r = req("PUT", f"/api/conversations/{conv}/ttl", {"ttl_seconds": 0}, token=alice_tok)
+    check("disable ttl", s == 200, f"{s} {r}")
+
+    # member list
+    s, r = req("GET", f"/api/conversations/{conv}/members", token=alice_tok)
+    check("members listed",
+          s == 200 and len(r.get("members", [])) == 2
+          and any(m["role"] == "owner" for m in r.get("members", [])), f"{s} {r}")
+
 
 def grant_superadmin(username):
     """Grant superadmin directly in the DB (test bootstrap; the product path is

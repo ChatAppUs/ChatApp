@@ -173,19 +173,23 @@ func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, medi
 	// Broadcast channels: only owner/admin may post.
 	var isChannel bool
 	var role string
+	var ttl int
 	_ = a.db.QueryRow(ctx,
-		`SELECT c.is_channel, m.role FROM conversations c
+		`SELECT c.is_channel, c.message_ttl_seconds, m.role FROM conversations c
 		 JOIN conversation_members m ON m.conversation_id = c.id AND m.user_id = $2
-		 WHERE c.id = $1`, convID, senderID).Scan(&isChannel, &role)
+		 WHERE c.id = $1`, convID, senderID).Scan(&isChannel, &ttl, &role)
 	if isChannel && role != "owner" && role != "admin" {
 		return
 	}
 	var msgID string
 	var createdAt time.Time
+	var expiresAt *time.Time
 	err := a.db.QueryRow(ctx,
-		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id)
-		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid) RETURNING id, created_at`,
-		convID, senderID, body, mediaURL, isEncrypted, replyTo).Scan(&msgID, &createdAt)
+		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id, expires_at)
+		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,
+		         CASE WHEN $7 > 0 THEN now() + make_interval(secs => $7) END)
+		 RETURNING id, created_at, expires_at`,
+		convID, senderID, body, mediaURL, isEncrypted, replyTo, ttl).Scan(&msgID, &createdAt, &expiresAt)
 	if err != nil {
 		return
 	}
@@ -199,19 +203,9 @@ func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, medi
 		"is_encrypted":    isEncrypted,
 		"reply_to":        replyTo,
 		"created_at":      createdAt,
+		"expires_at":      expiresAt,
 	})
-	rows, err := a.db.Query(ctx,
-		`SELECT user_id FROM conversation_members WHERE conversation_id = $1`, convID)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err == nil {
-			a.hub.sendTo(uid, payload)
-		}
-	}
+	a.fanoutConv(ctx, convID, payload)
 }
 
 func (a *App) isMember(ctx context.Context, convID, userID string) bool {
@@ -344,9 +338,10 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	 EXISTS(SELECT 1 FROM message_pins mp WHERE mp.message_id = m.id),
 		        COALESCE((SELECT json_object_agg(emoji, cnt) FROM (
 		          SELECT emoji, count(*) AS cnt FROM message_reactions WHERE message_id = m.id GROUP BY emoji
-		        ) r), '{}'::json)
+		        ) r), '{}'::json), m.expires_at
 		 FROM messages m JOIN users u ON u.id = m.sender_id
 		 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
+		   AND (m.expires_at IS NULL OR m.expires_at > now())
 		 ORDER BY m.created_at DESC LIMIT $2 OFFSET $3`, convID, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load messages")
@@ -366,6 +361,7 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		Pinned        bool             `json:"pinned"`
 		CreatedAt     time.Time        `json:"created_at"`
 		EditedAt      *time.Time       `json:"edited_at"`
+		ExpiresAt     *time.Time       `json:"expires_at"`
 		Reactions     map[string]int64 `json:"reactions"`
 	}
 	out := []msg{}
@@ -373,7 +369,8 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		var m msg
 		var reactions []byte
 		if err := rows.Scan(&m.ID, &m.SenderID, &m.Sender, &m.Body, &m.MediaURL, &m.IsEncrypted,
-			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &m.ForwardedFrom, &m.StoryID, &m.Pinned, &reactions); err == nil {
+			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &m.ForwardedFrom, &m.StoryID, &m.Pinned,
+			&reactions, &m.ExpiresAt); err == nil {
 			m.Reactions = map[string]int64{}
 			_ = json.Unmarshal(reactions, &m.Reactions)
 			out = append(out, m)
