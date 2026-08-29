@@ -11,6 +11,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [needs2FA, setNeeds2FA] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -21,14 +23,20 @@ export default function LoginPage() {
     try {
       const tokens = await api<Tokens>(
         "/api/auth/login",
-        { method: "POST", body: JSON.stringify({ identifier, password }) },
+        { method: "POST", body: JSON.stringify({ identifier, password, totp_code: totpCode }) },
         false
       );
       saveTokens(tokens);
       router.push("/");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("error"));
+      const msg = err instanceof Error ? err.message : t("error");
+      if (msg === "totp_required") {
+        setNeeds2FA(true);
+        setError("Enter the 6-digit code from your authenticator app");
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -46,6 +54,18 @@ export default function LoginPage() {
           <label>{t("password")}</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
+        {needs2FA && (
+          <div>
+            <label>2FA code</label>
+            <input
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value)}
+              maxLength={6}
+              inputMode="numeric"
+              required
+            />
+          </div>
+        )}
         {error && <div className="error-text">{error}</div>}
         <button type="submit" disabled={busy}>{busy ? t("loading") : t("login")}</button>
       </form>

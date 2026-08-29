@@ -15,3 +15,8 @@ target/
 .DS_Store
 uploads/
 data/
+
+# service binaries
+services/api/api
+services/security/security
+services/media-edge/media-edge

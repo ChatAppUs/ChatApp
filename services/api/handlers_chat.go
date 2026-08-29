@@ -77,6 +77,11 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 	c := &wsClient{userID: claims.Sub, conn: conn, send: make(chan []byte, 64)}
 	a.hub.add(c)
 	defer a.hub.remove(c)
+	// Presence: mark online now, stamp last seen on disconnect.
+	_, _ = a.db.Exec(r.Context(), `UPDATE users SET last_seen_at=now() WHERE id=$1`, c.userID)
+	defer func() {
+		_, _ = a.db.Exec(context.Background(), `UPDATE users SET last_seen_at=now() WHERE id=$1`, c.userID)
+	}()
 
 	go func() {
 		for msg := range c.send {
@@ -88,10 +93,12 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		var evt struct {
-			Type           string          `json:"type"` // message | signal
+			Type           string          `json:"type"` // message | signal | typing
 			ConversationID string          `json:"conversation_id"`
 			Body           string          `json:"body"`
 			MediaURL       string          `json:"media_url"`
+			IsEncrypted    bool            `json:"is_encrypted"`
+			ReplyTo        string          `json:"reply_to"`
 			Signal         json.RawMessage `json:"signal"` // WebRTC SDP/ICE payload
 		}
 		if err := conn.ReadJSON(&evt); err != nil {
@@ -99,13 +106,21 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		switch evt.Type {
 		case "message":
-			a.persistAndFanout(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL)
+			a.persistAndFanout(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL, evt.IsEncrypted, evt.ReplyTo)
 		case "signal":
 			// WebRTC call signaling: forward SDP offers/answers and ICE
 			// candidates to conversation members. Peer connections are
 			// established directly between clients (mesh); large meetings
 			// should front this with an SFU such as LiveKit.
 			a.fanoutSignal(r.Context(), c.userID, evt.ConversationID, evt.Signal)
+		case "typing":
+			// Ephemeral typing indicator; never persisted.
+			if a.isMember(r.Context(), evt.ConversationID, c.userID) {
+				payload, _ := json.Marshal(map[string]any{
+					"type": "typing", "conversation_id": evt.ConversationID, "user_id": c.userID,
+				})
+				a.fanoutToMembers(r.Context(), evt.ConversationID, payload, c.userID)
+			}
 		}
 	}
 }
@@ -137,19 +152,29 @@ func (a *App) fanoutSignal(ctx context.Context, senderID, convID string, signal 
 	}
 }
 
-func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, mediaURL string) {
+func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, mediaURL string, isEncrypted bool, replyTo string) {
 	if strings.TrimSpace(body) == "" && mediaURL == "" {
 		return
 	}
 	if !a.isMember(ctx, convID, senderID) {
 		return
 	}
+	// Broadcast channels: only owner/admin may post.
+	var isChannel bool
+	var role string
+	_ = a.db.QueryRow(ctx,
+		`SELECT c.is_channel, m.role FROM conversations c
+		 JOIN conversation_members m ON m.conversation_id = c.id AND m.user_id = $2
+		 WHERE c.id = $1`, convID, senderID).Scan(&isChannel, &role)
+	if isChannel && role != "owner" && role != "admin" {
+		return
+	}
 	var msgID string
 	var createdAt time.Time
 	err := a.db.QueryRow(ctx,
-		`INSERT INTO messages (conversation_id, sender_id, body, media_url)
-		 VALUES ($1,$2,$3,$4) RETURNING id, created_at`,
-		convID, senderID, body, mediaURL).Scan(&msgID, &createdAt)
+		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id)
+		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid) RETURNING id, created_at`,
+		convID, senderID, body, mediaURL, isEncrypted, replyTo).Scan(&msgID, &createdAt)
 	if err != nil {
 		return
 	}
@@ -160,6 +185,8 @@ func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, medi
 		"sender_id":       senderID,
 		"body":            body,
 		"media_url":       mediaURL,
+		"is_encrypted":    isEncrypted,
+		"reply_to":        replyTo,
 		"created_at":      createdAt,
 	})
 	rows, err := a.db.Query(ctx,
@@ -188,17 +215,26 @@ func (a *App) isMember(ctx context.Context, convID, userID string) bool {
 
 func (a *App) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		IsGroup   bool     `json:"is_group"`
-		Title     string   `json:"title"`
-		MemberIDs []string `json:"member_ids"`
+		IsGroup     bool     `json:"is_group"`
+		IsChannel   bool     `json:"is_channel"`
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		MemberIDs   []string `json:"member_ids"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	uid := userIDFrom(r)
-	if !req.IsGroup {
+	if req.IsChannel {
+		req.IsGroup = false
+	}
+	if !req.IsGroup && !req.IsChannel {
 		if len(req.MemberIDs) != 1 {
 			writeErr(w, http.StatusBadRequest, "direct conversation needs exactly one other member")
+			return
+		}
+		if a.isBlockedEither(r.Context(), uid, req.MemberIDs[0]) {
+			writeErr(w, http.StatusForbidden, "cannot message this user")
 			return
 		}
 		// reuse existing direct conversation if present
@@ -222,8 +258,8 @@ func (a *App) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	var convID string
 	if err := tx.QueryRow(r.Context(),
-		`INSERT INTO conversations (is_group, title, created_by) VALUES ($1,$2,$3) RETURNING id`,
-		req.IsGroup, req.Title, uid).Scan(&convID); err != nil {
+		`INSERT INTO conversations (is_group, is_channel, title, description, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+		req.IsGroup, req.IsChannel, req.Title, req.Description, uid).Scan(&convID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create conversation")
 		return
 	}
@@ -249,9 +285,13 @@ func (a *App) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleListConversations(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
-		`SELECT c.id, c.is_group, c.title, c.created_at,
+		`SELECT c.id, c.is_group, c.is_channel, c.title, c.created_at,
 		        (SELECT body FROM messages msg WHERE msg.conversation_id = c.id AND msg.deleted_at IS NULL
-		         ORDER BY msg.created_at DESC LIMIT 1) AS last_message
+		         ORDER BY msg.created_at DESC LIMIT 1) AS last_message,
+		        (SELECT count(*) FROM messages msg WHERE msg.conversation_id = c.id AND msg.deleted_at IS NULL
+		         AND msg.sender_id <> $1
+		         AND msg.created_at > COALESCE((SELECT last_read_at FROM conversation_reads r
+		          WHERE r.conversation_id = c.id AND r.user_id = $1), 'epoch')) AS unread
 		 FROM conversations c
 		 JOIN conversation_members m ON m.conversation_id = c.id AND m.user_id = $1
 		 ORDER BY c.created_at DESC LIMIT 100`, userIDFrom(r))
@@ -263,14 +303,16 @@ func (a *App) handleListConversations(w http.ResponseWriter, r *http.Request) {
 	type conv struct {
 		ID          string    `json:"id"`
 		IsGroup     bool      `json:"is_group"`
+		IsChannel   bool      `json:"is_channel"`
 		Title       string    `json:"title"`
 		CreatedAt   time.Time `json:"created_at"`
 		LastMessage *string   `json:"last_message"`
+		Unread      int64     `json:"unread"`
 	}
 	out := []conv{}
 	for rows.Next() {
 		var c conv
-		if err := rows.Scan(&c.ID, &c.IsGroup, &c.Title, &c.CreatedAt, &c.LastMessage); err == nil {
+		if err := rows.Scan(&c.ID, &c.IsGroup, &c.IsChannel, &c.Title, &c.CreatedAt, &c.LastMessage, &c.Unread); err == nil {
 			out = append(out, c)
 		}
 	}
@@ -285,7 +327,11 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, offset := pageParams(r)
 	rows, err := a.db.Query(r.Context(),
-		`SELECT m.id, m.sender_id, u.display_name, m.body, m.media_url, m.created_at
+		`SELECT m.id, m.sender_id, u.display_name, m.body, m.media_url, m.is_encrypted,
+		        COALESCE(m.reply_to_id::text,''), m.created_at, m.edited_at,
+		        COALESCE((SELECT json_object_agg(emoji, cnt) FROM (
+		          SELECT emoji, count(*) AS cnt FROM message_reactions WHERE message_id = m.id GROUP BY emoji
+		        ) r), '{}'::json)
 		 FROM messages m JOIN users u ON u.id = m.sender_id
 		 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
 		 ORDER BY m.created_at DESC LIMIT $2 OFFSET $3`, convID, limit, offset)
@@ -295,17 +341,25 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type msg struct {
-		ID        string    `json:"id"`
-		SenderID  string    `json:"sender_id"`
-		Sender    string    `json:"sender_name"`
-		Body      string    `json:"body"`
-		MediaURL  string    `json:"media_url"`
-		CreatedAt time.Time `json:"created_at"`
+		ID          string            `json:"id"`
+		SenderID    string            `json:"sender_id"`
+		Sender      string            `json:"sender_name"`
+		Body        string            `json:"body"`
+		MediaURL    string            `json:"media_url"`
+		IsEncrypted bool              `json:"is_encrypted"`
+		ReplyTo     string            `json:"reply_to"`
+		CreatedAt   time.Time         `json:"created_at"`
+		EditedAt    *time.Time        `json:"edited_at"`
+		Reactions   map[string]int64  `json:"reactions"`
 	}
 	out := []msg{}
 	for rows.Next() {
 		var m msg
-		if err := rows.Scan(&m.ID, &m.SenderID, &m.Sender, &m.Body, &m.MediaURL, &m.CreatedAt); err == nil {
+		var reactions []byte
+		if err := rows.Scan(&m.ID, &m.SenderID, &m.Sender, &m.Body, &m.MediaURL, &m.IsEncrypted,
+			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &reactions); err == nil {
+			m.Reactions = map[string]int64{}
+			_ = json.Unmarshal(reactions, &m.Reactions)
 			out = append(out, m)
 		}
 	}

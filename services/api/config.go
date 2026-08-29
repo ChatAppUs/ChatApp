@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 )
@@ -25,6 +26,7 @@ type Config struct {
 	StripeSecret     string
 	SumsubAppToken   string
 	SumsubSecretKey  string
+	CreatorRPM       float64 // creator revenue per 1000 views, USD
 }
 
 func getenv(key, def string) string {
@@ -55,5 +57,12 @@ func loadConfig() Config {
 		StripeSecret:    os.Getenv("STRIPE_SECRET_KEY"),
 		SumsubAppToken:  os.Getenv("SUMSUB_APP_TOKEN"),
 		SumsubSecretKey: os.Getenv("SUMSUB_SECRET_KEY"),
+		CreatorRPM:      atof(getenv("CREATOR_RPM", "0.50")),
 	}
+}
+
+func atof(s string) float64 {
+	var f float64
+	_, _ = fmt.Sscanf(s, "%g", &f)
+	return f
 }

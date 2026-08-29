@@ -22,10 +22,15 @@ export default function Composer({
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [pollMode, setPollMode] = useState(false);
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const activePollOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+
   const submit = async () => {
-    if (!body.trim() && !fileRef.current?.files?.length) return;
+    const hasPoll = pollMode && activePollOptions.length >= 2;
+    if (!body.trim() && !fileRef.current?.files?.length && !hasPoll) return;
     setBusy(true);
     setError("");
     try {
@@ -37,9 +42,17 @@ export default function Composer({
       }
       await api("/api/posts", {
         method: "POST",
-        body: JSON.stringify({ type, body, media, visibility: "public" }),
+        body: JSON.stringify({
+          type,
+          body,
+          media,
+          visibility: "public",
+          ...(hasPoll ? { poll_options: activePollOptions.slice(0, 4) } : {}),
+        }),
       });
       setBody("");
+      setPollMode(false);
+      setPollOptions(["", ""]);
       if (fileRef.current) fileRef.current.value = "";
       onPosted?.();
     } catch (e) {
@@ -56,6 +69,29 @@ export default function Composer({
         onChange={(e) => setBody(e.target.value)}
         placeholder={type === "story" ? t("story") : type === "reel" ? t("reel") : t("whatsOnYourMind")}
       />
+      {pollMode && (
+        <div className="col" style={{ marginTop: 8 }}>
+          {pollOptions.map((opt, i) => (
+            <input
+              key={i}
+              value={opt}
+              maxLength={80}
+              placeholder={`Option ${i + 1}`}
+              onChange={(e) =>
+                setPollOptions((prev) => prev.map((p, j) => (j === i ? e.target.value : p)))
+              }
+            />
+          ))}
+          {pollOptions.length < 4 && (
+            <button
+              className="secondary small"
+              onClick={() => setPollOptions((prev) => [...prev, ""])}
+            >
+              + Add option
+            </button>
+          )}
+        </div>
+      )}
       <div className="row" style={{ marginTop: 8 }}>
         <input
           ref={fileRef}
@@ -65,6 +101,14 @@ export default function Composer({
           style={{ fontSize: 12 }}
           aria-label={t("uploadMedia")}
         />
+        {type === "post" && (
+          <button
+            className={pollMode ? "small" : "secondary small"}
+            onClick={() => setPollMode((v) => !v)}
+          >
+            📊 Poll
+          </button>
+        )}
         <div className="spacer" />
         <button onClick={submit} disabled={busy}>
           {busy ? t("loading") : t("post")}

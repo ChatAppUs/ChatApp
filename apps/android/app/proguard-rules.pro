@@ -1,0 +1,3 @@
+-keep class org.webrtc.** { *; }
+-keep class com.chatapp.data.** { *; }
+-dontwarn org.webrtc.**

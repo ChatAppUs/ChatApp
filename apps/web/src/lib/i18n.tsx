@@ -23,6 +23,7 @@ const en: Dict = {
   reels: "Reels",
   chat: "Chat",
   wallet: "Wallet",
+  creator: "Creator",
   ads: "Ads",
   admin: "Admin",
   login: "Log in",
@@ -110,7 +111,7 @@ const en: Dict = {
 
 const es: Dict = {
   ...en,
-  feed: "Inicio", reels: "Reels", chat: "Chat", wallet: "Billetera", ads: "Anuncios",
+  feed: "Inicio", reels: "Reels", chat: "Chat", wallet: "Billetera", creator: "Creador", ads: "Anuncios",
   admin: "Admin", login: "Iniciar sesión", logout: "Cerrar sesión", register: "Crear cuenta",
   username: "Usuario", email: "Correo", phone: "Teléfono", password: "Contraseña",
   displayName: "Nombre visible", forgotPassword: "¿Olvidaste tu contraseña?",
@@ -127,7 +128,7 @@ const es: Dict = {
 
 const fr: Dict = {
   ...en,
-  feed: "Fil", chat: "Discussion", wallet: "Portefeuille", ads: "Publicités",
+  feed: "Fil", chat: "Discussion", wallet: "Portefeuille", creator: "Créateur", ads: "Publicités",
   login: "Connexion", logout: "Déconnexion", register: "Créer un compte",
   username: "Nom d'utilisateur", email: "E-mail", phone: "Téléphone", password: "Mot de passe",
   forgotPassword: "Mot de passe oublié ?", whatsOnYourMind: "Quoi de neuf ?",
@@ -138,7 +139,7 @@ const fr: Dict = {
 
 const de: Dict = {
   ...en,
-  feed: "Startseite", chat: "Chat", wallet: "Wallet", ads: "Werbung",
+  feed: "Startseite", chat: "Chat", wallet: "Wallet", creator: "Creator", ads: "Werbung",
   login: "Anmelden", logout: "Abmelden", register: "Konto erstellen",
   password: "Passwort", post: "Posten", like: "Gefällt mir", comment: "Kommentieren",
   send: "Senden", follow: "Folgen", unfollow: "Entfolgen", loading: "Laden…",
@@ -146,7 +147,7 @@ const de: Dict = {
 
 const pt: Dict = {
   ...en,
-  feed: "Início", chat: "Conversas", wallet: "Carteira", ads: "Anúncios",
+  feed: "Início", chat: "Conversas", wallet: "Carteira", creator: "Criador", ads: "Anúncios",
   login: "Entrar", logout: "Sair", register: "Criar conta", password: "Senha",
   post: "Publicar", like: "Curtir", comment: "Comentar", send: "Enviar",
   follow: "Seguir", unfollow: "Deixar de seguir", loading: "Carregando…",
@@ -154,7 +155,7 @@ const pt: Dict = {
 
 const ar: Dict = {
   ...en,
-  feed: "الرئيسية", reels: "ريلز", chat: "الدردشة", wallet: "المحفظة", ads: "الإعلانات",
+  feed: "الرئيسية", reels: "ريلز", chat: "الدردشة", wallet: "المحفظة", creator: "منشئ المحتوى", ads: "الإعلانات",
   admin: "الإدارة", login: "تسجيل الدخول", logout: "تسجيل الخروج", register: "إنشاء حساب",
   username: "اسم المستخدم", email: "البريد الإلكتروني", phone: "الهاتف", password: "كلمة المرور",
   whatsOnYourMind: "بماذا تفكر؟", post: "نشر", like: "إعجاب", comment: "تعليق",
@@ -164,7 +165,7 @@ const ar: Dict = {
 
 const hi: Dict = {
   ...en,
-  feed: "फ़ीड", chat: "चैट", wallet: "वॉलेट", ads: "विज्ञापन",
+  feed: "फ़ीड", chat: "चैट", wallet: "वॉलेट", creator: "क्रिएटर", ads: "विज्ञापन",
   login: "लॉग इन", logout: "लॉग आउट", register: "खाता बनाएं", password: "पासवर्ड",
   post: "पोस्ट", like: "पसंद", comment: "टिप्पणी", send: "भेजें",
   follow: "फ़ॉलो", unfollow: "अनफ़ॉलो", loading: "लोड हो रहा है…",
@@ -172,7 +173,7 @@ const hi: Dict = {
 
 const zh: Dict = {
   ...en,
-  feed: "动态", reels: "短视频", chat: "聊天", wallet: "钱包", ads: "广告",
+  feed: "动态", reels: "短视频", chat: "聊天", wallet: "钱包", creator: "创作者", ads: "广告",
   admin: "管理", login: "登录", logout: "退出", register: "注册",
   username: "用户名", email: "邮箱", phone: "手机号", password: "密码",
   post: "发布", like: "赞", comment: "评论", share: "分享", send: "发送",

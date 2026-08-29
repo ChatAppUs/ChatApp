@@ -51,9 +51,11 @@ export interface PublicUser {
 export interface Conversation {
   id: string;
   is_group: boolean;
+  is_channel: boolean;
   title: string;
   created_at: string;
   last_message: string | null;
+  unread: number;
 }
 
 export interface Message {
@@ -62,7 +64,31 @@ export interface Message {
   sender_name: string;
   body: string;
   media_url: string;
+  is_encrypted?: boolean;
+  reply_to?: string;
   created_at: string;
+  edited_at?: string | null;
+  reactions?: Record<string, number>;
+}
+
+export interface Channel {
+  id: string;
+  title: string;
+  description: string;
+  members: number;
+  joined: boolean;
+}
+
+export interface TrendingTag {
+  tag: string;
+  count: number;
+}
+
+export interface PollOption {
+  id: string;
+  label: string;
+  votes: number;
+  voted_by_me: boolean;
 }
 
 export interface WalletAccount {

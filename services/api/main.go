@@ -125,6 +125,48 @@ func main() {
 	mux.HandleFunc("POST /api/conversations", app.requireAuth(app.handleCreateConversation))
 	mux.HandleFunc("GET /api/conversations", app.requireAuth(app.handleListConversations))
 	mux.HandleFunc("GET /api/conversations/{id}/messages", app.requireAuth(app.handleListMessages))
+	mux.HandleFunc("POST /api/conversations/{id}/read", app.requireAuth(app.handleMarkRead))
+	mux.HandleFunc("GET /api/conversations/{id}/reads", app.requireAuth(app.handleReadState))
+	mux.HandleFunc("POST /api/conversations/{id}/members", app.requireAuth(app.handleAddMember))
+	mux.HandleFunc("DELETE /api/conversations/{id}/members/{uid}", app.requireAuth(app.handleRemoveMember))
+	mux.HandleFunc("POST /api/messages/{id}/edit", app.requireAuth(app.handleEditMessage))
+	mux.HandleFunc("DELETE /api/messages/{id}", app.requireAuth(app.handleDeleteMessage))
+	mux.HandleFunc("POST /api/messages/{id}/reactions", app.requireAuth(app.handleReactMessage))
+	mux.HandleFunc("DELETE /api/messages/{id}/reactions", app.requireAuth(app.handleUnreactMessage))
+
+	// channels (Telegram-style broadcast)
+	mux.HandleFunc("GET /api/channels", app.requireAuth(app.handleListChannels))
+	mux.HandleFunc("POST /api/channels/{id}/subscribe", app.requireAuth(app.handleChannelSubscribe))
+	mux.HandleFunc("DELETE /api/channels/{id}/subscribe", app.requireAuth(app.handleChannelUnsubscribe))
+
+	// presence
+	mux.HandleFunc("GET /api/users/{id}/presence", app.requireAuth(app.handlePresence))
+
+	// polls, hashtags, bookmarks, reposts
+	mux.HandleFunc("POST /api/posts/{id}/vote", app.requireAuth(app.handleVotePoll))
+	mux.HandleFunc("GET /api/posts/{id}/poll", app.requireAuth(app.handleGetPoll))
+	mux.HandleFunc("GET /api/hashtags/trending", app.requireAuth(app.handleTrending))
+	mux.HandleFunc("GET /api/hashtags/{tag}/posts", app.requireAuth(app.handleHashtagPosts))
+	mux.HandleFunc("POST /api/posts/{id}/bookmark", app.requireAuth(app.handleBookmark))
+	mux.HandleFunc("DELETE /api/posts/{id}/bookmark", app.requireAuth(app.handleUnbookmark))
+	mux.HandleFunc("GET /api/bookmarks", app.requireAuth(app.handleListBookmarks))
+	mux.HandleFunc("POST /api/posts/{id}/repost", app.requireAuth(app.handleRepost))
+
+	// privacy blocks
+	mux.HandleFunc("POST /api/users/{id}/block", app.requireAuth(app.handleBlock))
+	mux.HandleFunc("DELETE /api/users/{id}/block", app.requireAuth(app.handleUnblock))
+
+	// 2FA + E2EE keys
+	mux.HandleFunc("POST /api/auth/2fa/setup", app.requireAuth(app.handle2FASetup))
+	mux.HandleFunc("POST /api/auth/2fa/enable", app.requireAuth(app.handle2FAEnable))
+	mux.HandleFunc("POST /api/auth/2fa/disable", app.requireAuth(app.handle2FADisable))
+	mux.HandleFunc("PUT /api/e2e/key", app.requireAuth(app.handleE2EPublishKey))
+	mux.HandleFunc("GET /api/e2e/keys", app.requireAuth(app.handleE2EGetKeys))
+
+	// creator monetization
+	mux.HandleFunc("GET /api/creator/earnings", app.requireAuth(app.handleCreatorEarnings))
+	mux.HandleFunc("POST /api/creator/payouts", app.requireAuth(app.handleCreatorPayout))
+	mux.HandleFunc("GET /api/creator/payouts", app.requireAuth(app.handleCreatorPayouts))
 
 	// wallet & KYC
 	mux.HandleFunc("GET /api/wallet/assets", app.requireAuth(app.handleWalletAssets))
@@ -159,6 +201,8 @@ func main() {
 	mux.HandleFunc("GET /api/admin/ads", app.requireRole("superadmin", "ads_reviewer")(app.handleAdminListAds))
 	mux.HandleFunc("POST /api/admin/ads/{id}/review", app.requireRole("superadmin", "ads_reviewer")(app.handleAdminReviewAd))
 	mux.HandleFunc("POST /api/admin/roles", app.requireRole("superadmin")(app.handleAdminGrantRole))
+	mux.HandleFunc("GET /api/admin/payouts", app.requireRole("superadmin", "finance")(app.handleAdminListPayouts))
+	mux.HandleFunc("POST /api/admin/payouts/{id}/review", app.requireRole("superadmin", "finance")(app.handleAdminReviewPayout))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

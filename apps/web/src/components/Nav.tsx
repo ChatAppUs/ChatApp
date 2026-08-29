@@ -29,8 +29,13 @@ export default function Nav() {
           <Link className="navlink" href="/">{t("feed")}</Link>
           <Link className="navlink" href="/reels">{t("reels")}</Link>
           <Link className="navlink" href="/chat">{t("chat")}</Link>
+          <Link className="navlink" href="/channels">📢</Link>
+          <Link className="navlink" href="/trending">#</Link>
+          <Link className="navlink" href="/bookmarks">★</Link>
+          <Link className="navlink" href="/creator">{t("creator")}</Link>
           <Link className="navlink" href="/wallet">{t("wallet")}</Link>
           <Link className="navlink" href="/ads">{t("ads")}</Link>
+          <Link className="navlink" href="/settings">⚙</Link>
           <Link className="navlink" href="/admin">{t("admin")}</Link>
         </>
       )}

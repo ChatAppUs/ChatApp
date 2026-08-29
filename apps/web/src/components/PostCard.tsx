@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { Post, Comment } from "@/lib/types";
+import type { Post, Comment, PollOption } from "@/lib/types";
 
 export default function PostCard({ post, onChanged }: { post: Post; onChanged?: () => void }) {
   const { t } = useI18n();
@@ -14,6 +14,45 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentCount, setCommentCount] = useState(post.comment_count);
   const [draft, setDraft] = useState("");
+  const [bookmarked, setBookmarked] = useState(false);
+  const [poll, setPoll] = useState<PollOption[]>([]);
+  const [pollTotal, setPollTotal] = useState(0);
+
+  useEffect(() => {
+    api<{ options: PollOption[]; total_votes: number }>(`/api/posts/${post.id}/poll`)
+      .then((d) => {
+        if (d.options.length > 0) {
+          setPoll(d.options);
+          setPollTotal(d.total_votes);
+        }
+      })
+      .catch(() => {});
+  }, [post.id]);
+
+  const vote = async (optionId: string) => {
+    await api(`/api/posts/${post.id}/vote`, {
+      method: "POST",
+      body: JSON.stringify({ option_id: optionId }),
+    }).catch(() => {});
+    const d = await api<{ options: PollOption[]; total_votes: number }>(`/api/posts/${post.id}/poll`);
+    setPoll(d.options);
+    setPollTotal(d.total_votes);
+  };
+
+  const repost = async () => {
+    await api(`/api/posts/${post.id}/repost`, { method: "POST", body: "{}" }).catch(() => {});
+    onChanged?.();
+  };
+
+  const toggleBookmark = async () => {
+    if (bookmarked) {
+      await api(`/api/posts/${post.id}/bookmark`, { method: "DELETE" }).catch(() => {});
+      setBookmarked(false);
+    } else {
+      await api(`/api/posts/${post.id}/bookmark`, { method: "POST", body: "{}" }).catch(() => {});
+      setBookmarked(true);
+    }
+  };
 
   const toggleLike = async () => {
     try {
@@ -71,6 +110,28 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
         </div>
       </div>
       {post.body && <p style={{ whiteSpace: "pre-wrap" }}>{post.body}</p>}
+      {poll.length > 0 && (
+        <div className="col" style={{ marginTop: 8 }}>
+          {poll.map((o) => {
+            const pct = pollTotal > 0 ? Math.round((o.votes / pollTotal) * 100) : 0;
+            return (
+              <button
+                key={o.id}
+                className={o.voted_by_me ? "small" : "secondary small"}
+                style={{ textAlign: "start", position: "relative", overflow: "hidden" }}
+                onClick={() => vote(o.id)}
+              >
+                <span style={{
+                  position: "absolute", inset: 0, width: `${pct}%`,
+                  background: "rgba(79,124,255,0.25)",
+                }} />
+                <span style={{ position: "relative" }}>{o.label} — {pct}% ({o.votes})</span>
+              </button>
+            );
+          })}
+          <span className="muted">{pollTotal} votes</span>
+        </div>
+      )}
       {post.media.map((m, i) =>
         m.kind === "video" ? (
           <video key={i} className="post-media" src={m.url} controls playsInline />
@@ -86,6 +147,12 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
         </button>
         <button className="secondary small" onClick={loadComments}>
           {t("comments")} · {commentCount}
+        </button>
+        <button className="secondary small" onClick={repost}>
+          🔁 {t("share")} · {post.share_count}
+        </button>
+        <button className={bookmarked ? "small" : "secondary small"} onClick={toggleBookmark}>
+          {bookmarked ? "★" : "☆"}
         </button>
       </div>
       {showComments && (

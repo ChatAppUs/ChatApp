@@ -107,6 +107,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 type loginReq struct {
 	Identifier string `json:"identifier"` // username, email or phone
 	Password   string `json:"password"`
+	TOTPCode   string `json:"totp_code"` // required when 2FA is enabled
 }
 
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -116,10 +117,12 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimSpace(req.Identifier)
 	var userID, hash, status string
+	var totpSecret *string
+	var totpEnabled bool
 	err := a.db.QueryRow(r.Context(),
-		`SELECT id, password_hash, status FROM users
+		`SELECT id, password_hash, status, totp_secret, totp_enabled FROM users
 		 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
-		Scan(&userID, &hash, &status)
+		Scan(&userID, &hash, &status, &totpSecret, &totpEnabled)
 	if errors.Is(err, pgx.ErrNoRows) || !verifyPassword(req.Password, hash) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -131,6 +134,16 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if status != "active" {
 		writeErr(w, http.StatusForbidden, "account is "+status)
 		return
+	}
+	if totpEnabled && totpSecret != nil {
+		if req.TOTPCode == "" {
+			writeErr(w, http.StatusUnauthorized, "totp_required")
+			return
+		}
+		if !verifyTOTP(*totpSecret, req.TOTPCode, time.Now()) {
+			writeErr(w, http.StatusUnauthorized, "invalid 2FA code")
+			return
+		}
 	}
 	tokens, err := a.issueTokens(r.Context(), userID, r.UserAgent(), clientIP(r))
 	if err != nil {

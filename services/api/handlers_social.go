@@ -50,10 +50,12 @@ func pageParams(r *http.Request) (limit, offset int) {
 
 func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type       string    `json:"type"` // post | reel | story
-		Body       string    `json:"body"`
-		Visibility string    `json:"visibility"`
-		Media      []mediaIn `json:"media"`
+		Type        string    `json:"type"` // post | reel | story
+		Body        string    `json:"body"`
+		Visibility  string    `json:"visibility"`
+		Media       []mediaIn `json:"media"`
+		PollOptions []string  `json:"poll_options"` // 2-4 options turns the post into a poll
+		RepostOf    string    `json:"repost_of"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -72,12 +74,16 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid visibility")
 		return
 	}
-	if strings.TrimSpace(req.Body) == "" && len(req.Media) == 0 {
-		writeErr(w, http.StatusBadRequest, "post must have text or media")
+	if strings.TrimSpace(req.Body) == "" && len(req.Media) == 0 && len(req.PollOptions) == 0 {
+		writeErr(w, http.StatusBadRequest, "post must have text, media or a poll")
 		return
 	}
 	if len(req.Media) > 10 {
 		writeErr(w, http.StatusBadRequest, "max 10 media items")
+		return
+	}
+	if len(req.PollOptions) > 0 && (len(req.PollOptions) < 2 || len(req.PollOptions) > 4) {
+		writeErr(w, http.StatusBadRequest, "polls need 2-4 options")
 		return
 	}
 	uid := userIDFrom(r)
@@ -94,12 +100,37 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		expires = &t
 	}
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO posts (author_id, type, body, visibility, expires_at)
-		 VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		uid, req.Type, req.Body, req.Visibility, expires).Scan(&postID)
+		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of)
+		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid) RETURNING id`,
+		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
+	}
+	for i, label := range req.PollOptions {
+		if strings.TrimSpace(label) == "" {
+			writeErr(w, http.StatusBadRequest, "poll options cannot be empty")
+			return
+		}
+		if _, err := tx.Exec(r.Context(),
+			`INSERT INTO poll_options (post_id, idx, label) VALUES ($1,$2,$3)`,
+			postID, i, label); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to create poll")
+			return
+		}
+	}
+	for _, tag := range extractHashtags(req.Body) {
+		if _, err := tx.Exec(r.Context(),
+			`INSERT INTO hashtags (tag, use_count, last_used) VALUES ($1,1,now())
+			 ON CONFLICT (tag) DO UPDATE SET use_count = hashtags.use_count + 1, last_used = now()`, tag); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
+			return
+		}
+		if _, err := tx.Exec(r.Context(),
+			`INSERT INTO post_hashtags (post_id, tag) VALUES ($1,$2) ON CONFLICT DO NOTHING`, postID, tag); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
+			return
+		}
 	}
 	for i, m := range req.Media {
 		if m.Kind != "image" && m.Kind != "video" && m.Kind != "audio" {
@@ -408,6 +439,10 @@ func (a *App) handleFollow(w http.ResponseWriter, r *http.Request) {
 	uid, target := userIDFrom(r), r.PathValue("id")
 	if uid == target {
 		writeErr(w, http.StatusBadRequest, "cannot follow yourself")
+		return
+	}
+	if a.isBlockedEither(r.Context(), uid, target) {
+		writeErr(w, http.StatusForbidden, "cannot follow this user")
 		return
 	}
 	_, err := a.db.Exec(r.Context(),

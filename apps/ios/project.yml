@@ -1,0 +1,39 @@
+# Generate the Xcode project with:  xcodegen generate
+# (brew install xcodegen)
+name: ChatApp
+options:
+  bundleIdPrefix: com.chatapp
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    from: "125.0.0"
+targets:
+  ChatApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: ChatApp/Sources
+      - path: ChatApp/Resources
+    dependencies:
+      - package: WebRTC
+        product: WebRTC
+    info:
+      path: ChatApp/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: ChatApp
+        UILaunchScreen_Generation: true
+        NSCameraUsageDescription: ChatApp needs the camera for video calls and stories.
+        NSMicrophoneUsageDescription: ChatApp needs the microphone for calls and voice messages.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chatapp.ios
+        SWIFT_VERSION: "5.10"
+        # Override for your environment:
+        CHATAPP_API_BASE: http://localhost:8080
+        CHATAPP_WS_BASE: ws://localhost:8080

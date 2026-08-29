@@ -2,21 +2,12 @@
   "name": "chatapp-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "ChatApp desktop client (Electron wrapper around the web app)",
-  "main": "main.js",
+  "description": "ChatApp desktop client (Tauri / Rust shell around the web app)",
   "scripts": {
-    "start": "electron .",
-    "dist": "electron-builder"
+    "dev": "tauri dev",
+    "build": "tauri build"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
-  },
-  "build": {
-    "appId": "dev.chatapp.desktop",
-    "productName": "ChatApp",
-    "linux": { "target": ["AppImage"] },
-    "win": { "target": ["nsis"] },
-    "mac": { "target": ["dmg"] }
+    "@tauri-apps/cli": "^2.1.0"
   }
 }
