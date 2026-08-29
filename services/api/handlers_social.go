@@ -19,21 +19,32 @@ type mediaIn struct {
 }
 
 type postOut struct {
-	ID           string    `json:"id"`
-	AuthorID     string    `json:"author_id"`
-	AuthorName   string    `json:"author_name"`
-	AuthorUser   string    `json:"author_username"`
-	AuthorAvatar string    `json:"author_avatar"`
-	Type         string    `json:"type"`
-	Body         string    `json:"body"`
-	Visibility   string    `json:"visibility"`
-	LikeCount    int       `json:"like_count"`
-	CommentCount int       `json:"comment_count"`
-	ShareCount   int       `json:"share_count"`
-	ViewCount    int64     `json:"view_count"`
-	LikedByMe    bool      `json:"liked_by_me"`
-	Media        []mediaIn `json:"media"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string      `json:"id"`
+	AuthorID     string      `json:"author_id"`
+	AuthorName   string      `json:"author_name"`
+	AuthorUser   string      `json:"author_username"`
+	AuthorAvatar string      `json:"author_avatar"`
+	Type         string      `json:"type"`
+	Body         string      `json:"body"`
+	Visibility   string      `json:"visibility"`
+	LikeCount    int         `json:"like_count"`
+	CommentCount int         `json:"comment_count"`
+	ShareCount   int         `json:"share_count"`
+	ViewCount    int64       `json:"view_count"`
+	LikedByMe    bool        `json:"liked_by_me"`
+	Media        []mediaIn   `json:"media"`
+	CreatedAt    time.Time   `json:"created_at"`
+	RepostOf     string      `json:"repost_of"`
+	ThreadParent string      `json:"thread_parent_id"`
+	EditedAt     *time.Time  `json:"edited_at"`
+	Quoted       *quotedPost `json:"quoted,omitempty"`
+}
+
+type quotedPost struct {
+	ID         string `json:"id"`
+	AuthorName string `json:"author_name"`
+	AuthorUser string `json:"author_username"`
+	Body       string `json:"body"`
 }
 
 func pageParams(r *http.Request) (limit, offset int) {
@@ -50,12 +61,13 @@ func pageParams(r *http.Request) (limit, offset int) {
 
 func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type        string    `json:"type"` // post | reel | story
-		Body        string    `json:"body"`
-		Visibility  string    `json:"visibility"`
-		Media       []mediaIn `json:"media"`
-		PollOptions []string  `json:"poll_options"` // 2-4 options turns the post into a poll
-		RepostOf    string    `json:"repost_of"`
+		Type         string    `json:"type"` // post | reel | story
+		Body         string    `json:"body"`
+		Visibility   string    `json:"visibility"`
+		Media        []mediaIn `json:"media"`
+		PollOptions  []string  `json:"poll_options"` // 2-4 options turns the post into a poll
+		RepostOf     string    `json:"repost_of"`
+		ThreadParent string    `json:"thread_parent_id"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -100,9 +112,9 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		expires = &t
 	}
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of)
-		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid) RETURNING id`,
-		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf).Scan(&postID)
+		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id)
+                 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid) RETURNING id`,
+		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
@@ -122,7 +134,7 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	for _, tag := range extractHashtags(req.Body) {
 		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO hashtags (tag, use_count, last_used) VALUES ($1,1,now())
-			 ON CONFLICT (tag) DO UPDATE SET use_count = hashtags.use_count + 1, last_used = now()`, tag); err != nil {
+                         ON CONFLICT (tag) DO UPDATE SET use_count = hashtags.use_count + 1, last_used = now()`, tag); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
 			return
 		}
@@ -139,7 +151,7 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO post_media (post_id, kind, url, thumb_url, width, height, duration_s, position)
-			 VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,0),$8)`,
+                         VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,0),$8)`,
 			postID, m.Kind, m.URL, m.ThumbURL, m.Width, m.Height, m.DurationS, i); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to attach media")
 			return
@@ -155,6 +167,7 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 const postSelect = `
 SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url, p.type, p.body, p.visibility,
        p.like_count, p.comment_count, p.share_count, p.view_count, p.created_at,
+       COALESCE(p.repost_of::text,''), COALESCE(p.thread_parent_id::text,''), p.edited_at,
        EXISTS(SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $1)
 FROM posts p JOIN users u ON u.id = p.author_id`
 
@@ -170,7 +183,7 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 		var p postOut
 		if err := rows.Scan(&p.ID, &p.AuthorID, &p.AuthorName, &p.AuthorUser, &p.AuthorAvatar,
 			&p.Type, &p.Body, &p.Visibility, &p.LikeCount, &p.CommentCount, &p.ShareCount,
-			&p.ViewCount, &p.CreatedAt, &p.LikedByMe); err != nil {
+			&p.ViewCount, &p.CreatedAt, &p.RepostOf, &p.ThreadParent, &p.EditedAt, &p.LikedByMe); err != nil {
 			return nil, err
 		}
 		p.Media = []mediaIn{}
@@ -182,7 +195,7 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 	}
 	mrows, err := a.db.Query(ctx,
 		`SELECT post_id, kind, url, thumb_url, COALESCE(width,0), COALESCE(height,0), COALESCE(duration_s,0)
-		 FROM post_media WHERE post_id = ANY($1) ORDER BY position`, ids)
+                 FROM post_media WHERE post_id = ANY($1) ORDER BY position`, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +212,32 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 	for i := range out {
 		out[i].Media = byPost[out[i].ID]
 	}
+	var quoteIDs []any
+	for _, p := range out {
+		if p.RepostOf != "" {
+			quoteIDs = append(quoteIDs, p.RepostOf)
+		}
+	}
+	if len(quoteIDs) > 0 {
+		qrows, err := a.db.Query(ctx,
+			`SELECT q.id, qu.display_name, qu.username, q.body
+                         FROM posts q JOIN users qu ON qu.id = q.author_id WHERE q.id = ANY($1)`, quoteIDs)
+		if err == nil {
+			defer qrows.Close()
+			byID := map[string]*quotedPost{}
+			for qrows.Next() {
+				var q quotedPost
+				if err := qrows.Scan(&q.ID, &q.AuthorName, &q.AuthorUser, &q.Body); err == nil {
+					byID[q.ID] = &q
+				}
+			}
+			for i := range out {
+				if q, ok := byID[out[i].RepostOf]; ok {
+					out[i].Quoted = q
+				}
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -206,12 +245,12 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	limit, offset := pageParams(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
-		WHERE p.deleted_at IS NULL AND p.type = 'post'
-		  AND (p.visibility = 'public'
-		       OR p.author_id = $1
-		       OR (p.visibility = 'followers' AND EXISTS(
-		             SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)))
-		ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, uid, limit, offset)
+                WHERE p.deleted_at IS NULL AND p.type = 'post'
+                  AND (p.visibility = 'public'
+                       OR p.author_id = $1
+                       OR (p.visibility = 'followers' AND EXISTS(
+                             SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)))
+                ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, uid, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load feed")
 		return
@@ -223,8 +262,8 @@ func (a *App) handleReels(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	limit, offset := pageParams(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
-		WHERE p.deleted_at IS NULL AND p.type = 'reel' AND p.visibility = 'public'
-		ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, uid, limit, offset)
+                WHERE p.deleted_at IS NULL AND p.type = 'reel' AND p.visibility = 'public'
+                ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, uid, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load reels")
 		return
@@ -235,12 +274,12 @@ func (a *App) handleReels(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleStories(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
-		WHERE p.deleted_at IS NULL AND p.type = 'story'
-		  AND (p.expires_at IS NULL OR p.expires_at > now())
-		  AND (p.author_id = $1 OR EXISTS(
-		        SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)
-		       OR p.visibility = 'public')
-		ORDER BY p.created_at DESC LIMIT 100`, uid)
+                WHERE p.deleted_at IS NULL AND p.type = 'story'
+                  AND (p.expires_at IS NULL OR p.expires_at > now())
+                  AND (p.author_id = $1 OR EXISTS(
+                        SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)
+                       OR p.visibility = 'public')
+                ORDER BY p.created_at DESC LIMIT 100`, uid)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load stories")
 		return
@@ -253,8 +292,8 @@ func (a *App) handleUserPosts(w http.ResponseWriter, r *http.Request) {
 	target := r.PathValue("id")
 	limit, offset := pageParams(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
-		WHERE p.deleted_at IS NULL AND p.author_id = $2 AND p.type <> 'story'
-		ORDER BY p.created_at DESC LIMIT $3 OFFSET $4`, uid, target, limit, offset)
+                WHERE p.deleted_at IS NULL AND p.author_id = $2 AND p.type <> 'story'
+                ORDER BY p.created_at DESC LIMIT $3 OFFSET $4`, uid, target, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load posts")
 		return
@@ -361,7 +400,7 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	var commentID string
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO comments (post_id, author_id, parent_id, body)
-		 VALUES ($1,$2,NULLIF($3,'')::uuid,$4) RETURNING id`,
+                 VALUES ($1,$2,NULLIF($3,'')::uuid,$4) RETURNING id`,
 		postID, uid, req.ParentID, req.Body).Scan(&commentID)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "post not found")
@@ -403,9 +442,9 @@ func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	rows, err := a.db.Query(r.Context(),
 		`SELECT c.id, c.author_id, u.display_name, u.username, u.avatar_url, c.body, c.created_at
-		 FROM comments c JOIN users u ON u.id = c.author_id
-		 WHERE c.post_id = $1 AND c.deleted_at IS NULL
-		 ORDER BY c.created_at ASC LIMIT $2 OFFSET $3`,
+                 FROM comments c JOIN users u ON u.id = c.author_id
+                 WHERE c.post_id = $1 AND c.deleted_at IS NULL
+                 ORDER BY c.created_at ASC LIMIT $2 OFFSET $3`,
 		r.PathValue("id"), limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load comments")
@@ -483,8 +522,8 @@ func (a *App) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.db.Query(r.Context(),
 		`SELECT id, username, display_name, avatar_url, is_verified FROM users
-		 WHERE status='active' AND (username ILIKE '%'||$1||'%' OR display_name ILIKE '%'||$1||'%')
-		 LIMIT 20`, q)
+                 WHERE status='active' AND (username ILIKE '%'||$1||'%' OR display_name ILIKE '%'||$1||'%')
+                 LIMIT 20`, q)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "search failed")
 		return
@@ -519,9 +558,9 @@ func (a *App) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := a.db.Exec(r.Context(),
 		`UPDATE users SET display_name = COALESCE(NULLIF($1,''), display_name),
-		 bio = COALESCE(NULLIF($2,''), bio), avatar_url = COALESCE(NULLIF($3,''), avatar_url),
-		 locale = COALESCE(NULLIF($4,''), locale), updated_at = now()
-		 WHERE id = $5`,
+                 bio = COALESCE(NULLIF($2,''), bio), avatar_url = COALESCE(NULLIF($3,''), avatar_url),
+                 locale = COALESCE(NULLIF($4,''), locale), updated_at = now()
+                 WHERE id = $5`,
 		req.DisplayName, req.Bio, req.AvatarURL, req.Locale, userIDFrom(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "update failed")
@@ -534,7 +573,7 @@ func (a *App) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	rows, err := a.db.Query(r.Context(),
 		`SELECT id, kind, payload, read_at, created_at FROM notifications
-		 WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
+                 WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
 		userIDFrom(r), limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load notifications")

@@ -39,6 +39,8 @@ const en: Dict = {
   sendResetLink: "Send reset link",
   newPassword: "New password",
   whatsOnYourMind: "What's on your mind?",
+  save: "Save",
+  cancel: "Cancel",
   post: "Post",
   story: "Story",
   reel: "Reel",

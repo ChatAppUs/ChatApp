@@ -42,6 +42,8 @@ export default function ChatPage() {
   const [e2eOn, setE2eOn] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [reads, setReads] = useState<Record<string, string>>({});
+  const [pins, setPins] = useState<Message[]>([]);
+  const [forwardingId, setForwardingId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const activeRef = useRef<Conversation | null>(null);
   const peerRef = useRef<string | null>(null);
@@ -149,6 +151,44 @@ export default function ChatPage() {
       .catch(() => {});
   };
 
+  const loadPins = (convId: string) => {
+    api<{ pins: Message[] }>(`/api/conversations/${convId}/pins`)
+      .then((d) => setPins(d.pins))
+      .catch(() => setPins([]));
+  };
+
+  const togglePin = async (m: Message) => {
+    if (!active) return;
+    if (m.pinned) {
+      await api(`/api/conversations/${active.id}/pins/${m.id}`, { method: "DELETE" }).catch(() => {});
+    } else {
+      await api(`/api/conversations/${active.id}/pins/${m.id}`, { method: "POST", body: "{}" }).catch(() => {});
+    }
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, pinned: !m.pinned } : x)));
+    loadPins(active.id);
+  };
+
+  const forwardMessage = async (targetConvId: string) => {
+    if (!forwardingId) return;
+    await api(`/api/messages/${forwardingId}/forward`, {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: targetConvId }),
+    }).catch(() => {});
+    setForwardingId(null);
+  };
+
+  const openSavedMessages = async () => {
+    const d = await api<{ conversation_id: string }>("/api/conversations/saved", {
+      method: "POST", body: "{}",
+    }).catch(() => null);
+    if (!d) return;
+    loadConversations();
+    openConversation({
+      id: d.conversation_id, is_group: false, is_channel: false,
+      title: "Saved Messages", created_at: "", last_message: null, unread: 0,
+    });
+  };
+
   const openConversation = async (c: Conversation) => {
     setActive(c);
     activeRef.current = c;
@@ -160,6 +200,7 @@ export default function ChatPage() {
     setMessages(decrypted);
     markRead(c.id);
     loadReads(c.id);
+    loadPins(c.id);
     // For DMs, find the peer for E2EE + presence.
     if (!c.is_group && !c.is_channel) {
       const other = ordered.find((m) => m.sender_id !== getUserId())?.sender_id ?? null;
@@ -269,6 +310,10 @@ export default function ChatPage() {
     <div className="chat-layout">
       <div className="card chat-list" style={{ marginBottom: 0 }}>
         <input placeholder={t("searchUsers")} value={search} onChange={(e) => searchUsers(e.target.value)} />
+        <div className="chat-item row" onClick={openSavedMessages} role="button" tabIndex={0}>
+          <div className="avatar sm" style={{ display: "grid", placeItems: "center" }}>🔖</div>
+          <div>Saved Messages</div>
+        </div>
         {hits.map((u) => (
           <div key={u.id} className="chat-item row" onClick={() => startChat(u.id)} role="button" tabIndex={0}>
             <div className="avatar sm" />
@@ -323,12 +368,20 @@ export default function ChatPage() {
                 {t("audioCall")}
               </button>
             </div>
+            {pins.length > 0 && (
+              <div className="row" style={{ fontSize: 12, borderBottom: "1px solid var(--border, #333)", paddingBottom: 6 }}>
+                📌 <span className="muted">{pins[0].body.slice(0, 80)}</span>
+                {pins.length > 1 && <span className="badge">+{pins.length - 1}</span>}
+              </div>
+            )}
             <div className="chat-messages" style={{ flex: 1 }}>
               {messages.map((m) => (
                 <div key={m.id} className={`bubble ${m.sender_id === getUserId() ? "mine" : ""}`}>
                   {active.is_group && m.sender_id !== getUserId() && (
                     <div style={{ fontSize: 11, opacity: 0.8 }}>{m.sender_name}</div>
                   )}
+                  {m.forwarded_from && <div style={{ fontSize: 10, opacity: 0.7 }}>↪ forwarded</div>}
+                  {m.story_id && <div style={{ fontSize: 10, opacity: 0.7 }}>📸 story reply</div>}
                   {m.body}
                   {m.media_url && (
                     <img src={m.media_url} alt="" style={{ maxWidth: "100%", borderRadius: 8, marginTop: 4 }} />
@@ -349,6 +402,14 @@ export default function ChatPage() {
                       onClick={() => react(m.id, "👍")}>👍</button>
                     <button className="secondary small" style={{ padding: "1px 6px" }}
                       onClick={() => react(m.id, "❤️")}>❤️</button>
+                    <button className="secondary small" style={{ padding: "1px 6px" }}
+                      title={m.pinned ? "Unpin" : "Pin"}
+                      onClick={() => togglePin(m)}>{m.pinned ? "📌" : "📍"}</button>
+                    {!m.is_encrypted && (
+                      <button className="secondary small" style={{ padding: "1px 6px" }}
+                        title="Forward"
+                        onClick={() => setForwardingId(m.id)}>↪</button>
+                    )}
                   </div>
                   {m.reactions && Object.keys(m.reactions).length > 0 && (
                     <div className="row" style={{ marginTop: 2, gap: 4 }}>
@@ -361,6 +422,23 @@ export default function ChatPage() {
               ))}
               <div ref={bottomRef} />
             </div>
+            {forwardingId && (
+              <div className="card" style={{ padding: 8 }}>
+                <div className="row">
+                  <strong style={{ fontSize: 13 }}>Forward to…</strong>
+                  <div className="spacer" />
+                  <button className="secondary small" onClick={() => setForwardingId(null)}>✕</button>
+                </div>
+                <div className="col" style={{ maxHeight: 180, overflowY: "auto" }}>
+                  {conversations.filter((c) => c.id !== active.id).map((c) => (
+                    <button key={c.id} className="secondary small" style={{ textAlign: "start" }}
+                      onClick={() => forwardMessage(c.id)}>
+                      {c.title || (c.is_channel ? "📢 Channel" : c.is_group ? "👥 Group" : "DM")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="chat-input">
               {editingId && <span className="badge yellow">editing</span>}
               <input

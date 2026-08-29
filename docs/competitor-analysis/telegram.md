@@ -109,3 +109,16 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 5. Invite links + public group handles (growth mechanic)
 6. Bot API (platform/ecosystem moat)
 7. Group voice chats via SFU
+
+## Shipped in ChatApp (2026-08 parity batch 2)
+
+The following gaps from this document are now implemented in ChatApp:
+- **Repost toggle + unrepost** (DELETE /api/posts/{id}/repost) with share_count maintenance
+- **Quote posts** with embedded quoted-post preview in all post payloads
+- **Post editing** (PATCH /api/posts/{id}, author only, edited marker)
+- **Threads** (posts.thread_parent_id + GET /api/posts/{id}/thread)
+- **Pinned messages** (pin/unpin/list + WS fanout + pinned banner in chat UI)
+- **Forward with attribution** (POST /api/messages/{id}/forward; encrypted messages cannot be forwarded)
+- **Saved Messages** self-chat (POST /api/conversations/saved, one per user, private)
+- **Story engagement**: view tracking (deduped), viewer list (author only), emoji reactions, story replies delivered as DMs with story reference
+- **Audience selector** in the composer (public / followers / only me), enforced in feed queries

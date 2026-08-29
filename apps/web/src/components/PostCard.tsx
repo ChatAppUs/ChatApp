@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Post, Comment, PollOption } from "@/lib/types";
 
@@ -39,8 +39,47 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
     setPollTotal(d.total_votes);
   };
 
+  const [reposted, setReposted] = useState(false);
+  const [shareCount, setShareCount] = useState(post.share_count);
+  const [quoting, setQuoting] = useState(false);
+  const [quoteText, setQuoteText] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(post.body);
+  const isMine = getUserId() === post.author_id;
+
   const repost = async () => {
+    if (reposted) {
+      await api(`/api/posts/${post.id}/repost`, { method: "DELETE" }).catch(() => {});
+      setReposted(false);
+      setShareCount((c) => Math.max(0, c - 1));
+      return;
+    }
     await api(`/api/posts/${post.id}/repost`, { method: "POST", body: "{}" }).catch(() => {});
+    setReposted(true);
+    setShareCount((c) => c + 1);
+    onChanged?.();
+  };
+
+  const quoteRepost = async () => {
+    if (!quoteText.trim()) return;
+    await api(`/api/posts/${post.id}/repost`, {
+      method: "POST",
+      body: JSON.stringify({ quote: quoteText }),
+    }).catch(() => {});
+    setQuoting(false);
+    setQuoteText("");
+    setReposted(true);
+    setShareCount((c) => c + 1);
+    onChanged?.();
+  };
+
+  const saveEdit = async () => {
+    if (!editText.trim()) return;
+    await api(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body: editText }),
+    }).catch(() => {});
+    setEditing(false);
     onChanged?.();
   };
 
@@ -109,7 +148,17 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           </div>
         </div>
       </div>
-      {post.body && <p style={{ whiteSpace: "pre-wrap" }}>{post.body}</p>}
+      {editing ? (
+        <div className="col" style={{ marginTop: 8 }}>
+          <textarea value={editText} onChange={(e) => setEditText(e.target.value)} />
+          <div className="row">
+            <button className="small" onClick={saveEdit}>{t("save")}</button>
+            <button className="secondary small" onClick={() => setEditing(false)}>{t("cancel")}</button>
+          </div>
+        </div>
+      ) : (
+        post.body && <p style={{ whiteSpace: "pre-wrap" }}>{post.body}</p>
+      )}
       {poll.length > 0 && (
         <div className="col" style={{ marginTop: 8 }}>
           {poll.map((o) => {
@@ -141,6 +190,15 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           <img key={i} className="post-media" src={m.url} alt="" />
         )
       )}
+      {post.quoted && (
+        <div className="card" style={{ marginTop: 8, padding: 10, borderStyle: "dashed" }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {post.quoted.author_name} · @{post.quoted.author_username}
+          </div>
+          <p style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{post.quoted.body}</p>
+        </div>
+      )}
+      {post.edited_at && <div className="muted" style={{ fontSize: 11 }}>(edited)</div>}
       <div className="row" style={{ marginTop: 10 }}>
         <button className={liked ? "small" : "secondary small"} onClick={toggleLike}>
           {t("like")} · {likeCount}
@@ -148,13 +206,35 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
         <button className="secondary small" onClick={loadComments}>
           {t("comments")} · {commentCount}
         </button>
-        <button className="secondary small" onClick={repost}>
-          🔁 {t("share")} · {post.share_count}
+        <button className={reposted ? "small" : "secondary small"} onClick={repost}>
+          🔁 {t("share")} · {shareCount}
         </button>
+        <button className="secondary small" onClick={() => setQuoting((v) => !v)}>
+          💬 Quote
+        </button>
+        {isMine && !editing && (
+          <button className="secondary small" onClick={() => { setEditText(post.body); setEditing(true); }}>
+            ✏️
+          </button>
+        )}
         <button className={bookmarked ? "small" : "secondary small"} onClick={toggleBookmark}>
           {bookmarked ? "★" : "☆"}
         </button>
       </div>
+      {quoting && (
+        <div className="col" style={{ marginTop: 8 }}>
+          <textarea
+            value={quoteText}
+            onChange={(e) => setQuoteText(e.target.value)}
+            placeholder="Add a comment…"
+            rows={2}
+          />
+          <div className="row">
+            <button className="small" onClick={quoteRepost}>Quote post</button>
+            <button className="secondary small" onClick={() => setQuoting(false)}>{t("cancel")}</button>
+          </div>
+        </div>
+      )}
       {showComments && (
         <div className="col" style={{ marginTop: 10 }}>
           {comments.map((c) => (

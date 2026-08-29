@@ -240,8 +240,111 @@ def main():
     alice_tok = r.get("access_token")  # fresh token (role read from DB per request)
     cluster_flow(alice_tok)
 
+    # --- competitor-parity batch: unrepost, edit, threads, pins, forward,
+    #     saved messages, story engagement ---
+    social2_flow(alice_tok, bob_tok, conv_id)
+
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+def social2_flow(alice_tok, bob_tok, conv):
+    # unrepost: bob reposts then unreposts alice's post
+    s, r = req("POST", "/api/posts", {"body": "original for repost test"}, token=alice_tok)
+    post_id = r.get("id")
+    s, r = req("POST", f"/api/posts/{post_id}/repost", {"quote": ""}, token=bob_tok)
+    check("repost still works", s in (200, 201), f"{s} {r}")
+    s, r = req("DELETE", f"/api/posts/{post_id}/repost", token=bob_tok)
+    check("unrepost", s == 200 and r.get("removed"), f"{s} {r}")
+    s, r = req("GET", f"/api/users/{post_id}", token=bob_tok)  # 404 expected (post id not user)
+    s, r = req("GET", "/api/feed", token=bob_tok)
+    feed_post = next((p for p in r.get("posts", []) if p["id"] == post_id), None)
+    check("share_count back to 0", feed_post and feed_post["share_count"] == 0,
+          f"{feed_post}")
+
+    # edit post (author only)
+    s, r = req("PATCH", f"/api/posts/{post_id}", {"body": "edited body"}, token=bob_tok)
+    check("edit post by non-author rejected", s == 404, f"{s} {r}")
+    s, r = req("PATCH", f"/api/posts/{post_id}", {"body": "edited body"}, token=alice_tok)
+    check("edit post by author", s == 200, f"{s} {r}")
+
+    # threads
+    s, r = req("POST", "/api/posts",
+               {"body": "thread reply 1", "thread_parent_id": post_id}, token=alice_tok)
+    t1 = r.get("id")
+    check("thread post created", s in (200, 201) and t1, f"{s} {r}")
+    s, r = req("GET", f"/api/posts/{post_id}/thread", token=bob_tok)
+    bodies = [p["body"] for p in r.get("posts", [])]
+    check("thread lists parent + reply",
+          s == 200 and "edited body" in bodies and "thread reply 1" in bodies,
+          f"{s} {bodies}")
+
+    # saved messages
+    s, r = req("POST", "/api/conversations/saved", {}, token=alice_tok)
+    saved = r.get("conversation_id")
+    check("saved messages created", s == 200 and saved, f"{s} {r}")
+    s, r2 = req("POST", "/api/conversations/saved", {}, token=alice_tok)
+    check("saved messages idempotent", s == 200 and r2.get("conversation_id") == saved,
+          f"{s} {r2}")
+    # bob cannot read alice's saved chat
+    s, r = req("GET", f"/api/conversations/{saved}/messages", token=bob_tok)
+    check("saved messages private", s == 403, f"{s} {r}")
+
+    # pins + forward use the story-reply DM (fresh, non-deleted messages)
+    s, r = req("POST", "/api/posts", {"type": "story", "body": "story for pins"},
+               token=alice_tok)
+    pin_story = r.get("id")
+    s, r = req("POST", f"/api/stories/{pin_story}/reply", {"body": "pin me"}, token=bob_tok)
+    conv = r.get("conversation_id")
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=alice_tok)
+    msgs = r.get("messages", [])
+    msg_id = msgs[0]["id"] if msgs else None
+    check("messages available for pin test", msg_id is not None)
+    s, r = req("POST", f"/api/conversations/{conv}/pins/{msg_id}", {}, token=alice_tok)
+    check("pin message", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/pins", token=bob_tok)
+    check("pins listed", s == 200 and any(p["id"] == msg_id for p in r.get("pins", [])),
+          f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=alice_tok)
+    pinned_msg = next((m for m in r.get("messages", []) if m["id"] == msg_id), None)
+    check("message shows pinned flag", pinned_msg and pinned_msg.get("pinned"), f"{pinned_msg}")
+    s, r = req("DELETE", f"/api/conversations/{conv}/pins/{msg_id}", token=alice_tok)
+    check("unpin message", s == 200, f"{s} {r}")
+
+    # forward with attribution
+    s, r = req("POST", f"/api/messages/{msg_id}/forward",
+               {"conversation_id": saved}, token=alice_tok)
+    fwd_id = r.get("message_id")
+    check("forward message", s == 200 and fwd_id, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{saved}/messages", token=alice_tok)
+    fwd = next((m for m in r.get("messages", []) if m["id"] == fwd_id), None)
+    check("forwarded attribution present", fwd and fwd.get("forwarded_from") == msg_id,
+          f"{fwd}")
+
+    # story engagement
+    s, r = req("POST", "/api/posts", {"type": "story", "body": "story for engagement"},
+               token=alice_tok)
+    story_id = r.get("id")
+    check("story created", s in (200, 201) and story_id, f"{s} {r}")
+    s, r = req("POST", f"/api/stories/{story_id}/view", {}, token=bob_tok)
+    check("story view recorded", s == 200 and r.get("recorded"), f"{s} {r}")
+    s, r = req("POST", f"/api/stories/{story_id}/view", {}, token=bob_tok)
+    check("story view deduped", s == 200 and not r.get("recorded"), f"{s} {r}")
+    s, r = req("GET", f"/api/stories/{story_id}/viewers", token=bob_tok)
+    check("viewers hidden from non-author", s == 403, f"{s} {r}")
+    s, r = req("GET", f"/api/stories/{story_id}/viewers", token=alice_tok)
+    check("viewers visible to author", s == 200 and len(r.get("viewers", [])) == 1, f"{s} {r}")
+    s, r = req("POST", f"/api/stories/{story_id}/react", {"emoji": "🔥"}, token=bob_tok)
+    check("story reaction", s == 200, f"{s} {r}")
+    s, r = req("POST", f"/api/stories/{story_id}/reply", {"body": "nice story!"}, token=bob_tok)
+    dm = r.get("conversation_id")
+    check("story reply opens DM", s == 200 and dm, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{dm}/messages", token=alice_tok)
+    dm_msgs = r.get("messages", [])
+    check("story reply delivered with story ref",
+          dm_msgs and dm_msgs[0].get("story_id") == story_id, f"{dm_msgs}")
+    s, r = req("POST", f"/api/stories/{story_id}/reply", {"body": "self reply"}, token=alice_tok)
+    check("self story reply rejected", s == 400, f"{s} {r}")
 
 
 def grant_superadmin(username):

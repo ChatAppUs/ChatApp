@@ -24,6 +24,7 @@ export default function Composer({
   const [error, setError] = useState("");
   const [pollMode, setPollMode] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [visibility, setVisibility] = useState<"public" | "followers" | "private">("public");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const activePollOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
@@ -46,7 +47,7 @@ export default function Composer({
           type,
           body,
           media,
-          visibility: "public",
+          visibility,
           ...(hasPoll ? { poll_options: activePollOptions.slice(0, 4) } : {}),
         }),
       });
@@ -108,6 +109,18 @@ export default function Composer({
           >
             📊 Poll
           </button>
+        )}
+        {type === "post" && (
+          <select
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value as typeof visibility)}
+            style={{ fontSize: 12 }}
+            aria-label="Audience"
+          >
+            <option value="public">🌍 Public</option>
+            <option value="followers">👥 Followers</option>
+            <option value="private">🔒 Only me</option>
+          </select>
         )}
         <div className="spacer" />
         <button onClick={submit} disabled={busy}>

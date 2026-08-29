@@ -340,6 +340,8 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT m.id, m.sender_id, u.display_name, m.body, m.media_url, m.is_encrypted,
 		        COALESCE(m.reply_to_id::text,''), m.created_at, m.edited_at,
+	 COALESCE(m.forwarded_from::text,''), COALESCE(m.story_id::text,''),
+	 EXISTS(SELECT 1 FROM message_pins mp WHERE mp.message_id = m.id),
 		        COALESCE((SELECT json_object_agg(emoji, cnt) FROM (
 		          SELECT emoji, count(*) AS cnt FROM message_reactions WHERE message_id = m.id GROUP BY emoji
 		        ) r), '{}'::json)
@@ -352,23 +354,26 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type msg struct {
-		ID          string           `json:"id"`
-		SenderID    string           `json:"sender_id"`
-		Sender      string           `json:"sender_name"`
-		Body        string           `json:"body"`
-		MediaURL    string           `json:"media_url"`
-		IsEncrypted bool             `json:"is_encrypted"`
-		ReplyTo     string           `json:"reply_to"`
-		CreatedAt   time.Time        `json:"created_at"`
-		EditedAt    *time.Time       `json:"edited_at"`
-		Reactions   map[string]int64 `json:"reactions"`
+		ID            string           `json:"id"`
+		SenderID      string           `json:"sender_id"`
+		Sender        string           `json:"sender_name"`
+		Body          string           `json:"body"`
+		MediaURL      string           `json:"media_url"`
+		IsEncrypted   bool             `json:"is_encrypted"`
+		ReplyTo       string           `json:"reply_to"`
+		ForwardedFrom string           `json:"forwarded_from"`
+		StoryID       string           `json:"story_id"`
+		Pinned        bool             `json:"pinned"`
+		CreatedAt     time.Time        `json:"created_at"`
+		EditedAt      *time.Time       `json:"edited_at"`
+		Reactions     map[string]int64 `json:"reactions"`
 	}
 	out := []msg{}
 	for rows.Next() {
 		var m msg
 		var reactions []byte
 		if err := rows.Scan(&m.ID, &m.SenderID, &m.Sender, &m.Body, &m.MediaURL, &m.IsEncrypted,
-			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &reactions); err == nil {
+			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &m.ForwardedFrom, &m.StoryID, &m.Pinned, &reactions); err == nil {
 			m.Reactions = map[string]int64{}
 			_ = json.Unmarshal(reactions, &m.Reactions)
 			out = append(out, m)

@@ -23,6 +23,10 @@ export interface Post {
   liked_by_me: boolean;
   media: Media[];
   created_at: string;
+  repost_of?: string;
+  thread_parent_id?: string;
+  edited_at?: string | null;
+  quoted?: { id: string; author_name: string; author_username: string; body: string } | null;
 }
 
 export interface Comment {
@@ -66,6 +70,9 @@ export interface Message {
   media_url: string;
   is_encrypted?: boolean;
   reply_to?: string;
+  forwarded_from?: string;
+  story_id?: string;
+  pinned?: boolean;
   created_at: string;
   edited_at?: string | null;
   reactions?: Record<string, number>;

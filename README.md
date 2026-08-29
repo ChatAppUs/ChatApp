@@ -60,6 +60,13 @@ infra/
   sharding for sticky conversation/media placement, weight + spare-capacity
   aware balancing, and superadmin fleet management (list/drain/remove nodes).
   Single-node deployments behave exactly as before.
+- **Social parity batch 2**: repost toggle/unrepost with quote posts and
+  embedded quoted previews, post editing, X-style threads, pinned messages
+  with realtime fanout, message forwarding with attribution (E2EE messages
+  excluded), Telegram-style Saved Messages self-chat, story engagement
+  (deduped view tracking, author-only viewer list, emoji reactions, story
+  replies as DMs), and a composer audience selector (public/followers/only me)
+  enforced in every feed query.
 - **i18n**: English, Español, Français, Deutsch, Português, العربية (RTL),
   हिन्दी, 中文.
 
