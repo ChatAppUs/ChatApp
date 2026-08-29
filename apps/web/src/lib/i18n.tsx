@@ -25,7 +25,6 @@ const en: Dict = {
   wallet: "Wallet",
   creator: "Creator",
   ads: "Ads",
-  admin: "Admin",
   login: "Log in",
   logout: "Log out",
   register: "Create account",
@@ -114,7 +113,7 @@ const en: Dict = {
 const es: Dict = {
   ...en,
   feed: "Inicio", reels: "Reels", chat: "Chat", wallet: "Billetera", creator: "Creador", ads: "Anuncios",
-  admin: "Admin", login: "Iniciar sesión", logout: "Cerrar sesión", register: "Crear cuenta",
+  login: "Iniciar sesión", logout: "Cerrar sesión", register: "Crear cuenta",
   username: "Usuario", email: "Correo", phone: "Teléfono", password: "Contraseña",
   displayName: "Nombre visible", forgotPassword: "¿Olvidaste tu contraseña?",
   resetPassword: "Restablecer contraseña", sendResetLink: "Enviar enlace",
@@ -158,7 +157,7 @@ const pt: Dict = {
 const ar: Dict = {
   ...en,
   feed: "الرئيسية", reels: "ريلز", chat: "الدردشة", wallet: "المحفظة", creator: "منشئ المحتوى", ads: "الإعلانات",
-  admin: "الإدارة", login: "تسجيل الدخول", logout: "تسجيل الخروج", register: "إنشاء حساب",
+  login: "تسجيل الدخول", logout: "تسجيل الخروج", register: "إنشاء حساب",
   username: "اسم المستخدم", email: "البريد الإلكتروني", phone: "الهاتف", password: "كلمة المرور",
   whatsOnYourMind: "بماذا تفكر؟", post: "نشر", like: "إعجاب", comment: "تعليق",
   share: "مشاركة", send: "إرسال", follow: "متابعة", unfollow: "إلغاء المتابعة",
@@ -176,7 +175,7 @@ const hi: Dict = {
 const zh: Dict = {
   ...en,
   feed: "动态", reels: "短视频", chat: "聊天", wallet: "钱包", creator: "创作者", ads: "广告",
-  admin: "管理", login: "登录", logout: "退出", register: "注册",
+  login: "登录", logout: "退出", register: "注册",
   username: "用户名", email: "邮箱", phone: "手机号", password: "密码",
   post: "发布", like: "赞", comment: "评论", share: "分享", send: "发送",
   follow: "关注", unfollow: "取消关注", loading: "加载中…",

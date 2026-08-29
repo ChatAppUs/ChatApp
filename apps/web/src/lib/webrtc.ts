@@ -1,7 +1,10 @@
-// WebRTC mesh call manager. Signaling rides the ChatApp WebSocket
-// (type: "signal"); media flows peer-to-peer via STUN. For meetings
-// beyond ~6 participants, front with an SFU (LiveKit) — the signaling
-// contract stays the same.
+// ChatApp call managers — fully self-built media stack:
+//   - MeshCall: 1:1 / small calls. Signaling rides the ChatApp WebSocket
+//     (type: "signal"); media flows peer-to-peer through our own STUN/TURN.
+//   - SfuCall: meetings, large group calls and live broadcasting through the
+//     ChatApp SFU (services/sfu) — no external kit or hosted media service.
+// ICE servers (our own STUN/TURN with ephemeral credentials) come from the
+// API when a room is created/joined.
 
 export interface SignalEnvelope {
   type: "signal";
@@ -17,9 +20,13 @@ export type SignalPayload =
   | { kind: "answer"; target: string; sdp: RTCSessionDescriptionInit }
   | { kind: "ice"; target: string; candidate: RTCIceCandidateInit };
 
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
-};
+// Overridden at runtime by our own STUN/TURN servers from the API; the
+// default keeps local development working (loopback reachability only).
+let RTC_CONFIG: RTCConfiguration = { iceServers: [] };
+
+export function configureICE(servers: RTCIceServer[]) {
+  RTC_CONFIG = { iceServers: servers };
+}
 
 export class MeshCall {
   private peers = new Map<string, RTCPeerConnection>();
@@ -129,3 +136,110 @@ export class MeshCall {
     this.pendingIce.clear();
   }
 }
+
+// ---- SFU client (meetings, group calls, live broadcast) ----
+//
+// Single RTCPeerConnection to the ChatApp SFU. The client is the "polite"
+// peer: it makes the initial offer and accepts renegotiation offers from the
+// SFU when tracks are added/removed.
+
+export interface SfuSession {
+  room_id: string;
+  mode: string; // "meeting" | "live"
+  role: string; // "publisher" | "subscriber"
+  ticket: string;
+  sfu_url: string;
+  ice_servers: RTCIceServer[];
+}
+
+export class SfuCall {
+  private pc: RTCPeerConnection | null = null;
+  private ws: WebSocket | null = null;
+  private pendingIce: RTCIceCandidateInit[] = [];
+  private closed = false;
+
+  constructor(
+    private session: SfuSession,
+    private localStream: MediaStream | null, // null for live viewers
+    private onRemoteStream: (peerId: string, stream: MediaStream) => void,
+    private onPeerLeft: (peerId: string) => void
+  ) {}
+
+  async join() {
+    configureICE(this.session.ice_servers);
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    this.pc = pc;
+    const url = `${this.session.sfu_url}?ticket=${encodeURIComponent(
+      this.session.ticket
+    )}&mode=${this.session.mode}`;
+    this.ws = new WebSocket(url);
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate && this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "ice", candidate: e.candidate.toJSON() }));
+      }
+    };
+    pc.ontrack = (e) => {
+      // The SFU sets the stream id to the publisher's user id.
+      const peerId = e.streams[0]?.id ?? "publisher";
+      if (e.streams[0]) this.onRemoteStream(peerId, e.streams[0]);
+      e.streams[0]?.addEventListener("removetrack", () => this.onPeerLeft(peerId));
+    };
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((t) => pc.addTrack(t, this.localStream!));
+    } else {
+      // Viewers still need recv m-lines so the SFU can forward media.
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.addTransceiver("video", { direction: "recvonly" });
+    }
+
+    this.ws.onmessage = async (ev) => {
+      const msg = JSON.parse(ev.data as string);
+      try {
+        if (msg.type === "offer") {
+          // SFU-initiated renegotiation; we are polite.
+          await pc.setRemoteDescription(JSON.parse(msg.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await this.flushIce();
+          this.ws?.send(JSON.stringify({ type: "answer", sdp: answer }));
+        } else if (msg.type === "answer") {
+          await pc.setRemoteDescription(JSON.parse(msg.sdp));
+          await this.flushIce();
+        } else if (msg.type === "ice") {
+          const c = JSON.parse(msg.candidate);
+          if (pc.remoteDescription) {
+            await pc.addIceCandidate(c).catch(() => {});
+          } else {
+            this.pendingIce.push(c);
+          }
+        }
+      } catch { /* transient glare — polite side recovers on next offer */ }
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      this.ws!.onopen = () => resolve();
+      this.ws!.onerror = () => reject(new Error("sfu connection failed"));
+    });
+
+    // Initial negotiation: client offers.
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    this.ws.send(JSON.stringify({ type: "offer", sdp: offer }));
+  }
+
+  private async flushIce() {
+    for (const c of this.pendingIce) {
+      await this.pc?.addIceCandidate(c).catch(() => {});
+    }
+    this.pendingIce = [];
+  }
+
+  leave() {
+    if (this.closed) return;
+    this.closed = true;
+    this.pc?.close();
+    this.ws?.close();
+  }
+}
+

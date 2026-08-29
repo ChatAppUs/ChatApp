@@ -65,10 +65,11 @@ func verifyPassword(password, encoded string) bool {
 // ---- JWT (HS256) ----
 
 type Claims struct {
-	Sub  string `json:"sub"`
-	Type string `json:"typ"` // "access" | "refresh"
-	Exp  int64  `json:"exp"`
-	Iat  int64  `json:"iat"`
+	Sub   string `json:"sub"`
+	Type  string `json:"typ"`             // "access" | "refresh"
+	Scope string `json:"scope,omitempty"` // "user" (default) | "admin"
+	Exp   int64  `json:"exp"`
+	Iat   int64  `json:"iat"`
 }
 
 func b64url(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
@@ -139,7 +140,9 @@ func (a *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		claims, err := parseJWT(a.cfg.JWTSecret, strings.TrimPrefix(h, "Bearer "))
-		if err != nil || claims.Type != "access" {
+		if err != nil || claims.Type != "access" || claims.Scope == "admin" {
+			// Admin-scoped tokens are never accepted on user routes; the
+			// admin system is a fully separate plane.
 			writeErr(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}

@@ -569,6 +569,16 @@ export default function ChatPage() {
               <button className="secondary small" onClick={() => router.push(`/call/${active.id}?video=0`)}>
                 {t("audioCall")}
               </button>
+              {active.is_group && (
+                <button className="secondary small" title="Group meeting"
+                  onClick={() => router.push(`/meeting/${active.id}`)}>
+                  🧑‍🤝‍🧑
+                </button>
+              )}
+              <button className="secondary small" title="Go live"
+                onClick={() => router.push(`/live/${active.id}-live?publish=1&conv=${active.id}`)}>
+                🔴 Live
+              </button>
               <button
                 className={ttl > 0 ? "small" : "secondary small"}
                 title="Disappearing messages timer"

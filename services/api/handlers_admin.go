@@ -15,9 +15,36 @@ func (a *App) hasRole(ctx context.Context, userID string, roles ...string) bool 
 	return ok
 }
 
-func (a *App) requireRole(roles ...string) func(http.HandlerFunc) http.HandlerFunc {
+// ---- Admin plane ----
+//
+// The admin system is fully separated from the user system:
+//   - Admins authenticate at POST /api/admin/login and receive tokens with
+//     scope="admin" and a short TTL (no refresh — re-authentication is
+//     required when the token expires).
+//   - requireAdmin only accepts admin-scoped tokens; requireAuth (user plane)
+//     rejects them, and vice versa. A user token can never reach an admin
+//     handler, even if the account happens to hold an admin role.
+
+func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h := r.Header.Get("Authorization")
+		if !strings.HasPrefix(h, "Bearer ") {
+			writeErr(w, http.StatusUnauthorized, "missing bearer token")
+			return
+		}
+		claims, err := parseJWT(a.cfg.JWTSecret, strings.TrimPrefix(h, "Bearer "))
+		if err != nil || claims.Type != "access" || claims.Scope != "admin" {
+			writeErr(w, http.StatusUnauthorized, "admin session required")
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxUserID, claims.Sub)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func (a *App) requireAdmin(roles ...string) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
-		return a.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		return a.requireAdminAuth(func(w http.ResponseWriter, r *http.Request) {
 			if !a.hasRole(r.Context(), userIDFrom(r), roles...) {
 				writeErr(w, http.StatusForbidden, "insufficient admin role")
 				return
@@ -25,6 +52,83 @@ func (a *App) requireRole(roles ...string) func(http.HandlerFunc) http.HandlerFu
 			next(w, r)
 		})
 	}
+}
+
+const adminTokenTTL = 30 * time.Minute
+
+// handleAdminLogin authenticates an account that holds an admin role and
+// issues a short-lived admin-scoped token. Regular users receive 403.
+func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	var req loginReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	id := strings.TrimSpace(req.Identifier)
+	var userID, hash, status string
+	var totpSecret *string
+	var totpEnabled bool
+	err := a.db.QueryRow(r.Context(),
+		`SELECT id, password_hash, status, totp_secret, totp_enabled FROM users
+		 WHERE username = $1 OR email = lower($1)`, id).
+		Scan(&userID, &hash, &status, &totpSecret, &totpEnabled)
+	if err != nil || !verifyPassword(req.Password, hash) {
+		writeErr(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if status != "active" {
+		writeErr(w, http.StatusForbidden, "account is "+status)
+		return
+	}
+	roles := a.adminRoles(r.Context(), userID)
+	if len(roles) == 0 {
+		// Same error as bad credentials: do not reveal which accounts are admins.
+		writeErr(w, http.StatusForbidden, "not an admin account")
+		return
+	}
+	if totpEnabled && totpSecret != nil {
+		if req.TOTPCode == "" {
+			writeErr(w, http.StatusUnauthorized, "totp_required")
+			return
+		}
+		if !verifyTOTP(*totpSecret, req.TOTPCode, time.Now()) {
+			writeErr(w, http.StatusUnauthorized, "invalid 2FA code")
+			return
+		}
+	}
+	now := time.Now()
+	access, err := signJWT(a.cfg.JWTSecret, Claims{
+		Sub: userID, Type: "access", Scope: "admin",
+		Iat: now.Unix(), Exp: now.Add(adminTokenTTL).Unix(),
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "session creation failed")
+		return
+	}
+	a.audit(r.Context(), userID, "admin.login", userID, map[string]any{"ip": clientIP(r)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": access,
+		"token_type":   "Bearer",
+		"expires_in":   int(adminTokenTTL.Seconds()),
+		"roles":        roles,
+		"user_id":      userID,
+	})
+}
+
+func (a *App) adminRoles(ctx context.Context, userID string) []string {
+	rows, err := a.db.Query(ctx,
+		`SELECT role FROM admin_roles WHERE user_id=$1`, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var roles []string
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err == nil {
+			roles = append(roles, role)
+		}
+	}
+	return roles
 }
 
 func (a *App) audit(ctx context.Context, actorID, action, target string, meta map[string]any) {

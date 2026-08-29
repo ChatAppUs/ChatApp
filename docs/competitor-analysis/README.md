@@ -16,6 +16,7 @@ newsroom posts, and feature reports (2024–2026).
 | [telegram.md](telegram.md) | Telegram |
 | [tiktok.md](tiktok.md) | TikTok |
 | [imo.md](imo.md) | imo |
+| [infrastructure.md](infrastructure.md) | Self-built infra: OTP engine, SFU/STUN/TURN, admin plane, platform tokens |
 
 ## Cross-platform summary
 

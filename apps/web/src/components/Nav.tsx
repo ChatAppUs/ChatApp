@@ -38,7 +38,6 @@ export default function Nav() {
           <Link className="navlink" href="/ads">{t("ads")}</Link>
           <Link className="navlink" href="/scan">▦</Link>
           <Link className="navlink" href="/settings">⚙</Link>
-          <Link className="navlink" href="/admin">{t("admin")}</Link>
         </>
       )}
       <div className="spacer" />

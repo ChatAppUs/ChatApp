@@ -238,8 +238,31 @@ def main():
     # --- cluster engine: heartbeat, routing, admin management ---
     grant_superadmin(alice)
     s, r = req("POST", "/api/auth/login", {"identifier": alice, "password": "Passw0rd!123"})
-    alice_tok = r.get("access_token")  # fresh token (role read from DB per request)
-    cluster_flow(alice_tok)
+    alice_tok = r.get("access_token")  # fresh user-plane token
+
+    # --- admin plane separation ---
+    s, r = req("GET", "/api/admin/stats", token=alice_tok)
+    check("user token rejected on admin route", s == 401, f"{s} {r}")
+    s, r = req("POST", "/api/admin/login", {"identifier": bob, "password": "Passw0rd!123"})
+    check("non-admin cannot admin-login", s == 403, f"{s} {r}")
+    s, r = req("POST", "/api/admin/login", {"identifier": alice, "password": "Passw0rd!123"})
+    check("admin login issues admin-scoped token", s == 200 and r.get("access_token")
+          and "superadmin" in (r.get("roles") or []), f"{s} {r}")
+    admin_tok = r.get("access_token")
+    s, r = req("GET", "/api/admin/stats", token=admin_tok)
+    check("admin token accepted on admin route", s == 200 and "users" in r, f"{s} {r}")
+    s, r = req("GET", "/api/me", token=admin_tok)
+    check("admin token rejected on user route", s == 401, f"{s} {r}")
+    cluster_flow(admin_tok)
+
+    # --- self-built OTP engine (no external verification service) ---
+    otp_flow()
+
+    # --- admin-managed platform tokens for the built-in wallet ---
+    wallet_tokens_flow(admin_tok, alice_tok)
+
+    # --- self-built SFU: meeting + live broadcast tickets ---
+    calls_flow(alice_tok, conv_id)
 
     # --- competitor-parity batch: unrepost, edit, threads, pins, forward,
     #     saved messages, story engagement ---
@@ -247,6 +270,77 @@ def main():
 
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+def otp_flow():
+    """Self-built OTP engine: salted hashes, expiry, attempts, cooldown."""
+    phone = f"+1555{int(time.time()) % 10000000:07d}"
+    s, r = req("POST", "/api/auth/phone/send-code", {"phone": phone})
+    check("otp send", s == 200 and r.get("dev_code"), f"{s} {r}")
+    code = r.get("dev_code")
+    s, r = req("POST", "/api/auth/phone/send-code", {"phone": phone})
+    check("otp resend cooldown enforced", s == 429, f"{s} {r}")
+    s, r = req("POST", "/api/auth/phone/check-code", {"phone": phone, "code": "000000"
+                                                      if code != "000000" else "111111"})
+    check("otp wrong code rejected", s == 401, f"{s} {r}")
+    s, r = req("POST", "/api/auth/phone/check-code", {"phone": phone, "code": code})
+    check("otp correct code verified", s == 200, f"{s} {r}")
+    s, r = req("POST", "/api/auth/phone/check-code", {"phone": phone, "code": code})
+    check("otp code one-shot", s == 401, f"{s} {r}")
+
+
+def wallet_tokens_flow(admin_tok, user_tok):
+    """Admins manage platform tokens; the user wallet mirrors enabled rows."""
+    s, r = req("GET", "/api/wallet/assets", token=user_tok)
+    check("wallet assets from platform tokens", s == 200
+          and "BTC" in r.get("assets", {}) and "USDT" in r.get("assets", {}), f"{s} {r}")
+    s, r = req("GET", "/api/admin/wallet/tokens", token=user_tok)
+    check("user token cannot list platform tokens", s == 401, f"{s} {r}")
+    s, r = req("POST", "/api/admin/wallet/tokens", {
+        "symbol": "CHAT", "name": "ChatApp Token", "chain": "polygon",
+        "contract_address": "0x1234567890abcdef1234567890abcdef12345678",
+        "decimals": 18}, token=admin_tok)
+    check("admin adds platform token", s in (200, 201) and r.get("id"), f"{s} {r}")
+    token_id = r.get("id")
+    s, r = req("GET", "/api/wallet/assets", token=user_tok)
+    check("new token visible in wallet", s == 200
+          and "polygon" in (r.get("assets", {}).get("CHAT") or []), f"{s} {r}")
+    s, r = req("POST", "/api/wallet/accounts", {"asset": "CHAT", "chain": "polygon"},
+               token=user_tok)
+    check("user creates account for platform token", s in (200, 201), f"{s} {r}")
+    s, r = req("POST", f"/api/admin/wallet/tokens/{token_id}/status",
+               {"enabled": False}, token=admin_tok)
+    check("admin disables token", s == 200, f"{s} {r}")
+    s, r = req("GET", "/api/wallet/assets", token=user_tok)
+    check("disabled token hidden from wallet", s == 200
+          and not (r.get("assets", {}).get("CHAT")), f"{s} {r}")
+    s, r = req("DELETE", f"/api/admin/wallet/tokens/{token_id}", token=admin_tok)
+    check("token with accounts cannot be deleted", s == 409, f"{s} {r}")
+    s, r = req("POST", f"/api/admin/wallet/tokens/{token_id}/status",
+               {"enabled": True}, token=admin_tok)
+    check("admin re-enables token", s == 200, f"{s} {r}")
+
+
+def calls_flow(user_tok, conv_id):
+    """Self-built SFU: room tickets, TURN credentials, live discovery."""
+    s, r = req("POST", "/api/calls/rooms", {
+        "conversation_id": conv_id, "mode": "meeting"}, token=user_tok)
+    ice = r.get("ice_servers") or []
+    check("meeting room ticket issued", s == 200 and r.get("ticket")
+          and r.get("sfu_url") and any("stun:" in str(i.get("urls")) for i in ice)
+          and any("turn:" in str(i.get("urls")) for i in ice), f"{s} {r}")
+    room_id = r.get("room_id")
+    s, r = req("POST", f"/api/calls/rooms/{room_id}/join", {}, token=user_tok)
+    check("meeting join ticket", s == 200 and r.get("role") == "publisher", f"{s} {r}")
+    s, r = req("POST", "/api/calls/rooms", {
+        "conversation_id": conv_id, "mode": "live"}, token=user_tok)
+    check("live broadcast room created", s == 200 and r.get("mode") == "live", f"{s} {r}")
+    live_room = r.get("room_id")
+    s, r = req("POST", f"/api/calls/rooms/{live_room}/join", {}, token=user_tok)
+    check("live join hands subscriber ticket", s == 200
+          and r.get("role") == "subscriber", f"{s} {r}")
+    s, r = req("GET", "/api/live", token=user_tok)
+    check("live discovery", s == 200 and isinstance(r.get("live"), list), f"{s} {r}")
 
 
 def social2_flow(alice_tok, bob_tok, conv):
@@ -544,7 +638,7 @@ def cluster_flow(admin_tok):
                 "password": "Passw0rd!x", "display_name": "Plain"})
     plain_tok = r.get("access_token")
     s, r = req("GET", "/api/cluster/nodes", token=plain_tok)
-    check("cluster nodes forbidden for non-admin", s == 403, f"{s} {r}")
+    check("cluster nodes forbidden for non-admin", s == 401, f"{s} {r}")
 
 
 # ---- minimal CBOR encoder (definite-length only) ----

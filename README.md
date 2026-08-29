@@ -11,12 +11,17 @@ backend.
 ```
 clients/
   apps/web        Next.js 14 + TypeScript PWA (8 locales, RTL support)
+  apps/admin      Next.js 14 — standalone admin console (separate login plane,
+                  never reachable from the user app)
   apps/desktop    Electron wrapper (Windows/macOS/Linux)
   apps/mobile     Capacitor wrapper (Android/iOS)
 
 services/
-  api             Go 1.23 — core API: auth, social graph, feed, chat (WebSocket),
-                  WebRTC signaling, wallet ledger, ads, KYC, admin RBAC
+  api             Go 1.23 — core API: auth (incl. self-built OTP engine), social
+                  graph, feed, chat (WebSocket), WebRTC signaling, wallet ledger,
+                  ads, KYC, admin RBAC, call/live orchestration
+  sfu             Go 1.23 (Pion) — self-built SFU for meetings/group calls/live
+                  broadcast + embedded STUN/TURN server
   security        Rust — request signing, signed media URLs, HMAC tokens
   media           C++17 — media upload & streaming edge (HTTP range requests)
   ml              Python — feed ranking + content moderation hooks
@@ -140,11 +145,17 @@ cd apps/mobile && npm install && npx cap add android && npx cap sync
 
 ## Production checklist
 
-- Wire a real SMS provider (Twilio Verify) and email provider (SES) via the
-  provider interfaces in `services/api/providers.go`.
+- The phone OTP engine (`services/api/otp.go`) is fully self-built: crypto/rand
+  codes, salted storage, attempt limits, resend throttling, in-app delivery to
+  linked devices with an SMS/email hook left for carrier gateways. No third-party
+  verification service.
+- Group calls, meetings and live broadcasting run on our own SFU
+  (`services/sfu`, Pion-based) with embedded STUN/TURN and HMAC time-limited
+  credentials — no external WebRTC kit.
 - Connect on-chain deposits/withdrawals through a custody provider SDK
   (Fireblocks/BitGo) writing into the existing ledger.
-- Add TURN servers for WebRTC NAT traversal; front large meetings with an SFU
-  (LiveKit) — the signaling contract is already compatible.
 - Put Postgres behind TLS, enable Redis session cache, and run the media edge
   behind a CDN.
+- Admin operations live in a completely separate app (`apps/admin`, port 3100)
+  authenticating via `/api/admin/login` with admin-scoped tokens; user tokens
+  are rejected there and admin tokens are rejected everywhere else.

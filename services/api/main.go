@@ -55,37 +55,7 @@ func main() {
 	app.startScheduler()
 	app.startExpirySweeper()
 	app.smtp = &Mailer{host: cfg.SMTPHost, port: cfg.SMTPPort, user: cfg.SMTPUser, pass: cfg.SMTPPass}
-
-	if cfg.TwilioSID != "" && cfg.TwilioToken != "" && cfg.TwilioVerifySID != "" {
-		app.sms = &TwilioVerify{sid: cfg.TwilioSID, token: cfg.TwilioToken, serviceSID: cfg.TwilioVerifySID}
-	} else {
-		app.sms = &DevSMS{
-			store: func(phone, codeHash string) error {
-				_, err := db.Exec(ctx,
-					`INSERT INTO phone_verifications (phone_e164, code_hash, expires_at)
-					 VALUES ($1,$2, now() + interval '10 minutes')`, phone, codeHash)
-				return err
-			},
-			check: func(phone, code string) (bool, error) {
-				var id string
-				err := db.QueryRow(ctx,
-					`SELECT id FROM phone_verifications
-					 WHERE phone_e164=$1 AND code_hash=$2 AND verified_at IS NULL AND expires_at > now() AND attempts < 5
-					 ORDER BY created_at DESC LIMIT 1`, phone, sha256hex(code)).Scan(&id)
-				if err != nil {
-					_, _ = db.Exec(ctx,
-						`UPDATE phone_verifications SET attempts = attempts + 1
-						 WHERE phone_e164=$1 AND verified_at IS NULL`, phone)
-					return false, nil
-				}
-				_, err = db.Exec(ctx, `UPDATE phone_verifications SET verified_at=now() WHERE id=$1`, id)
-				return err == nil, err
-			},
-		}
-		if cfg.AppEnv != "development" {
-			log.Println("WARNING: SMS provider not configured; set TWILIO_* for production")
-		}
-	}
+	app.otp = NewOTPService(app, cfg.AppEnv == "development")
 
 	mux := http.NewServeMux()
 
@@ -94,6 +64,7 @@ func main() {
 	mux.HandleFunc("GET /api/countries", app.handleCountries)
 	mux.HandleFunc("POST /api/auth/register", app.handleRegister)
 	mux.HandleFunc("POST /api/auth/login", app.handleLogin)
+	mux.HandleFunc("POST /api/admin/login", app.handleAdminLogin)
 	mux.HandleFunc("POST /api/auth/refresh", app.handleRefresh)
 	mux.HandleFunc("POST /api/auth/logout", app.handleLogout)
 	mux.HandleFunc("POST /api/auth/forgot-password", app.handleForgotPassword)
@@ -202,9 +173,9 @@ func main() {
 	mux.HandleFunc("GET /api/auth/passkeys", app.requireAuth(app.handlePasskeyList))
 	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", app.requireAuth(app.handlePasskeyDelete))
 	mux.HandleFunc("POST /api/auth/qr/{token}/approve", app.requireAuth(app.handleQRLoginApprove))
-	mux.HandleFunc("GET /api/cluster/nodes", app.requireRole("superadmin")(app.handleClusterNodes))
-	mux.HandleFunc("POST /api/cluster/nodes/{id}/drain", app.requireRole("superadmin")(app.handleClusterDrain))
-	mux.HandleFunc("DELETE /api/cluster/nodes/{id}", app.requireRole("superadmin")(app.handleClusterRemove))
+	mux.HandleFunc("GET /api/cluster/nodes", app.requireAdmin("superadmin")(app.handleClusterNodes))
+	mux.HandleFunc("POST /api/cluster/nodes/{id}/drain", app.requireAdmin("superadmin")(app.handleClusterDrain))
+	mux.HandleFunc("DELETE /api/cluster/nodes/{id}", app.requireAdmin("superadmin")(app.handleClusterRemove))
 	mux.HandleFunc("POST /api/auth/qr/{token}/reject", app.requireAuth(app.handleQRLoginReject))
 	mux.HandleFunc("PUT /api/e2e/key", app.requireAuth(app.handleE2EPublishKey))
 	mux.HandleFunc("GET /api/e2e/keys", app.requireAuth(app.handleE2EGetKeys))
@@ -220,6 +191,9 @@ func main() {
 	mux.HandleFunc("POST /api/wallet/accounts", app.requireAuth(app.handleWalletCreateAccount))
 	mux.HandleFunc("POST /api/wallet/deposit-address", app.requireAuth(app.handleDepositAddress))
 	mux.HandleFunc("POST /api/wallet/transfer", app.requireAuth(app.handleP2PTransfer))
+	mux.HandleFunc("POST /api/calls/rooms", app.requireAuth(app.handleCreateCallRoom))
+	mux.HandleFunc("POST /api/calls/rooms/{roomId}/join", app.requireAuth(app.handleJoinCallRoom))
+	mux.HandleFunc("GET /api/live", app.requireAuth(app.handleLiveNow))
 	mux.HandleFunc("GET /api/wallet/history", app.requireAuth(app.handleWalletHistory))
 	mux.HandleFunc("POST /api/kyc/submit", app.requireAuth(app.handleKYCSubmit))
 	mux.HandleFunc("GET /api/kyc/status", app.requireAuth(app.handleKYCStatus))
@@ -237,18 +211,22 @@ func main() {
 	mux.HandleFunc("POST /api/reports", app.requireAuth(app.handleCreateReport))
 
 	// admin (role-gated)
-	mux.HandleFunc("GET /api/admin/stats", app.requireRole("superadmin", "moderator", "support", "finance", "ads_reviewer")(app.handleAdminStats))
-	mux.HandleFunc("GET /api/admin/users", app.requireRole("superadmin", "support")(app.handleAdminListUsers))
-	mux.HandleFunc("POST /api/admin/users/{id}/status", app.requireRole("superadmin", "moderator")(app.handleAdminSetUserStatus))
-	mux.HandleFunc("GET /api/admin/reports", app.requireRole("superadmin", "moderator")(app.handleAdminListReports))
-	mux.HandleFunc("POST /api/admin/reports/{id}/resolve", app.requireRole("superadmin", "moderator")(app.handleAdminResolveReport))
-	mux.HandleFunc("GET /api/admin/kyc", app.requireRole("superadmin", "finance", "support")(app.handleAdminListKYC))
-	mux.HandleFunc("POST /api/admin/kyc/{id}/review", app.requireRole("superadmin", "finance")(app.handleAdminReviewKYC))
-	mux.HandleFunc("GET /api/admin/ads", app.requireRole("superadmin", "ads_reviewer")(app.handleAdminListAds))
-	mux.HandleFunc("POST /api/admin/ads/{id}/review", app.requireRole("superadmin", "ads_reviewer")(app.handleAdminReviewAd))
-	mux.HandleFunc("POST /api/admin/roles", app.requireRole("superadmin")(app.handleAdminGrantRole))
-	mux.HandleFunc("GET /api/admin/payouts", app.requireRole("superadmin", "finance")(app.handleAdminListPayouts))
-	mux.HandleFunc("POST /api/admin/payouts/{id}/review", app.requireRole("superadmin", "finance")(app.handleAdminReviewPayout))
+	mux.HandleFunc("GET /api/admin/stats", app.requireAdmin("superadmin", "moderator", "support", "finance", "ads_reviewer")(app.handleAdminStats))
+	mux.HandleFunc("GET /api/admin/users", app.requireAdmin("superadmin", "support")(app.handleAdminListUsers))
+	mux.HandleFunc("POST /api/admin/users/{id}/status", app.requireAdmin("superadmin", "moderator")(app.handleAdminSetUserStatus))
+	mux.HandleFunc("GET /api/admin/reports", app.requireAdmin("superadmin", "moderator")(app.handleAdminListReports))
+	mux.HandleFunc("POST /api/admin/reports/{id}/resolve", app.requireAdmin("superadmin", "moderator")(app.handleAdminResolveReport))
+	mux.HandleFunc("GET /api/admin/kyc", app.requireAdmin("superadmin", "finance", "support")(app.handleAdminListKYC))
+	mux.HandleFunc("POST /api/admin/kyc/{id}/review", app.requireAdmin("superadmin", "finance")(app.handleAdminReviewKYC))
+	mux.HandleFunc("GET /api/admin/ads", app.requireAdmin("superadmin", "ads_reviewer")(app.handleAdminListAds))
+	mux.HandleFunc("POST /api/admin/ads/{id}/review", app.requireAdmin("superadmin", "ads_reviewer")(app.handleAdminReviewAd))
+	mux.HandleFunc("POST /api/admin/roles", app.requireAdmin("superadmin")(app.handleAdminGrantRole))
+	mux.HandleFunc("GET /api/admin/wallet/tokens", app.requireAdmin("superadmin", "finance")(app.handleAdminListTokens))
+	mux.HandleFunc("POST /api/admin/wallet/tokens", app.requireAdmin("superadmin", "finance")(app.handleAdminAddToken))
+	mux.HandleFunc("POST /api/admin/wallet/tokens/{id}/status", app.requireAdmin("superadmin", "finance")(app.handleAdminSetTokenStatus))
+	mux.HandleFunc("DELETE /api/admin/wallet/tokens/{id}", app.requireAdmin("superadmin")(app.handleAdminDeleteToken))
+	mux.HandleFunc("GET /api/admin/payouts", app.requireAdmin("superadmin", "finance")(app.handleAdminListPayouts))
+	mux.HandleFunc("POST /api/admin/payouts/{id}/review", app.requireAdmin("superadmin", "finance")(app.handleAdminReviewPayout))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

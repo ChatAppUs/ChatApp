@@ -9,24 +9,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var supportedAssets = map[string][]string{
-	"BTC":   {"bitcoin"},
-	"ETH":   {"ethereum"},
-	"USDT":  {"ethereum", "tron", "bsc", "polygon"},
-	"USDC":  {"ethereum", "polygon", "solana", "base"},
-	"SOL":   {"solana"},
-	"MATIC": {"polygon"},
-	"BNB":   {"bsc"},
-	"USD":   {"internal"}, // fiat ledger for ads & creator payouts
-}
-
-func assetSupported(asset, chain string) bool {
-	for _, c := range supportedAssets[strings.ToUpper(asset)] {
-		if c == strings.ToLower(chain) {
-			return true
-		}
-	}
-	return false
+// assetSupported checks the platform_tokens table (managed by admins); the
+// built-in multichain wallet only offers tokens the platform has enabled.
+func (a *App) assetSupported(ctx context.Context, asset, chain string) bool {
+	var ok bool
+	_ = a.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM platform_tokens
+		 WHERE symbol = upper($1) AND chain = lower($2) AND enabled)`,
+		asset, chain).Scan(&ok)
+	return ok
 }
 
 // CryptoProvider is the integration point for a custody SDK (Fireblocks,
@@ -41,7 +32,21 @@ type CryptoProvider interface {
 var cryptoProvider CryptoProvider // nil until a custody SDK is configured
 
 func (a *App) handleWalletAssets(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"assets": supportedAssets})
+	rows, err := a.db.Query(r.Context(),
+		`SELECT symbol, chain FROM platform_tokens WHERE enabled ORDER BY symbol, chain`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to load assets")
+		return
+	}
+	defer rows.Close()
+	assets := map[string][]string{}
+	for rows.Next() {
+		var sym, chain string
+		if err := rows.Scan(&sym, &chain); err == nil {
+			assets[sym] = append(assets[sym], chain)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"assets": assets})
 }
 
 func (a *App) ensureAccount(ctx context.Context, userID, asset, chain string) (string, error) {
@@ -86,7 +91,7 @@ func (a *App) handleWalletCreateAccount(w http.ResponseWriter, r *http.Request) 
 		Asset string `json:"asset"`
 		Chain string `json:"chain"`
 	}
-	if !decodeJSON(w, r, &req) || !assetSupported(req.Asset, req.Chain) {
+	if !decodeJSON(w, r, &req) || !a.assetSupported(r.Context(), req.Asset, req.Chain) {
 		writeErr(w, http.StatusBadRequest, "unsupported asset/chain combination")
 		return
 	}
@@ -103,7 +108,7 @@ func (a *App) handleDepositAddress(w http.ResponseWriter, r *http.Request) {
 		Asset string `json:"asset"`
 		Chain string `json:"chain"`
 	}
-	if !decodeJSON(w, r, &req) || !assetSupported(req.Asset, req.Chain) {
+	if !decodeJSON(w, r, &req) || !a.assetSupported(r.Context(), req.Asset, req.Chain) {
 		writeErr(w, http.StatusBadRequest, "unsupported asset/chain combination")
 		return
 	}
@@ -136,7 +141,7 @@ func (a *App) handleP2PTransfer(w http.ResponseWriter, r *http.Request) {
 		Amount     string `json:"amount"`
 		Memo       string `json:"memo"`
 	}
-	if !decodeJSON(w, r, &req) || !assetSupported(req.Asset, req.Chain) {
+	if !decodeJSON(w, r, &req) || !a.assetSupported(r.Context(), req.Asset, req.Chain) {
 		writeErr(w, http.StatusBadRequest, "unsupported asset/chain combination")
 		return
 	}

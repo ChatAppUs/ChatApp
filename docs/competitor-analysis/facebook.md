@@ -8,7 +8,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 |---|---|---|
 | Email/phone registration | ✅ | + username, 245 dial codes with flags |
 | Google/SSO login | ✅ | Google ID-token sign-in (JWKS verified) |
-| 2FA (TOTP/SMS) | ✅ | RFC 6238 TOTP; SMS codes via Twilio Verify |
+| 2FA (TOTP/SMS) | ✅ | RFC 6238 TOTP; phone codes via our self-built OTP engine (crypto/rand codes, salted hashes, throttled resend) — no third-party verification service |
 | Passkey / biometric login | ✅ | WebAuthn platform authenticators |
 | Trusted contacts / account recovery | ❌ | Gap: nominate friends to help recover account |
 | Profile lock (non-friends see limited info) | ❌ | Gap: privacy setting |

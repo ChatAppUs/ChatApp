@@ -295,7 +295,11 @@ func (a *App) handlePhoneSendCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "valid E.164 phone required")
 		return
 	}
-	devCode, err := a.sms.SendCode(req.Phone)
+	devCode, err := a.otp.SendCode(req.Phone)
+	if errors.Is(err, errOTPThrottled) {
+		writeErr(w, http.StatusTooManyRequests, err.Error())
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "failed to send verification code")
 		return
@@ -315,7 +319,7 @@ func (a *App) handlePhoneCheckCode(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	ok, err := a.sms.CheckCode(req.Phone, req.Code)
+	ok, err := a.otp.CheckCode(req.Phone, req.Code)
 	if err != nil || !ok {
 		writeErr(w, http.StatusUnauthorized, "invalid verification code")
 		return

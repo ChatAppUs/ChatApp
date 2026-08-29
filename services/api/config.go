@@ -16,14 +16,10 @@ type Config struct {
 	MediaServiceURL string
 	MLServiceURL    string
 	SecuritySvcURL  string
-	TwilioSID       string
-	TwilioToken     string
-	TwilioVerifySID string
 	SMTPHost        string
 	SMTPPort        string
 	SMTPUser        string
 	SMTPPass        string
-	StripeSecret    string
 	SumsubAppToken  string
 	SumsubSecretKey string
 	CreatorRPM      float64 // creator revenue per 1000 views, USD
@@ -36,6 +32,11 @@ type Config struct {
 	ClusterAPIURL   string
 	ClusterMediaURL string
 	ClusterSecret   string
+	SFUInternalURL  string
+	SFUPublicURL    string
+	SFUHost         string
+	SFUSecret       string
+	TURNSecret      string
 }
 
 func getenv(key, def string) string {
@@ -56,14 +57,10 @@ func loadConfig() Config {
 		MediaServiceURL: getenv("MEDIA_SERVICE_URL", "http://localhost:8100"),
 		MLServiceURL:    getenv("ML_SERVICE_URL", "http://localhost:8200"),
 		SecuritySvcURL:  getenv("SECURITY_SERVICE_URL", "http://localhost:8090"),
-		TwilioSID:       os.Getenv("TWILIO_ACCOUNT_SID"),
-		TwilioToken:     os.Getenv("TWILIO_AUTH_TOKEN"),
-		TwilioVerifySID: os.Getenv("TWILIO_VERIFY_SERVICE_SID"),
 		SMTPHost:        os.Getenv("SMTP_HOST"),
 		SMTPPort:        getenv("SMTP_PORT", "587"),
 		SMTPUser:        os.Getenv("SMTP_USER"),
 		SMTPPass:        os.Getenv("SMTP_PASS"),
-		StripeSecret:    os.Getenv("STRIPE_SECRET_KEY"),
 		SumsubAppToken:  os.Getenv("SUMSUB_APP_TOKEN"),
 		SumsubSecretKey: os.Getenv("SUMSUB_SECRET_KEY"),
 		ClusterNodeID:   os.Getenv("CLUSTER_NODE_ID"),
@@ -71,6 +68,11 @@ func loadConfig() Config {
 		ClusterAPIURL:   os.Getenv("CLUSTER_API_URL"),
 		ClusterMediaURL: os.Getenv("CLUSTER_MEDIA_URL"),
 		ClusterSecret:   os.Getenv("CLUSTER_SECRET"),
+		SFUInternalURL:  getenv("SFU_INTERNAL_URL", "http://localhost:8095"),
+		SFUPublicURL:    getenv("SFU_PUBLIC_URL", "ws://localhost:8095/ws"),
+		SFUHost:         getenv("SFU_HOST", "localhost"),
+		SFUSecret:       getenv("SFU_SECRET", "dev-sfu-secret"),
+		TURNSecret:      getenv("TURN_SECRET", "dev-turn-secret"),
 		CreatorRPM:      atof(getenv("CREATOR_RPM", "0.50")),
 		GoogleClientID:  os.Getenv("GOOGLE_CLIENT_ID"),
 		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "localhost"),

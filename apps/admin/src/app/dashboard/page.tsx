@@ -1,0 +1,365 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { adminApi, clearAdminSession, getAdminToken } from "@/lib/api";
+
+interface Stats {
+  users: number;
+  posts: number;
+  open_reports: number;
+  pending_kyc: number;
+  active_ads: number;
+}
+
+interface AdminUser {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  kyc_status: string;
+  created_at: string;
+}
+
+interface Report {
+  id: string;
+  reporter: string;
+  target_type: string;
+  target_id: string;
+  reason: string;
+  created_at: string;
+}
+
+interface KYCItem {
+  id: string;
+  user_id: string;
+  username: string;
+  display_name: string;
+  created_at: string;
+}
+
+interface AdItem {
+  id: string;
+  name: string;
+  advertiser: string;
+  objective: string;
+  total_budget: string;
+  currency: string;
+}
+
+interface PlatformToken {
+  id: string;
+  symbol: string;
+  name: string;
+  chain: string;
+  contract_address: string | null;
+  decimals: number;
+  is_native: boolean;
+  enabled: boolean;
+  created_at: string;
+}
+
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens";
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [kycQueue, setKycQueue] = useState<KYCItem[]>([]);
+  const [adQueue, setAdQueue] = useState<AdItem[]>([]);
+  const [tokens, setTokens] = useState<PlatformToken[]>([]);
+  const [userQuery, setUserQuery] = useState("");
+  const [tab, setTab] = useState<Tab>("stats");
+  const [error, setError] = useState("");
+
+  const logout = () => {
+    clearAdminSession();
+    router.push("/");
+  };
+
+  const load = useCallback(async () => {
+    try {
+      const s = await adminApi<Stats>("/api/admin/stats");
+      setStats(s);
+      const [u, r, k, a, tk] = await Promise.allSettled([
+        adminApi<{ users: AdminUser[] }>("/api/admin/users"),
+        adminApi<{ reports: Report[] }>("/api/admin/reports"),
+        adminApi<{ submissions: KYCItem[] }>("/api/admin/kyc"),
+        adminApi<{ campaigns: AdItem[] }>("/api/admin/ads"),
+        adminApi<{ tokens: PlatformToken[] }>("/api/admin/wallet/tokens"),
+      ]);
+      if (u.status === "fulfilled") setUsers(u.value.users);
+      if (r.status === "fulfilled") setReports(r.value.reports);
+      if (k.status === "fulfilled") setKycQueue(k.value.submissions);
+      if (a.status === "fulfilled") setAdQueue(a.value.campaigns);
+      if (tk.status === "fulfilled") setTokens(tk.value.tokens);
+    } catch (e) {
+      const err = e as Error & { status?: number };
+      if (err.status === 401) logout();
+      else setError(err.message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!getAdminToken()) {
+      router.push("/");
+      return;
+    }
+    load();
+  }, [load, router]);
+
+  const act = (fn: () => Promise<unknown>) =>
+    fn().then(load).catch((e) => setError((e as Error).message));
+
+  const searchUsers = () =>
+    adminApi<{ users: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(userQuery)}`)
+      .then((d) => setUsers(d.users))
+      .catch(() => {});
+
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+        {(["stats", "users", "reports", "kyc", "ads", "tokens"] as const).map((k) => (
+          <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
+            {k}
+          </button>
+        ))}
+        <div className="spacer" />
+        <button className="secondary small" onClick={logout}>Sign out</button>
+      </div>
+      {error && <div className="error-text" style={{ marginBottom: 8 }}>{error}</div>}
+
+      {tab === "stats" && stats && (
+        <div className="grid2">
+          {Object.entries(stats).map(([k, v]) => (
+            <div key={k} className="card" style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 32, fontWeight: 800 }}>{v}</div>
+              <div className="muted">{k.replace(/_/g, " ")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "users" && (
+        <div className="card">
+          <div className="row" style={{ marginBottom: 10 }}>
+            <input placeholder="Search users" value={userQuery} onChange={(e) => setUserQuery(e.target.value)} />
+            <button className="small" onClick={searchUsers}>Search</button>
+          </div>
+          <table className="table">
+            <thead>
+              <tr><th>username</th><th>email</th><th>status</th><th>KYC</th><th></th></tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id}>
+                  <td>@{u.username}</td>
+                  <td className="muted">{u.email ?? u.phone ?? "—"}</td>
+                  <td><span className={`badge ${u.status === "active" ? "green" : "red"}`}>{u.status}</span></td>
+                  <td>{u.kyc_status}</td>
+                  <td>
+                    {u.status === "active" ? (
+                      <button className="danger small" onClick={() => act(() => adminApi(`/api/admin/users/${u.id}/status`, { method: "POST", body: JSON.stringify({ status: "suspended" }) }))}>
+                        Suspend
+                      </button>
+                    ) : (
+                      <button className="success small" onClick={() => act(() => adminApi(`/api/admin/users/${u.id}/status`, { method: "POST", body: JSON.stringify({ status: "active" }) }))}>
+                        Activate
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "reports" && (
+        <div className="card">
+          <table className="table">
+            <thead>
+              <tr><th>reporter</th><th>type</th><th>reason</th><th></th></tr>
+            </thead>
+            <tbody>
+              {reports.map((r) => (
+                <tr key={r.id}>
+                  <td>@{r.reporter}</td>
+                  <td>{r.target_type}</td>
+                  <td className="muted">{r.reason}</td>
+                  <td>
+                    <div className="row">
+                      <button className="success small" onClick={() => act(() => adminApi(`/api/admin/reports/${r.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "resolved" }) }))}>
+                        Resolve
+                      </button>
+                      <button className="secondary small" onClick={() => act(() => adminApi(`/api/admin/reports/${r.id}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "dismissed" }) }))}>
+                        Dismiss
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {reports.length === 0 && <tr><td colSpan={4} className="muted">No open reports</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "kyc" && (
+        <div className="card">
+          <table className="table">
+            <thead>
+              <tr><th>username</th><th>name</th><th></th></tr>
+            </thead>
+            <tbody>
+              {kycQueue.map((k) => (
+                <tr key={k.id}>
+                  <td>@{k.username}</td>
+                  <td>{k.display_name}</td>
+                  <td>
+                    <div className="row">
+                      <button className="success small" onClick={() => act(() => adminApi(`/api/admin/kyc/${k.id}/review`, { method: "POST", body: JSON.stringify({ decision: "verified" }) }))}>
+                        Approve
+                      </button>
+                      <button className="danger small" onClick={() => act(() => adminApi(`/api/admin/kyc/${k.id}/review`, { method: "POST", body: JSON.stringify({ decision: "rejected" }) }))}>
+                        Reject
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {kycQueue.length === 0 && <tr><td colSpan={3} className="muted">Queue empty</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "ads" && (
+        <div className="card">
+          <table className="table">
+            <thead>
+              <tr><th>campaign</th><th>advertiser</th><th>budget</th><th></th></tr>
+            </thead>
+            <tbody>
+              {adQueue.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.name}</td>
+                  <td>@{a.advertiser}</td>
+                  <td>{a.total_budget} {a.currency}</td>
+                  <td>
+                    <div className="row">
+                      <button className="success small" onClick={() => act(() => adminApi(`/api/admin/ads/${a.id}/review`, { method: "POST", body: JSON.stringify({ decision: "active" }) }))}>
+                        Approve
+                      </button>
+                      <button className="danger small" onClick={() => act(() => adminApi(`/api/admin/ads/${a.id}/review`, { method: "POST", body: JSON.stringify({ decision: "rejected" }) }))}>
+                        Reject
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {adQueue.length === 0 && <tr><td colSpan={4} className="muted">No pending campaigns</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "tokens" && <TokensTab tokens={tokens} act={act} />}
+    </>
+  );
+}
+
+// Wallet platform-token management (superadmin/finance): which tokens the
+// built-in multichain wallet offers to users.
+function TokensTab({ tokens, act }: { tokens: PlatformToken[]; act: (fn: () => Promise<unknown>) => void }) {
+  const [symbol, setSymbol] = useState("");
+  const [name, setName] = useState("");
+  const [chain, setChain] = useState("");
+  const [contract, setContract] = useState("");
+  const [decimals, setDecimals] = useState("18");
+  const [isNative, setIsNative] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const add = (e: FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    act(async () => {
+      await adminApi("/api/admin/wallet/tokens", {
+        method: "POST",
+        body: JSON.stringify({
+          symbol, name, chain,
+          contract_address: contract,
+          decimals: parseInt(decimals, 10),
+          is_native: isNative,
+        }),
+      });
+      setSymbol(""); setName(""); setChain(""); setContract("");
+    });
+  };
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h4 style={{ marginTop: 0 }}>Add platform token</h4>
+        <form onSubmit={add}>
+          <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <input placeholder="Symbol (e.g. CHAT)" value={symbol} onChange={(e) => setSymbol(e.target.value)} required style={{ width: 140 }} />
+            <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <input placeholder="Chain (e.g. ethereum)" value={chain} onChange={(e) => setChain(e.target.value)} required style={{ width: 160 }} />
+            <input placeholder="Decimals" value={decimals} onChange={(e) => setDecimals(e.target.value)} style={{ width: 90 }} />
+          </div>
+          <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+            <label className="muted">
+              <input type="checkbox" checked={isNative} onChange={(e) => setIsNative(e.target.checked)} style={{ width: "auto" }} /> native coin
+            </label>
+            {!isNative && (
+              <input placeholder="Contract address" value={contract} onChange={(e) => setContract(e.target.value)} required style={{ flex: 1 }} />
+            )}
+            <button className="small" type="submit">Add / update</button>
+          </div>
+        </form>
+        {formError && <div className="error-text">{formError}</div>}
+      </div>
+      <div className="card">
+        <table className="table">
+          <thead>
+            <tr><th>symbol</th><th>name</th><th>chain</th><th>contract</th><th>status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {tokens.map((t) => (
+              <tr key={t.id}>
+                <td><strong>{t.symbol}</strong></td>
+                <td>{t.name}</td>
+                <td>{t.chain}</td>
+                <td className="muted" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {t.is_native ? "native" : t.contract_address ?? "—"}
+                </td>
+                <td><span className={`badge ${t.enabled ? "green" : "red"}`}>{t.enabled ? "enabled" : "disabled"}</span></td>
+                <td>
+                  <div className="row">
+                    <button
+                      className="secondary small"
+                      onClick={() => act(() => adminApi(`/api/admin/wallet/tokens/${t.id}/status`, { method: "POST", body: JSON.stringify({ enabled: !t.enabled }) }))}
+                    >
+                      {t.enabled ? "Disable" : "Enable"}
+                    </button>
+                    <button
+                      className="danger small"
+                      onClick={() => act(() => adminApi(`/api/admin/wallet/tokens/${t.id}`, { method: "DELETE" }))}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}

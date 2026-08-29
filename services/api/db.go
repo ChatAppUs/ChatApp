@@ -15,7 +15,7 @@ type App struct {
 	db   *pgxpool.Pool
 	hub  *Hub
 	smtp *Mailer
-	sms  SMSProvider
+	otp  *OTPService
 }
 
 func connectDB(ctx context.Context, url string) (*pgxpool.Pool, error) {
