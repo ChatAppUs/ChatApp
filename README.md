@@ -30,7 +30,12 @@ infra/
 
 - **Accounts**: register/login by email, username, or phone (245 countries with
   dial codes and flags), bcrypt password hashing, access+refresh token sessions,
-  full password-reset flow, phone verification codes.
+  full password-reset flow, phone verification codes, **Google sign-in**
+  (ID-token verified against Google's live JWKS), **passkeys/WebAuthn**
+  (fingerprint, face, or device-passcode login — pure-stdlib CBOR/COSE
+  verification, ES256/RS256/EdDSA, replay-resistant sign counters), and
+  **Telegram-style QR login** (scan from a signed-in device to approve a new
+  one, one-shot tokens).
 - **Social**: posts, comments with @mentions (with notifications), likes,
   follows, user search, profiles, stories (24h expiry), reels with view
   tracking, ML-ranked feed with moderation hook.

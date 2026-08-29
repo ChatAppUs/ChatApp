@@ -341,16 +341,16 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type msg struct {
-		ID          string            `json:"id"`
-		SenderID    string            `json:"sender_id"`
-		Sender      string            `json:"sender_name"`
-		Body        string            `json:"body"`
-		MediaURL    string            `json:"media_url"`
-		IsEncrypted bool              `json:"is_encrypted"`
-		ReplyTo     string            `json:"reply_to"`
-		CreatedAt   time.Time         `json:"created_at"`
-		EditedAt    *time.Time        `json:"edited_at"`
-		Reactions   map[string]int64  `json:"reactions"`
+		ID          string           `json:"id"`
+		SenderID    string           `json:"sender_id"`
+		Sender      string           `json:"sender_name"`
+		Body        string           `json:"body"`
+		MediaURL    string           `json:"media_url"`
+		IsEncrypted bool             `json:"is_encrypted"`
+		ReplyTo     string           `json:"reply_to"`
+		CreatedAt   time.Time        `json:"created_at"`
+		EditedAt    *time.Time       `json:"edited_at"`
+		Reactions   map[string]int64 `json:"reactions"`
 	}
 	out := []msg{}
 	for rows.Next() {

@@ -77,16 +77,16 @@ func (a *App) handleListCampaigns(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type camp struct {
-		ID       string    `json:"id"`
-		Name     string    `json:"name"`
-		Objective string   `json:"objective"`
-		Status   string    `json:"status"`
-		Daily    string    `json:"daily_budget"`
-		Total    string    `json:"total_budget"`
-		Spent    string    `json:"spent"`
-		Currency string    `json:"currency"`
-		Countries []string `json:"target_countries"`
-		Locales  []string  `json:"target_locales"`
+		ID        string    `json:"id"`
+		Name      string    `json:"name"`
+		Objective string    `json:"objective"`
+		Status    string    `json:"status"`
+		Daily     string    `json:"daily_budget"`
+		Total     string    `json:"total_budget"`
+		Spent     string    `json:"spent"`
+		Currency  string    `json:"currency"`
+		Countries []string  `json:"target_countries"`
+		Locales   []string  `json:"target_locales"`
 		CreatedAt time.Time `json:"created_at"`
 	}
 	out := []camp{}

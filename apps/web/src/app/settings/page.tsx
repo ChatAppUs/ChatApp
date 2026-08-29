@@ -1,7 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { passkeySupported, registerPasskey } from "@/lib/passkey";
+
+type Passkey = {
+  id: string;
+  name: string;
+  transports: string[];
+  created_at: string;
+  last_used_at: string | null;
+};
 
 export default function SettingsPage() {
   const [secret, setSecret] = useState("");
@@ -9,6 +18,43 @@ export default function SettingsPage() {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  const [pkName, setPkName] = useState("");
+
+  const loadPasskeys = async () => {
+    try {
+      const d = await api<{ passkeys: Passkey[] }>("/api/auth/passkeys");
+      setPasskeys(d.passkeys);
+    } catch {
+      /* not critical */
+    }
+  };
+
+  useEffect(() => {
+    loadPasskeys();
+  }, []);
+
+  const addPasskey = async () => {
+    setError("");
+    setStatus("");
+    try {
+      await registerPasskey(pkName.trim() || "My passkey");
+      setPkName("");
+      setStatus("Passkey added. You can now sign in with your fingerprint, face, or device PIN.");
+      loadPasskeys();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "passkey registration failed");
+    }
+  };
+
+  const removePasskey = async (id: string) => {
+    try {
+      await api(`/api/auth/passkeys/${id}`, { method: "DELETE" });
+      loadPasskeys();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "delete failed");
+    }
+  };
 
   const setup = async () => {
     setError("");
@@ -93,6 +139,47 @@ export default function SettingsPage() {
         <button className="danger" onClick={disable}>Disable 2FA</button>
         {error && <div className="error">{error}</div>}
         {status && <div className="badge green">{status}</div>}
+      </div>
+
+      <div className="card col">
+        <h3 style={{ marginTop: 0 }}>Passkeys — fingerprint / face / device passcode</h3>
+        <p className="muted">
+          Passkeys use your device unlock (Touch ID, Face ID, Windows Hello, Android
+          biometrics, or screen-lock PIN) to sign in without a password. Biometric
+          data never leaves your device.
+        </p>
+        {passkeySupported() ? (
+          <>
+            <div className="row">
+              <input
+                placeholder="Key name (e.g. MacBook Touch ID)"
+                value={pkName}
+                onChange={(e) => setPkName(e.target.value)}
+                maxLength={60}
+              />
+              <button onClick={addPasskey}>Add passkey</button>
+            </div>
+            {passkeys.map((k) => (
+              <div key={k.id} className="row" style={{ alignItems: "center" }}>
+                <div>
+                  <div>{k.name}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    added {new Date(k.created_at).toLocaleDateString()}
+                    {k.last_used_at && ` · last used ${new Date(k.last_used_at).toLocaleDateString()}`}
+                    {k.transports.includes("internal") && " · this device"}
+                  </div>
+                </div>
+                <div className="spacer" />
+                <button className="danger small" onClick={() => removePasskey(k.id)}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            {passkeys.length === 0 && <p className="muted">No passkeys yet.</p>}
+          </>
+        ) : (
+          <p className="muted">This browser does not support passkeys.</p>
+        )}
       </div>
     </div>
   );

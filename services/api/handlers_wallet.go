@@ -10,14 +10,14 @@ import (
 )
 
 var supportedAssets = map[string][]string{
-	"BTC":  {"bitcoin"},
-	"ETH":  {"ethereum"},
-	"USDT": {"ethereum", "tron", "bsc", "polygon"},
-	"USDC": {"ethereum", "polygon", "solana", "base"},
-	"SOL":  {"solana"},
+	"BTC":   {"bitcoin"},
+	"ETH":   {"ethereum"},
+	"USDT":  {"ethereum", "tron", "bsc", "polygon"},
+	"USDC":  {"ethereum", "polygon", "solana", "base"},
+	"SOL":   {"solana"},
 	"MATIC": {"polygon"},
-	"BNB":  {"bsc"},
-	"USD":  {"internal"}, // fiat ledger for ads & creator payouts
+	"BNB":   {"bsc"},
+	"USD":   {"internal"}, // fiat ledger for ads & creator payouts
 }
 
 func assetSupported(asset, chain string) bool {

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api, saveTokens, Tokens } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import CountryPicker from "@/components/CountryPicker";
+import GoogleSignIn from "@/components/GoogleSignIn";
 
 export default function RegisterPage() {
   const { t } = useI18n();
@@ -109,6 +110,9 @@ export default function RegisterPage() {
         {error && <div className="error-text">{error}</div>}
         <button type="submit" disabled={busy}>{busy ? t("loading") : t("register")}</button>
       </form>
+      <div style={{ marginTop: 12 }}>
+        <GoogleSignIn />
+      </div>
       <p className="muted">
         <Link href="/login">{t("login")}</Link>
       </p>

@@ -380,10 +380,10 @@ func (a *App) respondPoll(w http.ResponseWriter, r *http.Request, postID, uid st
 	}
 	defer rows.Close()
 	type opt struct {
-		ID     string `json:"id"`
-		Label  string `json:"label"`
-		Votes  int64  `json:"votes"`
-		Voted  bool   `json:"voted_by_me"`
+		ID    string `json:"id"`
+		Label string `json:"label"`
+		Votes int64  `json:"votes"`
+		Voted bool   `json:"voted_by_me"`
 	}
 	out := []opt{}
 	var total int64

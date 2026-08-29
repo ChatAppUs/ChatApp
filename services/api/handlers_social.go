@@ -542,11 +542,11 @@ func (a *App) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type notif struct {
-		ID        int64           `json:"id"`
-		Kind      string          `json:"kind"`
-		Payload   map[string]any  `json:"payload"`
-		ReadAt    *time.Time      `json:"read_at"`
-		CreatedAt time.Time       `json:"created_at"`
+		ID        int64          `json:"id"`
+		Kind      string         `json:"kind"`
+		Payload   map[string]any `json:"payload"`
+		ReadAt    *time.Time     `json:"read_at"`
+		CreatedAt time.Time      `json:"created_at"`
 	}
 	out := []notif{}
 	for rows.Next() {

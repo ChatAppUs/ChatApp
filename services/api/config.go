@@ -7,26 +7,30 @@ import (
 )
 
 type Config struct {
-	Port             string
-	DatabaseURL      string
-	JWTSecret        []byte
-	AccessTokenTTL   time.Duration
-	RefreshTokenTTL  time.Duration
-	AppEnv           string
-	MediaServiceURL  string
-	MLServiceURL     string
-	SecuritySvcURL   string
-	TwilioSID        string
-	TwilioToken      string
-	TwilioVerifySID  string
-	SMTPHost         string
-	SMTPPort         string
-	SMTPUser         string
-	SMTPPass         string
-	StripeSecret     string
-	SumsubAppToken   string
-	SumsubSecretKey  string
-	CreatorRPM       float64 // creator revenue per 1000 views, USD
+	Port            string
+	DatabaseURL     string
+	JWTSecret       []byte
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
+	AppEnv          string
+	MediaServiceURL string
+	MLServiceURL    string
+	SecuritySvcURL  string
+	TwilioSID       string
+	TwilioToken     string
+	TwilioVerifySID string
+	SMTPHost        string
+	SMTPPort        string
+	SMTPUser        string
+	SMTPPass        string
+	StripeSecret    string
+	SumsubAppToken  string
+	SumsubSecretKey string
+	CreatorRPM      float64 // creator revenue per 1000 views, USD
+	GoogleClientID  string
+	WebAuthnRPID    string
+	WebAuthnRPName  string
+	WebAuthnOrigins string // comma-separated allowed origins
 }
 
 func getenv(key, def string) string {
@@ -58,6 +62,10 @@ func loadConfig() Config {
 		SumsubAppToken:  os.Getenv("SUMSUB_APP_TOKEN"),
 		SumsubSecretKey: os.Getenv("SUMSUB_SECRET_KEY"),
 		CreatorRPM:      atof(getenv("CREATOR_RPM", "0.50")),
+		GoogleClientID:  os.Getenv("GOOGLE_CLIENT_ID"),
+		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "localhost"),
+		WebAuthnRPName:  getenv("WEBAUTHN_RP_NAME", "ChatApp"),
+		WebAuthnOrigins: getenv("WEBAUTHN_ORIGINS", "http://localhost:3000"),
 	}
 }
 

@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, saveTokens, Tokens } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import GoogleSignIn from "@/components/GoogleSignIn";
+import QRLogin from "@/components/QRLogin";
+import { loginWithPasskey, passkeySupported } from "@/lib/passkey";
 
 export default function LoginPage() {
   const { t } = useI18n();
@@ -15,6 +18,27 @@ export default function LoginPage() {
   const [needs2FA, setNeeds2FA] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+
+  const passkeyLogin = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await loginWithPasskey(identifier, totpCode || undefined);
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t("error");
+      if (msg === "totp_required") {
+        setNeeds2FA(true);
+        setError("Enter the 6-digit code from your authenticator app, then try again");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +93,23 @@ export default function LoginPage() {
         {error && <div className="error-text">{error}</div>}
         <button type="submit" disabled={busy}>{busy ? t("loading") : t("login")}</button>
       </form>
+      <div className="col" style={{ marginTop: 12 }}>
+        <GoogleSignIn totpCode={totpCode} />
+        {passkeySupported() && (
+          <button
+            className="secondary"
+            onClick={passkeyLogin}
+            disabled={busy || !identifier.trim()}
+            title={!identifier.trim() ? "Enter your username first" : undefined}
+          >
+            🔑 Sign in with passkey (fingerprint / face / PIN)
+          </button>
+        )}
+        <button className="secondary" onClick={() => setShowQR((v) => !v)}>
+          {showQR ? "Hide QR code" : "📱 Log in by QR code"}
+        </button>
+        {showQR && <QRLogin />}
+      </div>
       <p className="muted">
         <Link href="/forgot-password">{t("forgotPassword")}</Link>
         {" · "}

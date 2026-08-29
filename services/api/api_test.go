@@ -1,6 +1,10 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
 	"strings"
 	"testing"
 	"time"
@@ -156,5 +160,113 @@ func TestRandomTokenUniqueness(t *testing.T) {
 			t.Fatal("duplicate token generated")
 		}
 		seen[tok] = true
+	}
+}
+
+func TestCBORRoundTrip(t *testing.T) {
+	// {1: 2, "k": [1, "x"], -1: h'0102'} hand-encoded CBOR
+	in := []byte{0xa3, 0x01, 0x02, 0x61, 0x6b, 0x82, 0x01, 0x61, 0x78, 0x20, 0x42, 0x01, 0x02}
+	v, err := parseCBOR(in)
+	if err != nil {
+		t.Fatalf("parseCBOR: %v", err)
+	}
+	m, ok := v.(map[any]any)
+	if !ok {
+		t.Fatal("expected map")
+	}
+	if n, _ := m[uint64(1)].(uint64); n != 2 {
+		t.Fatalf("m[1] = %v", m[uint64(1)])
+	}
+	arr, ok := m["k"].([]any)
+	if !ok || len(arr) != 2 || arr[1] != "x" {
+		t.Fatalf("m[k] = %v", m["k"])
+	}
+	if b, _ := m[int64(-1)].([]byte); len(b) != 2 || b[0] != 1 {
+		t.Fatalf("m[-1] = %v", m[int64(-1)])
+	}
+}
+
+func TestCBORRejectsTrailing(t *testing.T) {
+	if _, err := parseCBOR([]byte{0x01, 0x02}); err == nil {
+		t.Fatal("expected trailing-bytes error")
+	}
+}
+
+// COSE-encode a P-256 public key: {1:2, 3:-7, -1:1, -2:x, -3:y}
+func coseEncodeP256(x, y []byte) []byte {
+	out := []byte{0xa5}
+	out = append(out, 0x01, 0x02)       // 1: 2 (kty EC2)
+	out = append(out, 0x03, 0x26)       // 3: -7 (ES256)
+	out = append(out, 0x20, 0x01)       // -1: 1 (P-256)
+	out = append(out, 0x21, 0x58, 0x20) // -2: bytes(32)
+	out = append(out, x...)
+	out = append(out, 0x22, 0x58, 0x20) // -3: bytes(32)
+	out = append(out, y...)
+	return out
+}
+
+func TestCOSEES256Verify(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("genkey: %v", err)
+	}
+	x := priv.PublicKey.X.Bytes()
+	y := priv.PublicKey.Y.Bytes()
+	x = append(make([]byte, 32-len(x)), x...)
+	y = append(make([]byte, 32-len(y)), y...)
+	cose := coseEncodeP256(x, y)
+
+	data := []byte("authenticatorData||clientDataHash")
+	digest := sha256.Sum256(data)
+	sig, err := ecdsa.SignASN1(rand.Reader, priv, digest[:])
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if err := verifyCOSESignature(cose, data, sig); err != nil {
+		t.Fatalf("valid signature rejected: %v", err)
+	}
+	if err := verifyCOSESignature(cose, []byte("tampered"), sig); err == nil {
+		t.Fatal("tampered data accepted")
+	}
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	ox := other.PublicKey.X.Bytes()
+	oy := other.PublicKey.Y.Bytes()
+	ox = append(make([]byte, 32-len(ox)), ox...)
+	oy = append(make([]byte, 32-len(oy)), oy...)
+	if err := verifyCOSESignature(coseEncodeP256(ox, oy), data, sig); err == nil {
+		t.Fatal("wrong key accepted")
+	}
+}
+
+func TestParseAuthData(t *testing.T) {
+	rpHash := sha256.Sum256([]byte("localhost"))
+	buf := append([]byte{}, rpHash[:]...)
+	buf = append(buf, 0x01|0x40)     // UP + AT flags
+	buf = append(buf, 0, 0, 0, 0x2a) // signCount = 42
+	buf = append(buf, make([]byte, 16)...)
+	credID := []byte{0xde, 0xad, 0xbe, 0xef}
+	buf = append(buf, 0x00, byte(len(credID)))
+	buf = append(buf, credID...)
+	cose := coseEncodeP256(make([]byte, 32), make([]byte, 32))
+	buf = append(buf, cose...)
+
+	ad, err := parseAuthData(buf, true)
+	if err != nil {
+		t.Fatalf("parseAuthData: %v", err)
+	}
+	if ad.SignCount != 42 || !ad.UserPresent {
+		t.Fatalf("bad parse: %+v", ad)
+	}
+	if string(ad.CredentialID) != string(credID) {
+		t.Fatal("credential id mismatch")
+	}
+	if string(ad.CredentialPublicKey) != string(cose) {
+		t.Fatal("cose key mismatch")
+	}
+	if err := ad.verifyRP("localhost"); err != nil {
+		t.Fatalf("verifyRP: %v", err)
+	}
+	if err := ad.verifyRP("evil.example"); err == nil {
+		t.Fatal("wrong rp accepted")
 	}
 }

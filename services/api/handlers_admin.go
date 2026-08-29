@@ -227,13 +227,13 @@ func (a *App) handleAdminListAds(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type ad struct {
-		ID        string    `json:"id"`
-		Name      string    `json:"name"`
-		Advertiser string   `json:"advertiser"`
-		Objective string    `json:"objective"`
-		Budget    string    `json:"total_budget"`
-		Currency  string    `json:"currency"`
-		CreatedAt time.Time `json:"created_at"`
+		ID         string    `json:"id"`
+		Name       string    `json:"name"`
+		Advertiser string    `json:"advertiser"`
+		Objective  string    `json:"objective"`
+		Budget     string    `json:"total_budget"`
+		Currency   string    `json:"currency"`
+		CreatedAt  time.Time `json:"created_at"`
 	}
 	out := []ad{}
 	for rows.Next() {

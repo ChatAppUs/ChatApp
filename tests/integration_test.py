@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end integration test against a live ChatApp API (no mocks)."""
 import asyncio
+import os
 import base64
 import hashlib
 import hmac
@@ -211,8 +212,153 @@ def main():
     s, r = req("POST", "/api/auth/forgot-password", {"identifier": f"{bob}@test.dev"})
     check("forgot password accepted", s == 200, f"{s} {r}")
 
+    # --- QR login (Telegram-style): new device -> approve from authed device ---
+    s, r = req("POST", "/api/auth/qr/new", {})
+    check("qr token created", s in (200, 201) and r.get("token"), f"{s} {r}")
+    qr_token = r.get("token")
+    s, r = req("GET", f"/api/auth/qr/{qr_token}")
+    check("qr status pending", s == 200 and r.get("status") == "pending", f"{s} {r}")
+    s, r = req("POST", f"/api/auth/qr/{qr_token}/approve", {}, token=bob_tok)
+    check("qr approve", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/auth/qr/{qr_token}")
+    check("qr login issues tokens", s == 200 and r.get("access_token"), f"{s} {r}")
+    qr_tok = r.get("access_token")
+    s, r = req("GET", "/api/me", token=qr_tok)
+    check("qr session works", s == 200 and r.get("username") == bob, f"{s} {r}")
+    s, r = req("GET", f"/api/auth/qr/{qr_token}")
+    check("qr token one-shot", s == 200 and r.get("status") == "consumed"
+          and not r.get("access_token"), f"{s} {r}")
+    s, r = req("POST", f"/api/auth/qr/{qr_token}/approve", {}, token=bob_tok)
+    check("qr re-approve rejected", s == 410, f"{s} {r}")
+
+    # --- passkeys: full WebAuthn ceremony with a software authenticator ---
+    passkey_flow(alice_tok, alice)
+
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
+
+# ---- minimal CBOR encoder (definite-length only) ----
+
+def cbor_encode(v):
+    if isinstance(v, bool):
+        return b"\xf5" if v else b"\xf4"
+    if isinstance(v, int):
+        if v >= 0:
+            return cbor_head(0, v)
+        return cbor_head(1, -1 - v)
+    if isinstance(v, bytes):
+        return cbor_head(2, len(v)) + v
+    if isinstance(v, str):
+        return cbor_head(3, len(v.encode())) + v.encode()
+    if isinstance(v, (list, tuple)):
+        return cbor_head(4, len(v)) + b"".join(cbor_encode(x) for x in v)
+    if isinstance(v, dict):
+        return cbor_head(5, len(v)) + b"".join(
+            cbor_encode(k) + cbor_encode(x) for k, x in v.items())
+    raise TypeError(v)
+
+
+def cbor_head(major, n):
+    if n < 24:
+        return bytes([(major << 5) | n])
+    if n < 256:
+        return bytes([(major << 5) | 24, n])
+    if n < 65536:
+        return bytes([(major << 5) | 25]) + n.to_bytes(2, "big")
+    return bytes([(major << 5) | 26]) + n.to_bytes(4, "big")
+
+
+def passkey_flow(token, username):
+    """Real WebAuthn register+login using a software ECDSA P-256 authenticator."""
+    from cryptography.hazmat.primitives.asymmetric import ec, utils
+    from cryptography.hazmat.primitives import hashes
+
+    RP_ID = "localhost"
+    ORIGIN = "http://localhost:3000"
+    rp_hash = hashlib.sha256(RP_ID.encode()).digest()
+
+    priv = ec.generate_private_key(ec.SECP256R1())
+    nums = priv.public_key().public_numbers()
+    x = nums.x.to_bytes(32, "big")
+    y = nums.y.to_bytes(32, "big")
+    cose_key = cbor_encode({1: 2, 3: -7, -1: 1, -2: x, -3: y})
+    cred_id = os.urandom(32)
+
+    # registration
+    s, r = req("POST", "/api/auth/passkey/register/begin", {}, token=token)
+    check("passkey register begin", s == 200 and r.get("challenge"), f"{s} {r}")
+    challenge = r.get("challenge")
+    client_data = json.dumps({
+        "type": "webauthn.create", "challenge": challenge, "origin": ORIGIN,
+        "crossOrigin": False}).encode()
+    auth_data = (rp_hash + bytes([0x01 | 0x40]) + (1).to_bytes(4, "big")
+                 + os.urandom(16) + len(cred_id).to_bytes(2, "big") + cred_id + cose_key)
+    att_obj = cbor_encode({"fmt": "none", "attStmt": {}, "authData": auth_data})
+    s, r = req("POST", "/api/auth/passkey/register/finish", {
+        "name": "test-key",
+        "response": {
+            "clientDataJSON": b64u(client_data),
+            "attestationObject": b64u(att_obj),
+            "transports": ["internal"]}}, token=token)
+    check("passkey register finish", s in (200, 201), f"{s} {r}")
+
+    s, r = req("GET", "/api/auth/passkeys", token=token)
+    check("passkey listed", s == 200 and len(r.get("passkeys", [])) == 1, f"{s} {r}")
+    pk_id = r["passkeys"][0]["id"] if r.get("passkeys") else None
+
+    # tampered challenge must fail
+    s, r = req("POST", "/api/auth/passkey/login/begin", {"username": username})
+    check("passkey login begin", s == 200 and r.get("challenge"), f"{s} {r}")
+    bad_client = json.dumps({
+        "type": "webauthn.get", "challenge": "wrong", "origin": ORIGIN}).encode()
+    bad_auth = rp_hash + b"\x01" + (2).to_bytes(4, "big")
+    bad_sig = priv.sign(bad_auth + hashlib.sha256(bad_client).digest(), ec.ECDSA(hashes.SHA256()))
+    s, r = req("POST", "/api/auth/passkey/login/finish", {
+        "id": b64u(cred_id),
+        "response": {"clientDataJSON": b64u(bad_client),
+                     "authenticatorData": b64u(bad_auth),
+                     "signature": b64u(bad_sig)}})
+    check("passkey bad challenge rejected", s == 400, f"{s} {r}")
+
+    # valid login
+    s, r = req("POST", "/api/auth/passkey/login/begin", {"username": username})
+    challenge = r.get("challenge")
+    client_data = json.dumps({
+        "type": "webauthn.get", "challenge": challenge, "origin": ORIGIN,
+        "crossOrigin": False}).encode()
+    auth_data = rp_hash + b"\x01" + (3).to_bytes(4, "big")
+    sig = priv.sign(auth_data + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
+    s, r = req("POST", "/api/auth/passkey/login/finish", {
+        "id": b64u(cred_id),
+        "response": {"clientDataJSON": b64u(client_data),
+                     "authenticatorData": b64u(auth_data),
+                     "signature": b64u(sig)}})
+    check("passkey login issues tokens", s == 200 and r.get("access_token"), f"{s} {r}")
+
+    # forged signature must fail
+    s, r = req("POST", "/api/auth/passkey/login/begin", {"username": username})
+    challenge = r.get("challenge")
+    client_data = json.dumps({
+        "type": "webauthn.get", "challenge": challenge, "origin": ORIGIN}).encode()
+    auth_data = rp_hash + b"\x01" + (4).to_bytes(4, "big")
+    other = ec.generate_private_key(ec.SECP256R1())
+    forged = other.sign(auth_data + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
+    s, r = req("POST", "/api/auth/passkey/login/finish", {
+        "id": b64u(cred_id),
+        "response": {"clientDataJSON": b64u(client_data),
+                     "authenticatorData": b64u(auth_data),
+                     "signature": b64u(forged)}})
+    check("passkey forged signature rejected", s == 401, f"{s} {r}")
+
+    # delete
+    if pk_id:
+        s, r = req("DELETE", f"/api/auth/passkeys/{pk_id}", token=token)
+        check("passkey delete", s == 200, f"{s} {r}")
+
+
+def b64u(b):
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 
 
 async def chat_flow(alice_tok, bob_tok, conv_id, alice_id, bob_id):

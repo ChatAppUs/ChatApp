@@ -13,10 +13,10 @@ import (
 var countriesFS embed.FS
 
 type Country struct {
-	Name  string `json:"name"`
-	ISO   string `json:"iso"`
-	Dial  string `json:"dial"`
-	Flag  string `json:"flag"`
+	Name string `json:"name"`
+	ISO  string `json:"iso"`
+	Dial string `json:"dial"`
+	Flag string `json:"flag"`
 }
 
 var countries []Country
@@ -98,6 +98,13 @@ func main() {
 	mux.HandleFunc("POST /api/auth/phone/send-code", app.handlePhoneSendCode)
 	mux.HandleFunc("POST /api/auth/phone/check-code", app.handlePhoneCheckCode)
 
+	// federated identity, passkeys, QR login
+	mux.HandleFunc("POST /api/auth/google", app.handleGoogleAuth)
+	mux.HandleFunc("POST /api/auth/passkey/login/begin", app.handlePasskeyLoginBegin)
+	mux.HandleFunc("POST /api/auth/passkey/login/finish", app.handlePasskeyLoginFinish)
+	mux.HandleFunc("POST /api/auth/qr/new", app.handleQRLoginNew)
+	mux.HandleFunc("GET /api/auth/qr/{token}", app.handleQRLoginStatus)
+
 	// authenticated: profile & social
 	mux.HandleFunc("GET /api/me", app.requireAuth(app.handleMe))
 	mux.HandleFunc("PATCH /api/me", app.requireAuth(app.handleUpdateProfile))
@@ -160,6 +167,12 @@ func main() {
 	mux.HandleFunc("POST /api/auth/2fa/setup", app.requireAuth(app.handle2FASetup))
 	mux.HandleFunc("POST /api/auth/2fa/enable", app.requireAuth(app.handle2FAEnable))
 	mux.HandleFunc("POST /api/auth/2fa/disable", app.requireAuth(app.handle2FADisable))
+	mux.HandleFunc("POST /api/auth/passkey/register/begin", app.requireAuth(app.handlePasskeyRegisterBegin))
+	mux.HandleFunc("POST /api/auth/passkey/register/finish", app.requireAuth(app.handlePasskeyRegisterFinish))
+	mux.HandleFunc("GET /api/auth/passkeys", app.requireAuth(app.handlePasskeyList))
+	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", app.requireAuth(app.handlePasskeyDelete))
+	mux.HandleFunc("POST /api/auth/qr/{token}/approve", app.requireAuth(app.handleQRLoginApprove))
+	mux.HandleFunc("POST /api/auth/qr/{token}/reject", app.requireAuth(app.handleQRLoginReject))
 	mux.HandleFunc("PUT /api/e2e/key", app.requireAuth(app.handleE2EPublishKey))
 	mux.HandleFunc("GET /api/e2e/keys", app.requireAuth(app.handleE2EGetKeys))
 
