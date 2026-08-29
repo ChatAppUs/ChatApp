@@ -70,6 +70,10 @@ infra/
 - **Chat parity batch 3**: scheduled messages with a multi-node-safe delivery
   worker (SKIP LOCKED claiming), voice messages (MediaRecorder → media
   service → inline audio player), and per-conversation message drafts.
+- **Comments & discovery parity**: comment likes with author notification,
+  nested reply threads in the UI, share-post-to-DM with conversation picker,
+  in-conversation message search, group creation UI, and a notifications
+  center (`/notifications`) with mark-all-read.
 - **i18n**: English, Español, Français, Deutsch, Português, العربية (RTL),
   हिन्दी, 中文.
 

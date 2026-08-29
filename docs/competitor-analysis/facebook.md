@@ -143,3 +143,14 @@ The following gaps from this document are now implemented in ChatApp:
 - **Saved Messages** self-chat (POST /api/conversations/saved, one per user, private)
 - **Story engagement**: view tracking (deduped), viewer list (author only), emoji reactions, story replies delivered as DMs with story reference
 - **Audience selector** in the composer (public / followers / only me), enforced in feed queries
+
+## Implemented parity — batch 4 (comment threads, share-to-chat, notifications)
+- **Comment likes**: `POST/DELETE /api/comments/{id}/like`; comment list returns
+  `like_count` + `liked_by_me`; liking notifies the comment author.
+- **Nested comment replies** fully wired in the UI: indented reply threads,
+  "Reply" button prefills `@username`, `parent_id` returned by the list API.
+- **Share post to DM**: `POST /api/posts/{id}/share` sends the post (author +
+  excerpt + post reference) into any conversation you belong to and increments
+  `share_count`; PostCard "📤" button shows a conversation picker.
+- **Notifications center**: `/notifications` page lists all notifications with
+  unread highlighting; `POST /api/notifications/read` marks everything read.

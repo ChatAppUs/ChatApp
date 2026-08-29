@@ -37,6 +37,9 @@ export interface Comment {
   author_avatar: string;
   body: string;
   created_at: string;
+  parent_id?: string;
+  like_count: number;
+  liked_by_me: boolean;
 }
 
 export interface PublicUser {

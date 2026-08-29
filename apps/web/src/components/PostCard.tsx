@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { Post, Comment, PollOption } from "@/lib/types";
+import type { Post, Comment, PollOption, Conversation } from "@/lib/types";
 
 export default function PostCard({ post, onChanged }: { post: Post; onChanged?: () => void }) {
   const { t } = useI18n();
@@ -17,6 +17,10 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
   const [bookmarked, setBookmarked] = useState(false);
   const [poll, setPoll] = useState<PollOption[]>([]);
   const [pollTotal, setPollTotal] = useState(0);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareConvs, setShareConvs] = useState<Conversation[]>([]);
+  const [shareSent, setShareSent] = useState(false);
 
   useEffect(() => {
     api<{ options: PollOption[]; total_votes: number }>(`/api/posts/${post.id}/poll`)
@@ -121,13 +125,40 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
     if (!draft.trim()) return;
     await api(`/api/posts/${post.id}/comments`, {
       method: "POST",
-      body: JSON.stringify({ body: draft }),
+      body: JSON.stringify({ body: draft, parent_id: replyTo ?? "" }),
     });
     setDraft("");
+    setReplyTo(null);
     setCommentCount((c) => c + 1);
     const data = await api<{ comments: Comment[] }>(`/api/posts/${post.id}/comments`);
     setComments(data.comments);
     onChanged?.();
+  };
+
+  const toggleCommentLike = async (c: Comment) => {
+    const method = c.liked_by_me ? "DELETE" : "POST";
+    await api(`/api/comments/${c.id}/like`, { method, body: "{}" }).catch(() => {});
+    setComments((prev) => prev.map((x) => x.id === c.id
+      ? { ...x, liked_by_me: !x.liked_by_me, like_count: x.like_count + (x.liked_by_me ? -1 : 1) }
+      : x));
+  };
+
+  const shareToChat = async (convId: string) => {
+    await api(`/api/posts/${post.id}/share`, {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: convId }),
+    }).catch(() => {});
+    setShareOpen(false);
+    setShareSent(true);
+    setTimeout(() => setShareSent(false), 2000);
+  };
+
+  const openShare = async () => {
+    if (!shareOpen && shareConvs.length === 0) {
+      const d = await api<{ conversations: Conversation[] }>("/api/conversations").catch(() => null);
+      if (d) setShareConvs(d.conversations);
+    }
+    setShareOpen(!shareOpen);
   };
 
   return (
@@ -212,6 +243,9 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
         <button className="secondary small" onClick={() => setQuoting((v) => !v)}>
           💬 Quote
         </button>
+        <button className="secondary small" title="Send to chat" onClick={openShare}>
+          📤
+        </button>
         {isMine && !editing && (
           <button className="secondary small" onClick={() => { setEditText(post.body); setEditing(true); }}>
             ✏️
@@ -235,18 +269,52 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           </div>
         </div>
       )}
+      {shareOpen && (
+        <div className="card" style={{ marginTop: 8, padding: 8 }}>
+          <div className="row">
+            <strong style={{ fontSize: 13 }}>Send to chat…</strong>
+            <div className="spacer" />
+            <button className="secondary small" onClick={() => setShareOpen(false)}>✕</button>
+          </div>
+          <div className="col" style={{ maxHeight: 160, overflowY: "auto" }}>
+            {shareConvs.map((c) => (
+              <button key={c.id} className="secondary small" style={{ textAlign: "start" }}
+                onClick={() => shareToChat(c.id)}>
+                {c.title || (c.is_channel ? "📢 Channel" : c.is_group ? "👥 Group" : "DM")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {shareSent && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Sent to chat ✓</div>}
       {showComments && (
         <div className="col" style={{ marginTop: 10 }}>
           {comments.map((c) => (
-            <div key={c.id} className="row">
+            <div key={c.id} className="row" style={c.parent_id ? { marginInlineStart: 28 } : undefined}>
               <div className="avatar sm" />
               <div>
                 <strong style={{ fontSize: 13 }}>{c.author_name}</strong>{" "}
                 <span style={{ fontSize: 14 }}>{c.body}</span>
-                <div className="muted">{new Date(c.created_at).toLocaleString()}</div>
+                <div className="row" style={{ gap: 8 }}>
+                  <span className="muted">{new Date(c.created_at).toLocaleString()}</span>
+                  <button className="secondary small" style={{ padding: "0 6px", fontSize: 11 }}
+                    onClick={() => toggleCommentLike(c)}>
+                    {c.liked_by_me ? "❤️" : "🤍"} {c.like_count > 0 ? c.like_count : ""}
+                  </button>
+                  <button className="secondary small" style={{ padding: "0 6px", fontSize: 11 }}
+                    onClick={() => { setReplyTo(c.id); setDraft(`@${c.author_username} `); }}>
+                    Reply
+                  </button>
+                </div>
               </div>
             </div>
           ))}
+          {replyTo && (
+            <div className="row" style={{ fontSize: 12 }}>
+              <span className="badge">replying</span>
+              <button className="secondary small" onClick={() => setReplyTo(null)}>✕</button>
+            </div>
+          )}
           <div className="row">
             <input
               value={draft}

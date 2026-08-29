@@ -441,11 +441,14 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	rows, err := a.db.Query(r.Context(),
-		`SELECT c.id, c.author_id, u.display_name, u.username, u.avatar_url, c.body, c.created_at
+		`SELECT c.id, c.author_id, u.display_name, u.username, u.avatar_url, c.body, c.created_at,
+                 COALESCE(c.parent_id::text,''),
+                 (SELECT count(*) FROM comment_likes cl WHERE cl.comment_id = c.id),
+                 EXISTS(SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $4)
                  FROM comments c JOIN users u ON u.id = c.author_id
                  WHERE c.post_id = $1 AND c.deleted_at IS NULL
                  ORDER BY c.created_at ASC LIMIT $2 OFFSET $3`,
-		r.PathValue("id"), limit, offset)
+		r.PathValue("id"), limit, offset, userIDFrom(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load comments")
 		return
@@ -459,11 +462,15 @@ func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
 		Avatar    string    `json:"author_avatar"`
 		Body      string    `json:"body"`
 		CreatedAt time.Time `json:"created_at"`
+		ParentID  string    `json:"parent_id"`
+		LikeCount int       `json:"like_count"`
+		LikedByMe bool      `json:"liked_by_me"`
 	}
 	out := []comment{}
 	for rows.Next() {
 		var c comment
-		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Name, &c.Username, &c.Avatar, &c.Body, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Name, &c.Username, &c.Avatar, &c.Body, &c.CreatedAt,
+			&c.ParentID, &c.LikeCount, &c.LikedByMe); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to load comments")
 			return
 		}

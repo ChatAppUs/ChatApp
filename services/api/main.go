@@ -131,6 +131,11 @@ func main() {
 	mux.HandleFunc("POST /api/posts/{id}/like", app.requireAuth(app.handleLike))
 	mux.HandleFunc("DELETE /api/posts/{id}/like", app.requireAuth(app.handleUnlike))
 	mux.HandleFunc("POST /api/posts/{id}/comments", app.requireAuth(app.handleAddComment))
+	mux.HandleFunc("POST /api/comments/{id}/like", app.requireAuth(app.handleLikeComment))
+	mux.HandleFunc("DELETE /api/comments/{id}/like", app.requireAuth(app.handleUnlikeComment))
+	mux.HandleFunc("POST /api/notifications/read", app.requireAuth(app.handleMarkNotificationsRead))
+	mux.HandleFunc("GET /api/conversations/{id}/search", app.requireAuth(app.handleSearchMessages))
+	mux.HandleFunc("POST /api/posts/{id}/share", app.requireAuth(app.handleSharePostToChat))
 	mux.HandleFunc("GET /api/posts/{id}/comments", app.requireAuth(app.handleListComments))
 
 	// chat

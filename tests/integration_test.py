@@ -380,6 +380,57 @@ def social2_flow(alice_tok, bob_tok, conv):
                token=alice_tok)
     check("past send_at rejected", s == 400, f"{s} {r}")
 
+    # comment likes
+    s, r = req("POST", f"/api/posts/{post_id}/comments", {"body": "likeable comment"},
+               token=alice_tok)
+    cid = r.get("id")
+    check("comment created", s in (200, 201) and cid, f"{s} {r}")
+    s, r = req("POST", f"/api/comments/{cid}/like", {}, token=bob_tok)
+    check("like comment", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/posts/{post_id}/comments", token=bob_tok)
+    lc = next((c for c in r.get("comments", []) if c["id"] == cid), None)
+    check("comment like count + liked_by_me",
+          lc and lc.get("like_count") == 1 and lc.get("liked_by_me"), f"{lc}")
+    s, r = req("GET", f"/api/notifications", token=alice_tok)
+    check("comment like notifies author",
+          any(n["kind"] == "comment_like" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("DELETE", f"/api/comments/{cid}/like", token=bob_tok)
+    check("unlike comment", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/posts/{post_id}/comments", token=bob_tok)
+    lc = next((c for c in r.get("comments", []) if c["id"] == cid), None)
+    check("comment unlike reflected", lc and lc.get("like_count") == 0 and not lc.get("liked_by_me"),
+          f"{lc}")
+    # nested reply shows parent_id
+    s, r = req("POST", f"/api/posts/{post_id}/comments",
+               {"body": "nested reply", "parent_id": cid}, token=bob_tok)
+    rid = r.get("id")
+    s, r = req("GET", f"/api/posts/{post_id}/comments", token=alice_tok)
+    rc = next((c for c in r.get("comments", []) if c["id"] == rid), None)
+    check("reply has parent_id", rc and rc.get("parent_id") == cid, f"{rc}")
+
+    # notifications mark read
+    s, r = req("POST", "/api/notifications/read", {}, token=alice_tok)
+    check("mark notifications read", s == 200, f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("all notifications read",
+          all(n.get("read_at") for n in r.get("notifications", [])), f"{s}")
+
+    # message search
+    s, r = req("GET", f"/api/conversations/{conv}/search?q=pin", token=alice_tok)
+    check("message search finds hit",
+          s == 200 and any("pin me" in m["body"] for m in r.get("messages", [])), f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/search?q=zzzznope", token=alice_tok)
+    check("message search no hit", s == 200 and r.get("messages") == [], f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/search?q=x", token=alice_tok)
+    check("message search short query rejected", s == 400, f"{s} {r}")
+
+    # share post to chat
+    s, r = req("POST", f"/api/posts/{post_id}/share", {"conversation_id": conv}, token=bob_tok)
+    check("share post to chat", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/conversations/{conv}/messages", token=alice_tok)
+    check("shared post appears in chat",
+          any(f"post:{post_id}" in m["body"] for m in r.get("messages", [])), f"{s}")
+
 
 def grant_superadmin(username):
     """Grant superadmin directly in the DB (test bootstrap; the product path is

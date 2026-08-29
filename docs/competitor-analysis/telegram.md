@@ -132,3 +132,11 @@ The following gaps from this document are now implemented in ChatApp:
   service, rendered as inline audio players
 - **Per-conversation drafts**: chat input persists unsent text per
   conversation (restored on reopen, cleared on send)
+
+## Implemented parity — batch 4 (message search, group creation)
+- **In-conversation message search**: `GET /api/conversations/{id}/search?q=`
+  (member-only, case-insensitive, 50 most recent hits); chat UI has a search
+  box above the message list with a results panel.
+- **Group creation UI**: "👥 New group" in the chat list — name the group,
+  search users, multi-select members, create; opens the new group immediately.
+- **Share posts into chats** from the feed (see facebook.md batch 4).

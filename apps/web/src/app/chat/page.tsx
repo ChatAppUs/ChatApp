@@ -47,6 +47,11 @@ export default function ChatPage() {
   const [recording, setRecording] = useState(false);
   const [scheduled, setScheduled] = useState<{ id: string; body: string; send_at: string }[]>([]);
   const [scheduleAt, setScheduleAt] = useState("");
+  const [msgQuery, setMsgQuery] = useState("");
+  const [msgHits, setMsgHits] = useState<Message[] | null>(null);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupTitle, setGroupTitle] = useState("");
+  const [groupMembers, setGroupMembers] = useState<string[]>([]);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -255,9 +260,46 @@ export default function ChatPage() {
     } catch { /* mic permission denied */ }
   };
 
+  const searchMessages = async (q: string) => {
+    setMsgQuery(q);
+    if (!active || q.trim().length < 2) {
+      setMsgHits(null);
+      return;
+    }
+    const d = await api<{ messages: Message[] }>(
+      `/api/conversations/${active.id}/search?q=${encodeURIComponent(q)}`
+    ).catch(() => null);
+    setMsgHits(d ? d.messages : []);
+  };
+
+  const createGroup = async () => {
+    if (!groupTitle.trim() || groupMembers.length === 0) return;
+    const d = await api<{ id: string }>("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify({ is_group: true, title: groupTitle, member_ids: groupMembers }),
+    }).catch(() => null);
+    setGroupOpen(false);
+    setGroupTitle("");
+    setGroupMembers([]);
+    if (d) {
+      loadConversations();
+      openConversation({
+        id: d.id, is_group: true, is_channel: false,
+        title: groupTitle, created_at: "", last_message: null, unread: 0,
+      });
+    }
+  };
+
+  const toggleGroupMember = (id: string) => {
+    setGroupMembers((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
   const openConversation = async (c: Conversation) => {
     setActive(c);
     activeRef.current = c;
+    setMsgQuery("");
+    setMsgHits(null);
     setMessages([]);
     setTypingUsers(new Set());
     const data = await api<{ messages: Message[] }>(`/api/conversations/${c.id}/messages`);
@@ -388,6 +430,36 @@ export default function ChatPage() {
           <div className="avatar sm" style={{ display: "grid", placeItems: "center" }}>🔖</div>
           <div>Saved Messages</div>
         </div>
+        <button className="secondary small" onClick={() => setGroupOpen((v) => !v)}>
+          👥 New group
+        </button>
+        {groupOpen && (
+          <div className="card" style={{ padding: 8 }}>
+            <input
+              placeholder="Group name"
+              value={groupTitle}
+              onChange={(e) => setGroupTitle(e.target.value)}
+            />
+            <div className="col" style={{ maxHeight: 140, overflowY: "auto", marginTop: 4 }}>
+              {hits.map((u) => (
+                <label key={u.id} className="row" style={{ fontSize: 13, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={groupMembers.includes(u.id)}
+                    onChange={() => toggleGroupMember(u.id)}
+                  />
+                  {u.display_name} <span className="muted">@{u.username}</span>
+                </label>
+              ))}
+              {hits.length === 0 && <div className="muted" style={{ fontSize: 12 }}>Search users above to add members</div>}
+            </div>
+            <button className="small" style={{ marginTop: 4 }}
+              disabled={!groupTitle.trim() || groupMembers.length === 0}
+              onClick={createGroup}>
+              Create ({groupMembers.length})
+            </button>
+          </div>
+        )}
         {hits.map((u) => (
           <div key={u.id} className="chat-item row" onClick={() => startChat(u.id)} role="button" tabIndex={0}>
             <div className="avatar sm" />
@@ -442,6 +514,23 @@ export default function ChatPage() {
                 {t("audioCall")}
               </button>
             </div>
+            <input
+              placeholder="Search in conversation…"
+              value={msgQuery}
+              onChange={(e) => searchMessages(e.target.value)}
+              style={{ fontSize: 13 }}
+            />
+            {msgHits && (
+              <div className="card" style={{ padding: 8, maxHeight: 180, overflowY: "auto" }}>
+                {msgHits.length === 0 && <div className="muted" style={{ fontSize: 12 }}>No matches</div>}
+                {msgHits.map((h) => (
+                  <div key={h.id} style={{ fontSize: 13 }}>
+                    <strong>{h.sender_name}:</strong> {h.body}
+                    <span className="muted" style={{ fontSize: 11 }}> · {new Date(h.created_at).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {pins.length > 0 && (
               <div className="row" style={{ fontSize: 12, borderBottom: "1px solid var(--border, #333)", paddingBottom: 6 }}>
                 📌 <span className="muted">{pins[0].body.slice(0, 80)}</span>
