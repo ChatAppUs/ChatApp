@@ -455,6 +455,7 @@ func (a *App) handleHashtagPosts(w http.ResponseWriter, r *http.Request) {
 	posts, err := a.scanPosts(r.Context(), postSelect+`
 		JOIN post_hashtags ph ON ph.post_id = p.id
 		WHERE ph.tag = $2 AND p.visibility = 'public' AND (p.expires_at IS NULL OR p.expires_at > now())
+			AND (p.publish_at IS NULL OR p.publish_at <= now())
 		ORDER BY p.created_at DESC LIMIT $3 OFFSET $4`, userIDFrom(r), tag, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load posts")

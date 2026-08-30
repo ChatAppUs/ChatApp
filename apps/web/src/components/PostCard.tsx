@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { Post, Comment, PollOption, Conversation } from "@/lib/types";
+import type { Post, Comment, PollOption, Conversation, Album } from "@/lib/types";
+import { REACTIONS } from "@/lib/types";
 
 export default function PostCard({ post, onChanged }: { post: Post; onChanged?: () => void }) {
   const { t } = useI18n();
-  const [liked, setLiked] = useState(post.liked_by_me);
+  const [myReaction, setMyReaction] = useState(post.my_reaction || "");
   const [likeCount, setLikeCount] = useState(post.like_count);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [commentSort, setCommentSort] = useState("old");
   const [commentCount, setCommentCount] = useState(post.comment_count);
   const [draft, setDraft] = useState("");
   const [bookmarked, setBookmarked] = useState(false);
@@ -21,6 +24,10 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
   const [shareOpen, setShareOpen] = useState(false);
   const [shareConvs, setShareConvs] = useState<Conversation[]>([]);
   const [shareSent, setShareSent] = useState(false);
+  const [edits, setEdits] = useState<{ old_body: string; edited_at: string }[] | null>(null);
+  const [pinned, setPinned] = useState(false);
+  const [albumOpen, setAlbumOpen] = useState(false);
+  const [albums, setAlbums] = useState<Album[]>([]);
 
   useEffect(() => {
     api<{ options: PollOption[]; total_votes: number }>(`/api/posts/${post.id}/poll`)
@@ -97,28 +104,68 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
     }
   };
 
-  const toggleLike = async () => {
+  const react = async (reaction: string) => {
+    setPickerOpen(false);
     try {
-      if (liked) {
-        await api(`/api/posts/${post.id}/like`, { method: "DELETE" });
-        setLiked(false);
+      if (myReaction === reaction) {
+        await api(`/api/posts/${post.id}/react`, { method: "DELETE" });
+        setMyReaction("");
         setLikeCount((c) => Math.max(0, c - 1));
-      } else {
-        await api(`/api/posts/${post.id}/like`, { method: "POST" });
-        setLiked(true);
-        setLikeCount((c) => c + 1);
+        return;
       }
+      await api(`/api/posts/${post.id}/react`, {
+        method: "PUT",
+        body: JSON.stringify({ reaction }),
+      });
+      if (!myReaction) setLikeCount((c) => c + 1);
+      setMyReaction(reaction);
     } catch {
       /* keep UI state on network error */
     }
   };
 
-  const loadComments = async () => {
-    if (!showComments) {
-      const data = await api<{ comments: Comment[] }>(`/api/posts/${post.id}/comments`);
-      setComments(data.comments);
+  const togglePin = async () => {
+    const method = pinned ? "DELETE" : "PUT";
+    const body = pinned ? undefined : JSON.stringify({ post_id: post.id });
+    await api(`/api/me/pinned-post`, { method, body }).catch(() => {});
+    setPinned(!pinned);
+    onChanged?.();
+  };
+
+  const loadEditHistory = async () => {
+    if (edits) {
+      setEdits(null);
+      return;
     }
-    setShowComments(!showComments);
+    const d = await api<{ edits: { old_body: string; edited_at: string }[] }>(
+      `/api/posts/${post.id}/edits`).catch(() => null);
+    setEdits(d?.edits ?? []);
+  };
+
+  const openAlbumPicker = async () => {
+    if (!albumOpen) {
+      const d = await api<{ albums: Album[] }>(`/api/albums`).catch(() => null);
+      if (d) setAlbums(d.albums);
+    }
+    setAlbumOpen(!albumOpen);
+  };
+
+  const addToAlbum = async (albumId: string) => {
+    await api(`/api/albums/${albumId}/items`, {
+      method: "POST",
+      body: JSON.stringify({ post_id: post.id }),
+    }).catch(() => {});
+    setAlbumOpen(false);
+  };
+
+  const loadComments = async (sort?: string) => {
+    const s = sort ?? commentSort;
+    if (sort) setCommentSort(sort);
+    const data = await api<{ comments: Comment[] }>(
+      `/api/posts/${post.id}/comments?sort=${s}`).catch(() => null);
+    if (data) setComments(data.comments);
+    if (!showComments && !sort) setShowComments(true);
+    else if (!sort) setShowComments(false);
   };
 
   const addComment = async () => {
@@ -176,7 +223,19 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           <div className="muted">
             @{post.author_username} · {new Date(post.created_at).toLocaleString()}
             {post.type !== "post" && <> · <span className="badge">{post.type}</span></>}
+            {post.feeling && <> · feeling {post.feeling}</>}
+            {post.location && <> · 📍 {post.location}</>}
           </div>
+          {post.tagged_usernames && post.tagged_usernames.length > 0 && (
+            <div className="muted" style={{ fontSize: 12 }}>
+              with {post.tagged_usernames.map((u) => `@${u}`).join(", ")}
+            </div>
+          )}
+          {post.publish_at && new Date(post.publish_at) > new Date() && (
+            <div className="badge" style={{ fontSize: 11 }}>
+              🕒 scheduled {new Date(post.publish_at).toLocaleString()}
+            </div>
+          )}
         </div>
       </div>
       {editing ? (
@@ -229,12 +288,46 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           <p style={{ margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{post.quoted.body}</p>
         </div>
       )}
-      {post.edited_at && <div className="muted" style={{ fontSize: 11 }}>(edited)</div>}
-      <div className="row" style={{ marginTop: 10 }}>
-        <button className={liked ? "small" : "secondary small"} onClick={toggleLike}>
-          {t("like")} · {likeCount}
+      {post.edited_at && (
+        <button className="secondary small" style={{ padding: 0, fontSize: 11 }} onClick={loadEditHistory}>
+          (edited)
         </button>
-        <button className="secondary small" onClick={loadComments}>
+      )}
+      {edits && (
+        <div className="card" style={{ marginTop: 8, padding: 8 }}>
+          <strong style={{ fontSize: 12 }}>Edit history</strong>
+          {edits.length === 0 && <div className="muted" style={{ fontSize: 12 }}>No previous versions.</div>}
+          {edits.map((e, i) => (
+            <div key={i} style={{ fontSize: 12, marginTop: 4 }}>
+              <span className="muted">{new Date(e.edited_at).toLocaleString()}</span>
+              <div style={{ textDecoration: "line-through", opacity: 0.7 }}>{e.old_body}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+        <span style={{ position: "relative" }}>
+          <button className={myReaction ? "small" : "secondary small"}
+            onClick={() => (myReaction ? react(myReaction) : setPickerOpen((v) => !v))}
+            onContextMenu={(e) => { e.preventDefault(); setPickerOpen((v) => !v); }}>
+            {myReaction ? REACTIONS[myReaction] : "👍"} {likeCount}
+          </button>
+          {pickerOpen && (
+            <span className="card" style={{
+              position: "absolute", bottom: "110%", insetInlineStart: 0, padding: 4,
+              display: "flex", gap: 2, zIndex: 5, whiteSpace: "nowrap",
+            }}>
+              {Object.entries(REACTIONS).map(([name, emoji]) => (
+                <button key={name} className={myReaction === name ? "small" : "secondary small"}
+                  style={{ padding: "2px 6px", fontSize: 16 }} title={name}
+                  onClick={() => react(name)}>
+                  {emoji}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
+        <button className="secondary small" onClick={() => loadComments()}>
           {t("comments")} · {commentCount}
         </button>
         <button className={reposted ? "small" : "secondary small"} onClick={repost}>
@@ -247,9 +340,19 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           📤
         </button>
         {isMine && !editing && (
-          <button className="secondary small" onClick={() => { setEditText(post.body); setEditing(true); }}>
-            ✏️
-          </button>
+          <>
+            <button className="secondary small" onClick={() => { setEditText(post.body); setEditing(true); }}>
+              ✏️
+            </button>
+            <button className={pinned ? "small" : "secondary small"} title="Pin to profile" onClick={togglePin}>
+              📌
+            </button>
+            {post.media.length > 0 && (
+              <button className="secondary small" title="Add to album" onClick={openAlbumPicker}>
+                🖼️
+              </button>
+            )}
+          </>
         )}
         <button className={bookmarked ? "small" : "secondary small"} onClick={toggleBookmark}>
           {bookmarked ? "★" : "☆"}
@@ -287,8 +390,30 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
         </div>
       )}
       {shareSent && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Sent to chat ✓</div>}
+      {albumOpen && (
+        <div className="card" style={{ marginTop: 8, padding: 8 }}>
+          <strong style={{ fontSize: 13 }}>Add to album…</strong>
+          <div className="col" style={{ maxHeight: 140, overflowY: "auto" }}>
+            {albums.length === 0 && <span className="muted" style={{ fontSize: 12 }}>No albums yet — create one on your profile.</span>}
+            {albums.map((a) => (
+              <button key={a.id} className="secondary small" style={{ textAlign: "start" }}
+                onClick={() => addToAlbum(a.id)}>
+                🖼️ {a.title} ({a.item_count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {showComments && (
         <div className="col" style={{ marginTop: 10 }}>
+          <div className="row" style={{ gap: 6 }}>
+            {(["top", "new", "old"] as const).map((s) => (
+              <button key={s} className={commentSort === s ? "small" : "secondary small"}
+                style={{ padding: "0 8px", fontSize: 11 }} onClick={() => loadComments(s)}>
+                {s === "top" ? "Top" : s === "new" ? "Newest" : "Oldest"}
+              </button>
+            ))}
+          </div>
           {comments.map((c) => (
             <div key={c.id} className="row" style={c.parent_id ? { marginInlineStart: 28 } : undefined}>
               <div className="avatar sm" />

@@ -21,12 +21,78 @@ export interface Post {
   share_count: number;
   view_count: number;
   liked_by_me: boolean;
+  my_reaction?: string;
+  feeling?: string;
+  location?: string;
+  tagged_usernames?: string[];
   media: Media[];
   created_at: string;
+  publish_at?: string | null;
   repost_of?: string;
   thread_parent_id?: string;
   edited_at?: string | null;
   quoted?: { id: string; author_name: string; author_username: string; body: string } | null;
+}
+
+export const REACTIONS: Record<string, string> = {
+  like: "👍",
+  love: "❤️",
+  haha: "😂",
+  wow: "😮",
+  sad: "😢",
+  angry: "😡",
+};
+
+export interface Card {
+  id: string;
+  label: string;
+  last4: string;
+  expiry_month: number;
+  expiry_year: number;
+  status: string;
+  daily_limit_usd: string;
+  monthly_limit_usd: string;
+  balance_usd: string;
+  created_at: string;
+}
+
+export interface CardTransaction {
+  id: string;
+  merchant: string;
+  amount_usd: string;
+  kind: string;
+  status: string;
+  created_at: string;
+}
+
+export interface Merchant {
+  user_id: string;
+  username: string;
+  business_name: string;
+  status: string;
+  tier: number;
+  tier_name: string;
+  note: string;
+  applied_at: string;
+  decided_at?: string | null;
+}
+
+export interface MerchantTier {
+  level: number;
+  name: string;
+  max_trade_usd: string;
+  daily_volume_usd: string;
+  min_completed_trades: number;
+  min_completion_rate: string;
+}
+
+export interface Album {
+  id: string;
+  title: string;
+  description: string;
+  cover_url: string;
+  item_count: number;
+  created_at: string;
 }
 
 export interface Comment {
@@ -51,6 +117,9 @@ export interface PublicUser {
   locale: string;
   is_creator: boolean;
   is_verified: boolean;
+  is_merchant?: boolean;
+  merchant_tier?: number;
+  pinned_post_id?: string;
   kyc_status?: string;
   created_at: string;
 }
@@ -61,8 +130,18 @@ export interface Conversation {
   is_channel: boolean;
   title: string;
   created_at: string;
+  theme?: string;
   last_message: string | null;
   unread: number;
+}
+
+export interface ConvMember {
+  id: string;
+  username: string;
+  display_name: string;
+  role: string;
+  joined_at: string;
+  nickname?: string;
 }
 
 export interface Message {
@@ -176,6 +255,8 @@ export interface P2PPaymentMethod {
 export interface P2POffer {
   id: string;
   owner_username: string;
+  owner_is_merchant?: boolean;
+  owner_merchant_tier?: number;
   side: string;
   asset: string;
   chain: string;

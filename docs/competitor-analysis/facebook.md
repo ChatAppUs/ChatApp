@@ -15,7 +15,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | 2FA (TOTP/SMS) | ✅ | RFC 6238 TOTP; phone codes via our self-built OTP engine (crypto/rand codes, salted hashes, throttled resend) — no third-party verification service |
 | Passkey / biometric login | ✅ | WebAuthn platform authenticators |
 | Trusted contacts / account recovery | ❌ | Gap: nominate friends to help recover account |
-| Profile lock (non-friends see limited info) | ❌ | Gap: privacy setting |
+| Profile lock (non-friends see limited info) | ✅ | users.profile_locked enforced in social + stories handlers |
 | Legacy contact / memorialization | ❌ | Gap: low priority |
 | Multiple profiles per account | ❌ | Gap: FB allows up to 4 extra profiles |
 
@@ -25,17 +25,17 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | Text/image/video posts | ✅ | |
 | Post audience selector (public/friends/only me/custom) | ✅ | public/followers/only-me enforced in feed queries; gap: custom lists |
-| Feeling/activity stickers on posts | ❌ | Gap: metadata enum, low effort |
-| Location check-in on posts | ❌ | Gap: lat/lng + place name on posts |
-| Tag people in posts (not just @mention text) | 🚧 | Mentions exist; formal post_tags table missing |
-| Reactions beyond like (love/haha/wow/sad/angry) | 🚧 | Message reactions exist; post reactions are like-only |
+| Feeling/activity stickers on posts | ✅ | posts.feeling (free text ≤60 chars), composer UI |
+| Location check-in on posts | ✅ | posts.location place name, composer UI |
+| Tag people in posts (not just @mention text) | ✅ | post_tags table + composer @tag UI |
+| Reactions beyond like (love/haha/wow/sad/angry) | ✅ | post_reactions table, 6 types, picker UI; like = alias |
 | Comment threads (nested replies) | ✅ | parent_id threading + comment likes |
-| Comment ranking (top/newest) | ❌ | Gap: sort options |
+| Comment ranking (top/newest) | ✅ | ?sort=top (like-weighted) | newest | oldest |
 | Share/repost with quote | ✅ | Repost toggle + quote posts with embedded preview + share_count |
-| Pinned post on profile | ❌ | Gap: users.pinned_post_id |
-| Post editing with history | 🚧 | Editing shipped (author-only, edited marker); gap: edit history |
-| Scheduled posts | ❌ | Gap: publish_at column + worker |
-| Albums / multi-photo grid | 🚧 | media_urls JSON array exists; no album entity |
+| Pinned post on profile | ✅ | users.pinned_post_id + pin/unpin endpoints, profile renders first |
+| Post editing with history | ✅ | post_edits table; GET /api/posts/{id}/edits viewer |
+| Scheduled posts | ✅ | posts.publish_at + due-post publisher worker + cancel endpoint |
+| Albums / multi-photo grid | ✅ | albums + album_items entities, /albums page, profile strip |
 | 3D photos / avatars | ❌ | Gap: out of scope, low value |
 
 ## Groups & Pages
@@ -44,7 +44,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | Public/private groups with posts | ✅ | Shipped: content groups with membership, roles, join requests, invite links, group feed |
 | Pages (business/creator) with followers | ✅ | Shipped: pages entity, followers, page posts (Events remain phase 2) |
-| Events (RSVP, reminders) | ❌ | Gap: events entity |
+| Events (RSVP, reminders) | ✅ | events + RSVPs + reminder notifications (24h sweep) |
 | Marketplace | ❌ | Gap: listings entity — large surface, phase 2 |
 | Fundraisers | ❌ | Gap: low priority |
 
@@ -55,7 +55,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | 24h photo/video stories | ✅ | |
 | Story replies (DM from story) | ✅ | Replies delivered as DMs with story reference |
 | Story reactions | ✅ | Emoji reactions on stories |
-| Story highlights (permanent collections) | ❌ | Gap: highlights entity |
+| Story highlights (permanent collections) | ✅ | story_highlights + /api/highlights routes |
 | Story privacy (close friends) | ✅ | Shipped: close-friends list + audience flag |
 | Story viewer list | ✅ | Deduped view tracking, author-only viewer list |
 | Text stories / stickers / music | ❌ | Gap: composer tools |
@@ -66,7 +66,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | Short video feed | ✅ | |
 | Watch-time tracking | ✅ | Shipped: reel_watch_events ingestion feeds FYP ranking |
-| Reel comments/likes/shares | 🚧 | Likes exist; gap: comments & shares on reels |
+| Reel comments/likes/shares | ✅ | reels are posts.type='reel'; comments/likes/share-to-chat all apply |
 | Remix/duet | ❌ | Gap: needs editor |
 | Sounds/music library | ❌ | Gap: licensed audio is a legal, not tech, problem |
 | Creator monetization on reels | 🚧 | RPM-based earnings exist; gap: per-reel analytics |
@@ -82,8 +82,8 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Voice messages | ✅ | Recorder + inline player |
 | Video notes | ❌ | Gap: recorder UI |
 | Message requests (non-friends) | ✅ | Shipped: request inbox, accept/decline before chat opens |
-| Nicknames per chat | ❌ | Gap: low effort |
-| Chat themes/colors | ❌ | Gap: cosmetic |
+| Nicknames per chat | ✅ | chat_nicknames table, PUT /api/conversations/{id}/nicknames/{userId} |
+| Chat themes/colors | ✅ | conversations.theme + 🎨 gradient picker in chat header |
 | Polls in chat | ✅ | Post polls exist; gap: attach to chat message |
 | Location sharing (live) | ❌ | Gap: location message type |
 | Payments in chat | 🚧 | Full finance plane shipped (deposits/withdrawals/P2P/convert — see below); gap: pay-in-chat UI hook |
@@ -93,8 +93,8 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | 1:1 audio/video | ✅ | WebRTC mesh |
-| Group calls | ✅ | Mesh ≤8; gap: SFU for larger |
-| Messenger Rooms (drop-in video rooms) | ❌ | Gap: persistent room links |
+| Group calls | ✅ | Self-built SFU (services/sfu) powers group calls/meetings/live |
+| Messenger Rooms (drop-in video rooms) | 🚧 | Call rooms + join tickets shipped; persistent drop-in links partial |
 | Screen sharing | ❌ | Gap: getDisplayMedia in client |
 | Call recording | ❌ | Gap: needs SFU/compositor |
 | AR effects/filters | ❌ | Gap: low priority |
@@ -104,7 +104,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | In-stream ads revenue share | 🚧 | Flat RPM earnings exist; gap: true ad-share accounting |
-| Stars (virtual gifts) | ❌ | Gap: wallet-backed gift ledger |
+| Stars (virtual gifts) | ✅ | gift catalog in handlers_monetization.go |
 | Fan subscriptions | ✅ | Shipped: creator subscription tiers + tips + revenue dashboard |
 | Professional dashboard (analytics) | ❌ | Gap: per-content analytics rollup |
 

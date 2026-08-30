@@ -55,11 +55,30 @@ func (a *App) handleEditPost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "body required")
 		return
 	}
-	res, err := a.db.Exec(r.Context(),
+	// Archive the previous body before overwriting it (full edit history).
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "edit failed")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(),
+		`INSERT INTO post_edits (post_id, old_body)
+		 SELECT id, body FROM posts
+		 WHERE id=$1 AND author_id=$2 AND deleted_at IS NULL AND body <> $3`,
+		postID, uid, body); err != nil {
+		writeErr(w, http.StatusInternalServerError, "edit failed")
+		return
+	}
+	res, err := tx.Exec(r.Context(),
 		`UPDATE posts SET body=$1, edited_at=now()
 		 WHERE id=$2 AND author_id=$3 AND deleted_at IS NULL`, body, postID, uid)
 	if err != nil || res.RowsAffected() == 0 {
 		writeErr(w, http.StatusNotFound, "post not found or not yours")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "edit failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -70,9 +89,8 @@ func (a *App) handleThread(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	postID := r.PathValue("id")
 	posts, err := a.scanPosts(r.Context(), postSelect+`
-		WHERE p.deleted_at IS NULL AND (p.id = $1 OR p.thread_parent_id = $1)
-		ORDER BY p.created_at ASC LIMIT 100`, postID)
-	_ = uid
+		WHERE p.deleted_at IS NULL AND (p.id = $2 OR p.thread_parent_id = $2)
+		ORDER BY p.created_at ASC LIMIT 100`, uid, postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load thread")
 		return

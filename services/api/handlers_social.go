@@ -35,8 +35,13 @@ type postOut struct {
 	ShareCount   int         `json:"share_count"`
 	ViewCount    int64       `json:"view_count"`
 	LikedByMe    bool        `json:"liked_by_me"`
+	MyReaction   string      `json:"my_reaction"`
+	Feeling      string      `json:"feeling"`
+	Location     string      `json:"location"`
+	Tagged       []string    `json:"tagged_usernames"`
 	Media        []mediaIn   `json:"media"`
 	CreatedAt    time.Time   `json:"created_at"`
+	PublishAt    *time.Time  `json:"publish_at"`
 	RepostOf     string      `json:"repost_of"`
 	ThreadParent string      `json:"thread_parent_id"`
 	EditedAt     *time.Time  `json:"edited_at"`
@@ -71,6 +76,10 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		PollOptions  []string  `json:"poll_options"` // 2-4 options turns the post into a poll
 		RepostOf     string    `json:"repost_of"`
 		ThreadParent string    `json:"thread_parent_id"`
+		Feeling      string    `json:"feeling"`  // feeling/activity metadata
+		Location     string    `json:"location"` // check-in
+		TaggedUsers  []string  `json:"tagged_user_ids"`
+		PublishAt    string    `json:"publish_at"` // RFC3339; future = scheduled post
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -101,6 +110,27 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "polls need 2-4 options")
 		return
 	}
+	if len(req.Feeling) > 50 || len(req.Location) > 100 {
+		writeErr(w, http.StatusBadRequest, "feeling up to 50 chars, location up to 100")
+		return
+	}
+	if len(req.TaggedUsers) > 20 {
+		writeErr(w, http.StatusBadRequest, "max 20 tagged people")
+		return
+	}
+	var publishAt *time.Time
+	if strings.TrimSpace(req.PublishAt) != "" {
+		if req.Type == "story" {
+			writeErr(w, http.StatusBadRequest, "stories cannot be scheduled")
+			return
+		}
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(req.PublishAt))
+		if err != nil || t.Before(time.Now()) || t.After(time.Now().Add(180*24*time.Hour)) {
+			writeErr(w, http.StatusBadRequest, "publish_at must be a future RFC3339 time within 180 days")
+			return
+		}
+		publishAt = &t
+	}
 	uid := userIDFrom(r)
 	// ML moderation gate: the ML service owns the policy decision. Transport
 	// failures are fail-open so moderation downtime never blocks posting.
@@ -121,12 +151,25 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		expires = &t
 	}
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id)
-                 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid) RETURNING id`,
-		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent).Scan(&postID)
+		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id,
+		                    feeling, location, publish_at)
+                 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid,$8,$9,$10) RETURNING id`,
+		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent,
+		strings.TrimSpace(req.Feeling), strings.TrimSpace(req.Location), publishAt).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
+	}
+	for _, taggedID := range req.TaggedUsers {
+		if taggedID == uid {
+			continue
+		}
+		if _, err := tx.Exec(r.Context(),
+			`INSERT INTO post_tags (post_id, user_id) VALUES ($1,$2::uuid) ON CONFLICT DO NOTHING`,
+			postID, taggedID); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid tagged user id")
+			return
+		}
 	}
 	for i, label := range req.PollOptions {
 		if strings.TrimSpace(label) == "" {
@@ -170,6 +213,11 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
 	}
+	for _, taggedID := range req.TaggedUsers {
+		if taggedID != uid {
+			a.notifyUser(r.Context(), taggedID, "tagged_in_post", map[string]string{"post_id": postID, "by": uid})
+		}
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": postID})
 }
 
@@ -177,7 +225,9 @@ const postSelect = `
 SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url, p.type, p.body, p.visibility,
        p.like_count, p.comment_count, p.share_count, p.view_count, p.created_at,
        COALESCE(p.repost_of::text,''), COALESCE(p.thread_parent_id::text,''), p.edited_at,
-       EXISTS(SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $1)
+       EXISTS(SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $1),
+       COALESCE((SELECT pr.reaction FROM post_reactions pr WHERE pr.post_id = p.id AND pr.user_id = $1), ''),
+       p.feeling, p.location, p.publish_at
 FROM posts p JOIN users u ON u.id = p.author_id`
 
 func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postOut, error) {
@@ -192,16 +242,32 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 		var p postOut
 		if err := rows.Scan(&p.ID, &p.AuthorID, &p.AuthorName, &p.AuthorUser, &p.AuthorAvatar,
 			&p.Type, &p.Body, &p.Visibility, &p.LikeCount, &p.CommentCount, &p.ShareCount,
-			&p.ViewCount, &p.CreatedAt, &p.RepostOf, &p.ThreadParent, &p.EditedAt, &p.LikedByMe); err != nil {
+			&p.ViewCount, &p.CreatedAt, &p.RepostOf, &p.ThreadParent, &p.EditedAt, &p.LikedByMe,
+			&p.MyReaction, &p.Feeling, &p.Location, &p.PublishAt); err != nil {
 			return nil, err
 		}
 		p.Media = []mediaIn{}
+		p.Tagged = []string{}
 		out = append(out, p)
 		ids = append(ids, p.ID)
 	}
 	if len(ids) == 0 {
 		return out, nil
 	}
+	trows, err := a.db.Query(ctx,
+		`SELECT t.post_id, u.username FROM post_tags t
+		 JOIN users u ON u.id = t.user_id WHERE t.post_id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	tagsByPost := map[string][]string{}
+	for trows.Next() {
+		var pid, uname string
+		if err := trows.Scan(&pid, &uname); err == nil {
+			tagsByPost[pid] = append(tagsByPost[pid], uname)
+		}
+	}
+	trows.Close()
 	mrows, err := a.db.Query(ctx,
 		`SELECT post_id, kind, url, thumb_url, COALESCE(width,0), COALESCE(height,0), COALESCE(duration_s,0)
                  FROM post_media WHERE post_id = ANY($1) ORDER BY position`, ids)
@@ -220,6 +286,9 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 	}
 	for i := range out {
 		out[i].Media = byPost[out[i].ID]
+		if t := tagsByPost[out[i].ID]; t != nil {
+			out[i].Tagged = t
+		}
 	}
 	var quoteIDs []any
 	for _, p := range out {
@@ -255,6 +324,7 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
                 WHERE p.deleted_at IS NULL AND p.type = 'post'
+                  AND (p.publish_at IS NULL OR p.publish_at <= now() OR p.author_id = $1)
                   AND (p.visibility = 'public'
                        OR p.author_id = $1
                        OR (p.visibility = 'followers' AND EXISTS(
@@ -277,6 +347,7 @@ func (a *App) handleReels(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
                 WHERE p.deleted_at IS NULL AND p.type = 'reel' AND p.visibility = 'public'
+                  AND (p.publish_at IS NULL OR p.publish_at <= now())
                   AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id = $1 AND m.muted_id = p.author_id)
                   AND NOT EXISTS(SELECT 1 FROM restricted_list rl WHERE rl.user_id = p.author_id AND rl.restricted_id = $1)
                   AND NOT EXISTS(SELECT 1 FROM word_filters wf WHERE wf.user_id = $1 AND p.body ILIKE '%'||wf.phrase||'%')
@@ -311,9 +382,13 @@ func (a *App) handleUserPosts(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	target := r.PathValue("id")
 	limit, offset := pageParams(r)
+	// The profile owner's pinned post sorts first; scheduled posts are visible
+	// only to their author.
 	posts, err := a.scanPosts(r.Context(), postSelect+`
                 WHERE p.deleted_at IS NULL AND p.author_id = $2 AND p.type <> 'story'
-                ORDER BY p.created_at DESC LIMIT $3 OFFSET $4`, uid, target, limit, offset)
+                  AND (p.publish_at IS NULL OR p.publish_at <= now() OR $1 = $2)
+                ORDER BY (p.id = (SELECT pinned_post_id FROM users WHERE id = $2)) DESC,
+                         p.created_at DESC LIMIT $3 OFFSET $4`, uid, target, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load posts")
 		return
@@ -341,6 +416,8 @@ func (a *App) handlePostView(w http.ResponseWriter, r *http.Request) {
 
 // ---- Likes ----
 
+// handleLike is the legacy plain-like endpoint; it routes through the same
+// bookkeeping as a 'like' reaction so like_count never double-counts.
 func (a *App) handleLike(w http.ResponseWriter, r *http.Request) {
 	uid, postID := userIDFrom(r), r.PathValue("id")
 	tx, err := a.db.Begin(r.Context())
@@ -355,13 +432,24 @@ func (a *App) handleLike(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "post not found")
 		return
 	}
-	if res.RowsAffected() > 0 {
+	var prev string
+	_ = tx.QueryRow(r.Context(),
+		`SELECT reaction FROM post_reactions WHERE user_id=$1 AND post_id=$2`, uid, postID).Scan(&prev)
+	if _, err := tx.Exec(r.Context(),
+		`INSERT INTO post_reactions (user_id, post_id, reaction) VALUES ($1,$2,'like')
+		 ON CONFLICT (user_id, post_id) DO UPDATE SET reaction='like', created_at=now()`,
+		uid, postID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "like failed")
+		return
+	}
+	if prev == "" {
 		if _, err := tx.Exec(r.Context(),
 			`UPDATE posts SET like_count = like_count + 1 WHERE id = $1`, postID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "like failed")
 			return
 		}
 	}
+	_ = res
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "like failed")
 		return
@@ -377,7 +465,12 @@ func (a *App) handleUnlike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	res, err := tx.Exec(r.Context(), `DELETE FROM likes WHERE user_id=$1 AND post_id=$2`, uid, postID)
+	if _, err := tx.Exec(r.Context(), `DELETE FROM likes WHERE user_id=$1 AND post_id=$2`, uid, postID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "unlike failed")
+		return
+	}
+	res, err := tx.Exec(r.Context(),
+		`DELETE FROM post_reactions WHERE user_id=$1 AND post_id=$2`, uid, postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "unlike failed")
 		return
@@ -460,6 +553,14 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
+	// Sort options: old (default, chronological), new, top (most liked).
+	orderBy := "c.created_at ASC"
+	switch r.URL.Query().Get("sort") {
+	case "new":
+		orderBy = "c.created_at DESC"
+	case "top":
+		orderBy = "(SELECT count(*) FROM comment_likes cl WHERE cl.comment_id = c.id) DESC, c.created_at ASC"
+	}
 	rows, err := a.db.Query(r.Context(),
 		`SELECT c.id, c.author_id, u.display_name, u.username, u.avatar_url, c.body, c.created_at,
                  COALESCE(c.parent_id::text,''),
@@ -467,7 +568,7 @@ func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
                  EXISTS(SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $4)
                  FROM comments c JOIN users u ON u.id = c.author_id
                  WHERE c.post_id = $1 AND c.deleted_at IS NULL
-                 ORDER BY c.created_at ASC LIMIT $2 OFFSET $3`,
+                 ORDER BY `+orderBy+` LIMIT $2 OFFSET $3`,
 		r.PathValue("id"), limit, offset, userIDFrom(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load comments")

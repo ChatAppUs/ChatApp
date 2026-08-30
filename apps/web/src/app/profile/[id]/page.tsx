@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { api, getAccessToken, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { Post, PublicUser } from "@/lib/types";
+import type { Album, Post, PublicUser } from "@/lib/types";
 import PostCard from "@/components/PostCard";
 
 export default function ProfilePage() {
@@ -15,6 +16,8 @@ export default function ProfilePage() {
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [scheduled, setScheduled] = useState<Post[]>([]);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -27,6 +30,12 @@ export default function ProfilePage() {
       setFollowing(data.following);
       const p = await api<{ posts: Post[] }>(`/api/users/${params.id}/posts`);
       setPosts(p.posts);
+      api<{ albums: Album[] }>(`/api/users/${params.id}/albums`)
+        .then((d) => setAlbums(d.albums)).catch(() => {});
+      if (data.user.id === getUserId()) {
+        api<{ posts: Post[] }>("/api/me/scheduled-posts")
+          .then((d) => setScheduled(d.posts)).catch(() => {});
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("error"));
     }
@@ -44,6 +53,9 @@ export default function ProfilePage() {
   if (!user) return <div className="card muted">{t("loading")}</div>;
 
   const isMe = user.id === getUserId();
+  const sorted = [...posts].sort((a, b) =>
+    a.id === user.pinned_post_id ? -1 : b.id === user.pinned_post_id ? 1 : 0
+  );
 
   return (
     <>
@@ -72,10 +84,50 @@ export default function ProfilePage() {
         <div className="row muted">
           <span>{t("followers")}: {followers}</span>
           <span>{t("following")}: {following}</span>
+          {isMe && <Link href="/albums">🖼️ My albums</Link>}
         </div>
       </div>
-      {posts.map((p) => (
-        <PostCard key={p.id} post={p} onChanged={load} />
+      {albums.length > 0 && (
+        <div className="card">
+          <strong>Albums</strong>
+          <div className="row" style={{ flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+            {albums.map((a) => (
+              <div key={a.id} style={{ width: 110, textAlign: "center" }}>
+                {a.cover_url
+                  ? <img src={a.cover_url} alt="" style={{ width: 110, height: 110, borderRadius: 8, objectFit: "cover" }} />
+                  : <div style={{ width: 110, height: 110, borderRadius: 8, background: "var(--border)", display: "grid", placeItems: "center", fontSize: 24 }}>🖼️</div>}
+                <div style={{ fontSize: 12 }}>{a.title}</div>
+                <div className="muted" style={{ fontSize: 11 }}>{a.item_count} items</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {isMe && scheduled.length > 0 && (
+        <div className="card">
+          <strong>🕒 Scheduled posts</strong>
+          {scheduled.map((p) => (
+            <div key={p.id} className="row" style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 13 }}>{p.body?.slice(0, 60) || p.type}</span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {p.publish_at ? new Date(p.publish_at).toLocaleString() : ""}
+              </span>
+              <div className="spacer" />
+              <button className="secondary small" onClick={() =>
+                api(`/api/scheduled-posts/${p.id}`, { method: "DELETE" }).then(load)}>
+                Cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {sorted.map((p) => (
+        <div key={p.id}>
+          {p.id === user.pinned_post_id && (
+            <div className="muted" style={{ fontSize: 12, marginBottom: 2 }}>📌 Pinned post</div>
+          )}
+          <PostCard post={p} onChanged={load} />
+        </div>
       ))}
     </>
   );

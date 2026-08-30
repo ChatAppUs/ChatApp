@@ -118,7 +118,7 @@ func (a *App) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := a.db.Query(r.Context(),
-		`SELECT m.user_id, u.username, u.display_name, m.role, m.joined_at
+		`SELECT m.user_id, u.username, u.display_name, m.role, m.joined_at, m.nickname
 		 FROM conversation_members m JOIN users u ON u.id = m.user_id
 		 WHERE m.conversation_id = $1 ORDER BY m.joined_at`, convID)
 	if err != nil {
@@ -132,11 +132,12 @@ func (a *App) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		Name     string    `json:"display_name"`
 		Role     string    `json:"role"`
 		JoinedAt time.Time `json:"joined_at"`
+		Nickname string    `json:"nickname"`
 	}
 	out := []member{}
 	for rows.Next() {
 		var m member
-		if err := rows.Scan(&m.ID, &m.Username, &m.Name, &m.Role, &m.JoinedAt); err == nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Name, &m.Role, &m.JoinedAt, &m.Nickname); err == nil {
 			out = append(out, m)
 		}
 	}

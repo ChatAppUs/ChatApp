@@ -250,6 +250,42 @@ func main() {
 	mux.HandleFunc("POST /api/p2p/trades/{id}/cancel", app.requireAuth(app.handleP2PTradeCancel))
 	mux.HandleFunc("POST /api/p2p/trades/{id}/dispute", app.requireAuth(app.handleP2PTradeDispute))
 
+	// P2P merchant program
+	mux.HandleFunc("POST /api/p2p/merchant/apply", app.requireAuth(app.handleMerchantApply))
+	mux.HandleFunc("GET /api/p2p/merchant/status", app.requireAuth(app.handleMerchantStatus))
+	mux.HandleFunc("GET /api/p2p/merchant/tiers", app.requireAuth(app.handleMerchantTiers))
+
+	// crypto cards
+	mux.HandleFunc("POST /api/cards", app.requireAuth(app.handleCardIssue))
+	mux.HandleFunc("GET /api/cards", app.requireAuth(app.handleCardList))
+	mux.HandleFunc("POST /api/cards/charge", app.requireAuth(app.handleCardCharge))
+	mux.HandleFunc("POST /api/cards/{id}/topup", app.requireAuth(app.handleCardTopUp))
+	mux.HandleFunc("POST /api/cards/{id}/refund", app.requireAuth(app.handleCardRefund))
+	mux.HandleFunc("POST /api/cards/{id}/status", app.requireAuth(app.handleCardSetStatus))
+	mux.HandleFunc("PUT /api/cards/{id}/limits", app.requireAuth(app.handleCardSetLimits))
+	mux.HandleFunc("GET /api/cards/{id}/transactions", app.requireAuth(app.handleCardTransactions))
+
+	// social parity: reactions, pinning, edit history, scheduled posts, albums
+	mux.HandleFunc("PUT /api/posts/{id}/react", app.requireAuth(app.handleReactPost))
+	mux.HandleFunc("DELETE /api/posts/{id}/react", app.requireAuth(app.handleUnreactPost))
+	mux.HandleFunc("GET /api/posts/{id}/reactions", app.requireAuth(app.handlePostReactions))
+	mux.HandleFunc("PUT /api/me/pinned-post", app.requireAuth(app.handlePinPost))
+	mux.HandleFunc("DELETE /api/me/pinned-post", app.requireAuth(app.handleUnpinPost))
+	mux.HandleFunc("GET /api/posts/{id}/edits", app.requireAuth(app.handlePostEditHistory))
+	mux.HandleFunc("GET /api/me/scheduled-posts", app.requireAuth(app.handleScheduledPosts))
+	mux.HandleFunc("DELETE /api/scheduled-posts/{id}", app.requireAuth(app.handleCancelScheduledPost))
+	mux.HandleFunc("POST /api/albums", app.requireAuth(app.handleCreateAlbum))
+	mux.HandleFunc("GET /api/albums", app.requireAuth(app.handleMyAlbums))
+	mux.HandleFunc("GET /api/albums/{id}", app.requireAuth(app.handleGetAlbum))
+	mux.HandleFunc("DELETE /api/albums/{id}", app.requireAuth(app.handleDeleteAlbum))
+	mux.HandleFunc("POST /api/albums/{id}/items", app.requireAuth(app.handleAlbumAddItem))
+	mux.HandleFunc("DELETE /api/albums/{id}/items/{postId}", app.requireAuth(app.handleAlbumRemoveItem))
+	mux.HandleFunc("GET /api/users/{id}/albums", app.requireAuth(app.handleUserAlbums))
+
+	// chat personalization
+	mux.HandleFunc("PUT /api/conversations/{id}/theme", app.requireAuth(app.handleSetChatTheme))
+	mux.HandleFunc("PUT /api/conversations/{id}/nicknames/{userId}", app.requireAuth(app.handleSetNickname))
+
 	// ads
 	mux.HandleFunc("POST /api/ads/campaigns", app.requireAuth(app.handleCreateCampaign))
 	mux.HandleFunc("GET /api/ads/campaigns", app.requireAuth(app.handleListCampaigns))
@@ -388,6 +424,15 @@ func main() {
 	mux.HandleFunc("POST /api/admin/convert/rates", app.requireAdminPerm("convert.manage")(app.handleAdminSetConvertRate))
 	mux.HandleFunc("GET /api/admin/p2p/disputes", app.requireAdminPerm("p2p.resolve")(app.handleAdminP2PDisputes))
 	mux.HandleFunc("POST /api/admin/p2p/trades/{id}/resolve", app.requireAdminPerm("p2p.resolve")(app.handleAdminP2PResolve))
+	mux.HandleFunc("GET /api/admin/p2p/merchants", app.requireAdminPerm("merchants.review")(app.handleAdminListMerchants))
+	mux.HandleFunc("POST /api/admin/p2p/merchants/{userId}/review", app.requireAdminPerm("merchants.review")(app.handleAdminReviewMerchant))
+	mux.HandleFunc("POST /api/admin/p2p/merchants/{userId}/revoke", app.requireAdminPerm("merchants.review")(app.handleAdminRevokeMerchant))
+	mux.HandleFunc("POST /api/admin/p2p/merchants/{userId}/tier", app.requireAdminPerm("merchants.review")(app.handleAdminSetMerchantTier))
+	mux.HandleFunc("POST /api/admin/p2p/merchant-tiers", app.requireAdminPerm("merchants.review")(app.handleAdminUpsertMerchantTier))
+	mux.HandleFunc("GET /api/admin/cards", app.requireAdminPerm("cards.manage")(app.handleAdminListCards))
+	mux.HandleFunc("POST /api/admin/cards/{id}/status", app.requireAdminPerm("cards.manage")(app.handleAdminSetCardStatus))
+	mux.HandleFunc("GET /api/admin/transfers", app.requireAdminPerm("transfers.review")(app.handleAdminListTransfers))
+	mux.HandleFunc("POST /api/admin/transfers/{txId}/reverse", app.requireAdminPerm("transfers.review")(app.handleAdminReverseTransfer))
 	mux.HandleFunc("GET /api/admin/wallet/tokens", app.requireAdmin("superadmin", "finance")(app.handleAdminListTokens))
 	mux.HandleFunc("POST /api/admin/wallet/tokens", app.requireAdmin("superadmin", "finance")(app.handleAdminAddToken))
 	mux.HandleFunc("POST /api/admin/wallet/tokens/{id}/status", app.requireAdmin("superadmin", "finance")(app.handleAdminSetTokenStatus))

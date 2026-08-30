@@ -5,12 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, getAccessToken } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { P2POffer, P2PTrade, P2PPaymentMethod, Country } from "@/lib/types";
+import type { P2POffer, P2PTrade, P2PPaymentMethod, Country, Merchant, MerchantTier } from "@/lib/types";
 
 export default function P2PPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const [tab, setTab] = useState<"market" | "myOffers" | "myTrades" | "create">("market");
+  const [tab, setTab] = useState<"market" | "myOffers" | "myTrades" | "create" | "merchant">("market");
+  const [merchant, setMerchant] = useState<Merchant | null>(null);
+  const [tiers, setTiers] = useState<MerchantTier[]>([]);
+  const [bizName, setBizName] = useState("");
+  const [bizNote, setBizNote] = useState("");
   const [offers, setOffers] = useState<P2POffer[]>([]);
   const [myOffers, setMyOffers] = useState<P2POffer[]>([]);
   const [trades, setTrades] = useState<P2PTrade[]>([]);
@@ -39,7 +43,27 @@ export default function P2PPage() {
     api<{ countries: Country[] }>("/api/countries").then((d) => setCountries(d.countries)).catch(() => {});
     api<{ trades: P2PTrade[] }>("/api/p2p/trades").then((d) => setTrades(d.trades)).catch(() => {});
     api<{ offers: P2POffer[] }>("/api/p2p/offers/mine").then((d) => setMyOffers(d.offers)).catch(() => {});
+    api<{ merchant: Merchant | null }>("/api/p2p/merchant/status")
+      .then((d) => setMerchant(d.merchant)).catch(() => {});
+    api<{ tiers: MerchantTier[] }>("/api/p2p/merchant/tiers")
+      .then((d) => setTiers(d.tiers)).catch(() => {});
   }, []);
+
+  const applyMerchant = async () => {
+    setErr(""); setMsg("");
+    try {
+      await api("/api/p2p/merchant/apply", {
+        method: "POST",
+        body: JSON.stringify({ business_name: bizName, note: bizNote }),
+      });
+      setMsg("Merchant application submitted");
+      setBizName(""); setBizNote("");
+      const d = await api<{ merchant: Merchant | null }>("/api/p2p/merchant/status");
+      setMerchant(d.merchant);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "application failed");
+    }
+  };
 
   const loadOffers = useCallback(() => {
     const params = new URLSearchParams({ side, asset, chain, country });
@@ -143,6 +167,7 @@ export default function P2PPage() {
           <button className={`secondary small ${tab === "myOffers" ? "active" : ""}`} onClick={() => setTab("myOffers")}>{t("myOffers")}</button>
           <button className={`secondary small ${tab === "myTrades" ? "active" : ""}`} onClick={() => setTab("myTrades")}>{t("myTrades")}</button>
           <button className={`secondary small ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>{t("createOffer")}</button>
+          <button className={`secondary small ${tab === "merchant" ? "active" : ""}`} onClick={() => setTab("merchant")}>🏪 Merchant</button>
         </div>
         {(msg || err) && (
           <div className="row" style={{ marginTop: 8 }}>
@@ -177,7 +202,14 @@ export default function P2PPage() {
             <tbody>
               {offers.map((o) => (
                 <tr key={o.id}>
-                  <td>{o.owner_username}</td>
+                  <td>
+                    {o.owner_username}
+                    {o.owner_is_merchant && (
+                      <span className="badge" title={`Verified merchant · tier ${o.owner_merchant_tier}`}>
+                        🏪 T{o.owner_merchant_tier}
+                      </span>
+                    )}
+                  </td>
                   <td>{o.price} {o.fiat_currency}</td>
                   <td className="muted">{o.min_amount}–{o.max_amount} {o.asset}</td>
                   <td className="muted">{o.payment_methods.join(", ")}</td>
@@ -348,6 +380,58 @@ export default function P2PPage() {
           <div className="row" style={{ marginTop: 10 }}>
             <button onClick={createOffer} disabled={!form.price || !form.max || formMethods.length === 0}>{t("createOffer")}</button>
           </div>
+        </div>
+      )}
+      {tab === "merchant" && (
+        <div className="card">
+          <h3>🏪 Verified merchant program</h3>
+          {merchant ? (
+            <div className="col">
+              <div className="row">
+                <span className={`badge ${merchant.status === "verified" ? "green" : "yellow"}`}>{merchant.status}</span>
+                <strong>{merchant.business_name}</strong>
+                {merchant.status === "verified" && <span className="badge">Tier {merchant.tier} · {merchant.tier_name}</span>}
+              </div>
+              {merchant.status === "rejected" && (
+                <button className="secondary small" onClick={() => setMerchant(null)}>Re-apply</button>
+              )}
+              {merchant.status === "verified" && (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  Your offers carry the 🏪 merchant badge. Tier limits apply per trade and per day.
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="col">
+              <p className="muted" style={{ fontSize: 13 }}>
+                Merchants get a verified badge on their offers and higher trust from buyers.
+                An admin reviews every application.
+              </p>
+              <input placeholder="Business name" value={bizName} maxLength={120}
+                onChange={(e) => setBizName(e.target.value)} />
+              <input placeholder="Note for the reviewer (optional)" value={bizNote} maxLength={500}
+                onChange={(e) => setBizNote(e.target.value)} />
+              <button onClick={applyMerchant} disabled={!bizName.trim()}>Apply</button>
+            </div>
+          )}
+          {tiers.length > 0 && (
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr><th>Tier</th><th>Name</th><th>Max trade</th><th>Daily volume</th><th>Unlocks at</th></tr>
+              </thead>
+              <tbody>
+                {tiers.map((t) => (
+                  <tr key={t.level}>
+                    <td>T{t.level}</td>
+                    <td>{t.name}</td>
+                    <td>${parseFloat(t.max_trade_usd).toLocaleString()}</td>
+                    <td>${parseFloat(t.daily_volume_usd).toLocaleString()}</td>
+                    <td className="muted">{t.min_completed_trades} trades · {parseFloat(t.min_completion_rate) * 100}% completion</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </>

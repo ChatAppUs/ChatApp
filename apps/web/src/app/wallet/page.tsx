@@ -146,6 +146,11 @@ export default function WalletPage() {
         </div>
       )}
       <div className="card">
+        <div className="row">
+          <Link href="/cards">💳 Cards →</Link>
+        </div>
+      </div>
+      <div className="card">
         <h3>{t("balance")}</h3>
         <table className="table">
           <thead>

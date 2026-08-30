@@ -7,7 +7,17 @@ struct Conversation: Identifiable {
     let isChannel: Bool
     let lastMessage: String?
     let unread: Int
+    let theme: String
 }
+
+private let chatThemeColors: [String: [Color]] = [
+    "": [Color(.systemBackground), Color(.systemBackground)],
+    "sunset": [Color(red: 1.0, green: 0.60, blue: 0.55), Color(red: 1.0, green: 0.42, blue: 0.53)],
+    "ocean": [Color(red: 0.13, green: 0.58, blue: 0.69), Color(red: 0.43, green: 0.84, blue: 0.93)],
+    "forest": [Color(red: 0.07, green: 0.31, blue: 0.37), Color(red: 0.44, green: 0.70, blue: 0.51)],
+    "candy": [Color(red: 0.83, green: 0.58, blue: 0.61), Color(red: 0.75, green: 0.90, blue: 0.73)],
+]
+private let chatThemeNames = ["", "sunset", "ocean", "forest", "candy"]
 
 struct ChatListView: View {
     @EnvironmentObject var session: SessionStore
@@ -57,7 +67,8 @@ struct ChatListView: View {
                     isGroup: c["is_group"] as? Bool ?? false,
                     isChannel: c["is_channel"] as? Bool ?? false,
                     lastMessage: c["last_message"] as? String,
-                    unread: c["unread"] as? Int ?? 0
+                    unread: c["unread"] as? Int ?? 0,
+                    theme: c["theme"] as? String ?? ""
                 )
             }
         } catch {
@@ -79,11 +90,31 @@ struct ChatView: View {
 
     @State private var messages: [ChatMessage] = []
     @State private var draft = ""
+    @State private var theme = ""
+    @State private var nickname = ""
     @State private var typing = false
     @State private var socket: ChatSocket?
 
     var body: some View {
         VStack {
+            ScrollView {
+                HStack(spacing: 6) {
+                    ForEach(chatThemeNames, id: \.self) { name in
+                        Button(name.isEmpty ? "default" : name) { setTheme(name) }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .tint(theme == name ? .accentColor : .gray)
+                    }
+                }
+                .padding(.top, 4)
+                HStack {
+                    TextField("My nickname in this chat", text: $nickname)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Set") { setNickname() }
+                }
+                .padding(.horizontal)
+            }
+            .frame(maxHeight: 96)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 6) {
@@ -103,6 +134,10 @@ struct ChatView: View {
                     }
                     .padding()
                 }
+                .background(
+                    LinearGradient(colors: chatThemeColors[theme] ?? chatThemeColors[""]!,
+                                   startPoint: .top, endPoint: .bottom)
+                )
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last {
                         withAnimation { proxy.scrollTo(last.id) }
@@ -134,6 +169,7 @@ struct ChatView: View {
 
     private func connect() {
         guard let token = session.accessToken else { return }
+        theme = conversation.theme
         let s = ChatSocket()
         s.onEvent = { evt in
             guard (evt["type"] as? String) == "message",
@@ -170,6 +206,25 @@ struct ChatView: View {
                 _ = try? await APIClient(token: token)
                     .post("/api/conversations/\(conversation.id)/read")
             }
+        }
+    }
+
+    private func setTheme(_ name: String) {
+        guard let token = session.accessToken else { return }
+        theme = name
+        Task {
+            _ = try? await APIClient(token: token)
+                .put("/api/conversations/\(conversation.id)/theme", body: ["theme": name])
+        }
+    }
+
+    private func setNickname() {
+        guard let token = session.accessToken, let uid = session.userId else { return }
+        let nick = nickname.trimmingCharacters(in: .whitespaces)
+        Task {
+            _ = try? await APIClient(token: token)
+                .put("/api/conversations/\(conversation.id)/nicknames/\(uid)",
+                     body: ["nickname": nick])
         }
     }
 }

@@ -337,29 +337,40 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type publicUser struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Bio         string `json:"bio"`
-	AvatarURL   string `json:"avatar_url"`
-	Locale      string `json:"locale"`
-	IsCreator   bool   `json:"is_creator"`
-	IsVerified  bool   `json:"is_verified"`
-	KYCStatus   string `json:"kyc_status,omitempty"`
-	CreatedAt   string `json:"created_at"`
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	Bio          string `json:"bio"`
+	AvatarURL    string `json:"avatar_url"`
+	Locale       string `json:"locale"`
+	IsCreator    bool   `json:"is_creator"`
+	IsVerified   bool   `json:"is_verified"`
+	IsMerchant   bool   `json:"is_merchant"`
+	MerchantTier int    `json:"merchant_tier"`
+	PinnedPostID string `json:"pinned_post_id"`
+	KYCStatus    string `json:"kyc_status,omitempty"`
+	CreatedAt    string `json:"created_at"`
 }
 
 func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {
 	var u publicUser
 	var createdAt time.Time
+	var pinned *string
 	err := a.db.QueryRow(ctx,
-		`SELECT id, username, display_name, bio, avatar_url, locale, is_creator, is_verified, kyc_status, created_at
+		`SELECT id, username, display_name, bio, avatar_url, locale, is_creator, is_verified, kyc_status, created_at,
+		        pinned_post_id
 		 FROM users WHERE id = $1 AND status = 'active'`, id).
 		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.AvatarURL, &u.Locale,
-			&u.IsCreator, &u.IsVerified, &u.KYCStatus, &createdAt)
+			&u.IsCreator, &u.IsVerified, &u.KYCStatus, &createdAt, &pinned)
 	if err != nil {
 		return nil, err
 	}
+	if pinned != nil {
+		u.PinnedPostID = *pinned
+	}
+	_ = a.db.QueryRow(ctx,
+		`SELECT status='verified', COALESCE(tier,0) FROM p2p_merchants WHERE user_id=$1`, id).
+		Scan(&u.IsMerchant, &u.MerchantTier)
 	u.CreatedAt = createdAt.Format(time.RFC3339)
 	return &u, nil
 }

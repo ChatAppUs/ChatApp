@@ -99,6 +99,7 @@ func (a *App) startScheduler() {
 		defer ticker.Stop()
 		for range ticker.C {
 			a.deliverScheduled(context.Background())
+			a.deliverEventReminders(context.Background())
 			a.requeueStaleTranscodes()
 		}
 	}()

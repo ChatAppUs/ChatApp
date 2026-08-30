@@ -70,8 +70,20 @@ type p2pOfferJSON struct {
 	PaymentMethods []string  `json:"payment_methods"`
 	Terms          string    `json:"terms"`
 	Active         bool      `json:"active"`
+	Merchant       bool      `json:"merchant"`      // verified merchant badge
+	MerchantTier   int       `json:"merchant_tier"` // 0 = not a merchant
+	MerchantName   string    `json:"merchant_name"`
 	CreatedAt      time.Time `json:"created_at"`
 }
+
+const offerSelect = `SELECT o.id, u.username, o.side, o.asset, o.chain, o.fiat_currency, o.country_iso,
+        o.price::text, o.min_amount::text, o.max_amount::text, o.payment_methods,
+        o.terms, o.active, o.created_at,
+        COALESCE(m.status='verified', false), COALESCE(m.tier, 0),
+        COALESCE(CASE WHEN m.status='verified' THEN m.business_name END, '')
+ FROM p2p_offers o
+ JOIN users u ON u.id = o.owner_id
+ LEFT JOIN p2p_merchants m ON m.user_id = o.owner_id `
 
 func (a *App) scanOffers(rows pgx.Rows) []p2pOfferJSON {
 	defer rows.Close()
@@ -80,7 +92,8 @@ func (a *App) scanOffers(rows pgx.Rows) []p2pOfferJSON {
 		var o p2pOfferJSON
 		if err := rows.Scan(&o.ID, &o.Owner, &o.Side, &o.Asset, &o.Chain, &o.Fiat,
 			&o.Country, &o.Price, &o.MinAmount, &o.MaxAmount, &o.PaymentMethods,
-			&o.Terms, &o.Active, &o.CreatedAt); err == nil {
+			&o.Terms, &o.Active, &o.CreatedAt,
+			&o.Merchant, &o.MerchantTier, &o.MerchantName); err == nil {
 			out = append(out, o)
 		}
 	}
@@ -113,11 +126,7 @@ func (a *App) handleP2PListOffers(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	args = append(args, limit, offset)
 	rows, err := a.db.Query(r.Context(),
-		fmt.Sprintf(`SELECT o.id, u.username, o.side, o.asset, o.chain, o.fiat_currency, o.country_iso,
-		        o.price::text, o.min_amount::text, o.max_amount::text, o.payment_methods,
-		        o.terms, o.active, o.created_at
-		 FROM p2p_offers o JOIN users u ON u.id = o.owner_id
-		 WHERE %s
+		fmt.Sprintf(offerSelect+`WHERE %s
 		 ORDER BY o.price ASC, o.created_at DESC LIMIT $%d OFFSET $%d`,
 			strings.Join(where, " AND "), len(args)-1, len(args)), args...)
 	if err != nil {
@@ -197,12 +206,8 @@ func (a *App) handleP2PCreateOffer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleP2PMyOffers(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(r.Context(),
-		`SELECT o.id, u.username, o.side, o.asset, o.chain, o.fiat_currency, o.country_iso,
-		        o.price::text, o.min_amount::text, o.max_amount::text, o.payment_methods,
-		        o.terms, o.active, o.created_at
-		 FROM p2p_offers o JOIN users u ON u.id = o.owner_id
-		 WHERE o.owner_id=$1 ORDER BY o.created_at DESC`, userIDFrom(r))
+	rows, err := a.db.Query(r.Context(), offerSelect+
+		`WHERE o.owner_id=$1 ORDER BY o.created_at DESC`, userIDFrom(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load offers")
 		return
@@ -290,6 +295,16 @@ func (a *App) handleP2POpenTrade(w http.ResponseWriter, r *http.Request) {
 	buyerID, sellerID := uid, ownerID
 	if side == "buy" { // offer owner buys; the taker sells
 		buyerID, sellerID = ownerID, uid
+	}
+
+	// Merchant tier caps apply when a verified merchant is the seller.
+	var tradeUSD float64
+	_ = tx.QueryRow(r.Context(),
+		`SELECT ($1::numeric * usd_rate)::float8 FROM convert_rates
+		 WHERE asset=$2 AND chain=$3`, req.CryptoAmount, asset, chain).Scan(&tradeUSD)
+	if msg := a.enforceMerchantLimits(r.Context(), tx, sellerID, tradeUSD); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
 	}
 
 	// Escrow: lock the seller's crypto now.

@@ -455,7 +455,7 @@ func (a *App) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleListConversations(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
-		`SELECT c.id, c.is_group, c.is_channel, c.title, c.created_at,
+		`SELECT c.id, c.is_group, c.is_channel, c.title, c.created_at, c.theme,
 		        (SELECT body FROM messages msg WHERE msg.conversation_id = c.id AND msg.deleted_at IS NULL
 		         ORDER BY msg.created_at DESC LIMIT 1) AS last_message,
 		        (SELECT count(*) FROM messages msg WHERE msg.conversation_id = c.id AND msg.deleted_at IS NULL
@@ -476,13 +476,14 @@ func (a *App) handleListConversations(w http.ResponseWriter, r *http.Request) {
 		IsChannel   bool      `json:"is_channel"`
 		Title       string    `json:"title"`
 		CreatedAt   time.Time `json:"created_at"`
+		Theme       string    `json:"theme"`
 		LastMessage *string   `json:"last_message"`
 		Unread      int64     `json:"unread"`
 	}
 	out := []conv{}
 	for rows.Next() {
 		var c conv
-		if err := rows.Scan(&c.ID, &c.IsGroup, &c.IsChannel, &c.Title, &c.CreatedAt, &c.LastMessage, &c.Unread); err == nil {
+		if err := rows.Scan(&c.ID, &c.IsGroup, &c.IsChannel, &c.Title, &c.CreatedAt, &c.Theme, &c.LastMessage, &c.Unread); err == nil {
 			out = append(out, c)
 		}
 	}

@@ -1,5 +1,6 @@
 package com.chatapp.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,11 +40,21 @@ data class ChatMessage(
     val encrypted: Boolean,
 )
 
+private val CHAT_THEMES: Map<String, List<androidx.compose.ui.graphics.Color>> = mapOf(
+    "" to listOf(androidx.compose.ui.graphics.Color(0xFFF5F5F5), androidx.compose.ui.graphics.Color(0xFFFFFFFF)),
+    "sunset" to listOf(androidx.compose.ui.graphics.Color(0xFFFF9A8B), androidx.compose.ui.graphics.Color(0xFFFF6A88)),
+    "ocean" to listOf(androidx.compose.ui.graphics.Color(0xFF2193B0), androidx.compose.ui.graphics.Color(0xFF6DD5ED)),
+    "forest" to listOf(androidx.compose.ui.graphics.Color(0xFF134E5E), androidx.compose.ui.graphics.Color(0xFF71B280)),
+    "candy" to listOf(androidx.compose.ui.graphics.Color(0xFFD3959B), androidx.compose.ui.graphics.Color(0xFFBFE6BA)),
+)
+
 @Composable
 fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
     var conversationId by remember { mutableStateOf<String?>(null) }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var draft by remember { mutableStateOf("") }
+    var theme by remember { mutableStateOf("") }
+    var nickname by remember { mutableStateOf("") }
     var typing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -81,6 +92,7 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
             if (arr.length() > 0) {
                 val convId = arr.getJSONObject(0).getString("id")
                 conversationId = convId
+                theme = arr.getJSONObject(0).optString("theme")
                 val history = withContext(Dispatchers.IO) {
                     api.get("/api/conversations/$convId/messages", token)
                 }
@@ -113,12 +125,55 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Chat", style = MaterialTheme.typography.headlineSmall)
+        conversationId?.let { convId ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                CHAT_THEMES.keys.forEach { name ->
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    api.put("/api/conversations/$convId/theme",
+                                        JSONObject().put("theme", name).toString(), token)
+                                }
+                                theme = name
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }) {
+                        Text(if (name.isEmpty()) "default" else name)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it },
+                    placeholder = { Text("My nickname in this chat") },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                api.put("/api/conversations/$convId/nicknames/$myId",
+                                    JSONObject().put("nickname", nickname.trim()).toString(), token)
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }) { Text("Set") }
+            }
+        }
         if (typing) Text("typing…", style = MaterialTheme.typography.bodySmall)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+            modifier = Modifier.weight(1f).padding(vertical = 8.dp).background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    CHAT_THEMES[theme] ?: CHAT_THEMES[""]!!
+                )
+            ),
         ) {
             items(messages, key = { it.id }) { m ->
                 val mine = m.senderId == myId

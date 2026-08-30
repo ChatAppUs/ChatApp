@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi, clearAdminSession, getAdminToken } from "@/lib/api";
-import { WithdrawalsTab, RolesTab, RatesTab, DisputesTab } from "@/components/FinanceTabs";
+import { WithdrawalsTab, RolesTab, RatesTab, DisputesTab, MerchantsTab, CardsTab, TransfersTab } from "@/components/FinanceTabs";
 
 interface Stats {
   users: number;
@@ -68,7 +68,7 @@ interface PlatformToken {
   created_at: string;
 }
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -130,7 +130,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -280,6 +280,9 @@ export default function DashboardPage() {
       {tab === "roles" && <RolesTab act={act} />}
       {tab === "rates" && <RatesTab act={act} />}
       {tab === "disputes" && <DisputesTab act={act} />}
+      {tab === "merchants" && <MerchantsTab act={act} />}
+      {tab === "cards" && <CardsTab act={act} />}
+      {tab === "transfers" && <TransfersTab act={act} />}
     </>
   );
 }

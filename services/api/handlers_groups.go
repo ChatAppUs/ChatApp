@@ -298,6 +298,7 @@ func (a *App) handleGroupFeed(w http.ResponseWriter, r *http.Request) {
 		        p.like_count, p.comment_count, p.view_count, p.created_at
 		 FROM posts p JOIN users u ON u.id=p.author_id
 		 WHERE p.group_id=$1 AND p.deleted_at IS NULL
+		  AND (p.publish_at IS NULL OR p.publish_at <= now())
 		 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, id, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "feed failed")
@@ -470,6 +471,7 @@ func (a *App) handlePageFeed(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT p.id, p.body, p.like_count, p.comment_count, p.view_count, p.created_at
 		 FROM posts p WHERE p.page_id=$1 AND p.deleted_at IS NULL
+		  AND (p.publish_at IS NULL OR p.publish_at <= now())
 		 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, id, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "feed failed")
@@ -671,9 +673,37 @@ func (a *App) handleRSVP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userIDFrom(r)
-	if _, err := a.db.Exec(r.Context(),
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "rsvp failed")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(),
 		`INSERT INTO event_rsvps (event_id, user_id, response) VALUES ($1,$2,$3)
 		 ON CONFLICT (event_id, user_id) DO UPDATE SET response=$3`, id, uid, req.Response); err != nil {
+		writeErr(w, http.StatusInternalServerError, "rsvp failed")
+		return
+	}
+	// Going/interested attendees get a reminder one hour before the start.
+	if req.Response == "going" || req.Response == "interested" {
+		if _, err := tx.Exec(r.Context(),
+			`INSERT INTO event_reminders (event_id, user_id, remind_at)
+			 SELECT $1, $2, starts_at - interval '1 hour' FROM events
+			 WHERE id=$1 AND starts_at > now()
+			 ON CONFLICT (event_id, user_id) DO UPDATE
+			 SET remind_at=EXCLUDED.remind_at, sent_at=NULL`, id, uid); err != nil {
+			writeErr(w, http.StatusInternalServerError, "rsvp failed")
+			return
+		}
+	} else {
+		if _, err := tx.Exec(r.Context(),
+			`DELETE FROM event_reminders WHERE event_id=$1 AND user_id=$2`, id, uid); err != nil {
+			writeErr(w, http.StatusInternalServerError, "rsvp failed")
+			return
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "rsvp failed")
 		return
 	}

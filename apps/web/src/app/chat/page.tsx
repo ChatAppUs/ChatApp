@@ -7,7 +7,16 @@ import { useI18n } from "@/lib/i18n";
 import {
   publishIdentityKey, hasIdentityKey, encryptFor, decryptFrom, looksEncrypted,
 } from "@/lib/e2e";
-import type { Conversation, Message, PublicUser } from "@/lib/types";
+import type { Conversation, ConvMember, Message, PublicUser } from "@/lib/types";
+
+const CHAT_THEMES: Record<string, string> = {
+  "": "var(--bg)",
+  sunset: "linear-gradient(135deg,#ff9966,#ff5e62)",
+  ocean: "linear-gradient(135deg,#2193b0,#6dd5ed)",
+  forest: "linear-gradient(135deg,#134e5e,#71b280)",
+  candy: "linear-gradient(135deg,#fc5c7d,#6a82fb)",
+  mono: "linear-gradient(135deg,#232526,#414345)",
+};
 
 interface WSEvent {
   type: string;
@@ -57,7 +66,8 @@ export default function ChatPage() {
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
   const [ttl, setTtl] = useState(0);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [members, setMembers] = useState<{ id: string; username: string; display_name: string; role: string }[]>([]);
+  const [members, setMembers] = useState<ConvMember[]>([]);
+  const [themeOpen, setThemeOpen] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -337,6 +347,31 @@ export default function ChatPage() {
     setMembers((prev) => prev.filter((m) => m.id !== uid));
   };
 
+  const setNickname = async (uid: string) => {
+    if (!active) return;
+    const current = members.find((m) => m.id === uid)?.nickname ?? "";
+    const nick = prompt("Nickname (empty to clear):", current);
+    if (nick === null) return;
+    await api(`/api/conversations/${active.id}/nicknames/${uid}`, {
+      method: "PUT",
+      body: JSON.stringify({ nickname: nick }),
+    }).catch(() => {});
+    setMembers((prev) => prev.map((m) => (m.id === uid ? { ...m, nickname: nick } : m)));
+  };
+
+  const setTheme = async (theme: string) => {
+    if (!active) return;
+    setThemeOpen(false);
+    await api(`/api/conversations/${active.id}/theme`, {
+      method: "PUT",
+      body: JSON.stringify({ theme }),
+    }).catch(() => {});
+    const updated = { ...active, theme };
+    setActive(updated);
+    activeRef.current = updated;
+    setConversations((prev) => prev.map((c) => (c.id === active.id ? { ...c, theme } : c)));
+  };
+
   const addMemberToActive = async (uid: string) => {
     if (!active) return;
     await api(`/api/conversations/${active.id}/members`, {
@@ -589,6 +624,24 @@ export default function ChatPage() {
               <button className="secondary small" title="Members" onClick={loadMembers}>
                 👥
               </button>
+              <span style={{ position: "relative" }}>
+                <button className="secondary small" title="Chat theme" onClick={() => setThemeOpen((v) => !v)}>
+                  🎨
+                </button>
+                {themeOpen && (
+                  <span className="card" style={{
+                    position: "absolute", top: "110%", insetInlineEnd: 0, padding: 6, zIndex: 6,
+                    display: "flex", gap: 4, whiteSpace: "nowrap",
+                  }}>
+                    {Object.entries(CHAT_THEMES).map(([key, g]) => (
+                      <button key={key} className={(active.theme || "") === key ? "small" : "secondary small"}
+                        style={{ background: g, minWidth: 28, height: 28, borderRadius: 14, padding: 0 }}
+                        title={key || "default"}
+                        onClick={() => setTheme(key)} />
+                    ))}
+                  </span>
+                )}
+              </span>
             </div>
             {membersOpen && (
               <div className="card" style={{ padding: 8 }}>
@@ -599,9 +652,15 @@ export default function ChatPage() {
                 </div>
                 {members.map((m) => (
                   <div key={m.id} className="row" style={{ fontSize: 13 }}>
-                    <span>{m.display_name} <span className="muted">@{m.username}</span></span>
+                    <span>
+                      {m.nickname || m.display_name} <span className="muted">@{m.username}</span>
+                      {m.nickname && <span className="muted" style={{ fontSize: 11 }}> ({m.display_name})</span>}
+                    </span>
                     {m.role !== "member" && <span className="badge">{m.role}</span>}
                     <div className="spacer" />
+                    <button className="secondary small" title="Set nickname" onClick={() => setNickname(m.id)}>
+                      🏷️
+                    </button>
                     {active.is_group && m.id !== getUserId() && m.role !== "owner" && (
                       <button className="secondary small" onClick={() => removeMember(m.id)}>Remove</button>
                     )}
@@ -643,11 +702,18 @@ export default function ChatPage() {
                 {pins.length > 1 && <span className="badge">+{pins.length - 1}</span>}
               </div>
             )}
-            <div className="chat-messages" style={{ flex: 1 }}>
+            <div className="chat-messages" style={{
+              flex: 1,
+              background: CHAT_THEMES[active.theme || ""] ?? "transparent",
+              borderRadius: active.theme ? 10 : 0,
+              padding: active.theme ? 8 : 0,
+            }}>
               {messages.map((m) => (
                 <div key={m.id} className={`bubble ${m.sender_id === getUserId() ? "mine" : ""}`}>
                   {active.is_group && m.sender_id !== getUserId() && (
-                    <div style={{ fontSize: 11, opacity: 0.8 }}>{m.sender_name}</div>
+                    <div style={{ fontSize: 11, opacity: 0.8 }}>
+                      {members.find((x) => x.id === m.sender_id)?.nickname || m.sender_name}
+                    </div>
                   )}
                   {m.forwarded_from && <div style={{ fontSize: 10, opacity: 0.7 }}>↪ forwarded</div>}
                   {m.story_id && <div style={{ fontSize: 10, opacity: 0.7 }}>📸 story reply</div>}

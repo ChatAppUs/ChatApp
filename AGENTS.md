@@ -106,3 +106,32 @@
   components), admin FinanceTabs.tsx (tokens/withdrawals/roles/rates/disputes),
   Android ui/WalletScreen.kt (ZXing QR + ML Kit scan), iOS Views/WalletView.swift
   (CoreImage QR + AVFoundation scan). Desktop/extension inherit web.
+
+## Contracts discovered while testing (2026-08-30, session 4 — gap closure)
+- Migration 016_merchants_cards.sql: p2p_merchants + p2p_merchant_tiers (3 levels),
+  virtual cards (Luhn PAN shown ONCE at issue, only last4 stored), card_transactions,
+  post_reactions (6 types; like endpoint = alias), post_tags, post_edits, albums +
+  album_items, chat_nicknames, conversations.theme, posts.feeling/location/publish_at,
+  users.pinned_post_id, event reminder notifications. Numeric limits serialized with
+  trim_scale() to avoid exponent notation.
+- Merchant flow: POST /api/p2p/merchant/apply → admin review (approve+tier/reject) at
+  /api/admin/p2p/merchants*; badge on offers via owner_is_merchant/owner_merchant_tier;
+  tier caps enforced at trade open (per-trade + daily volume).
+- Cards: /api/cards (issue/list), /charge, /topup (crypto→USD at admin rate), /refund,
+  /status (POST), /limits (PUT), /{id}/transactions. Admin: /api/admin/cards + status.
+  handleCardCharge decline row MUST insert in the same tx as the FOR UPDATE card lock
+  (second pool conn = self-deadlock, 300s hang).
+- Admin transfer oversight: GET /api/admin/transfers, POST .../reverse (compensating
+  double-entry). User transfers already at /api/wallet/transfer.
+- Social: PUT/DELETE /api/posts/{id}/react, GET /reactions, PUT/DELETE
+  /api/me/pinned-post, GET /api/posts/{id}/edits, GET /api/me/scheduled-posts,
+  DELETE /api/scheduled-posts/{id}, comment sort ?sort=top|newest|oldest.
+- Chat: PUT /api/conversations/{id}/theme (1-40 chars a-z0-9_-), PUT .../nicknames/{uid}.
+  Web presets: sunset/ocean/forest/candy/mono gradients in chat page.
+- Web routes: /cards, /albums; profile shows pinned post first + albums strip +
+  scheduled posts (own profile); Composer has Extras (feeling/location/tags/schedule).
+  Admin dashboard tabs: merchants, cards, transfers.
+- tests/gaps_test.py = 92 checks. Full sweep 2026-08-30: gaps 92/92, integration
+  153/153 (needs SFU on :8095 else 5 media-ticket fails), features 72/72, finance 44/44.
+  features_test.py exits 0 with no summary line. integration_test.py needs python
+  'cryptography' pkg for the passkey flow.

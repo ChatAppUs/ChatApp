@@ -312,3 +312,205 @@ export function DisputesTab({ act }: { act: Act }) {
     </div>
   );
 }
+
+interface AdminMerchant {
+  user_id: string;
+  username: string;
+  business_name: string;
+  status: string;
+  tier: number;
+  tier_name: string;
+  note: string;
+  applied_at: string;
+}
+
+export function MerchantsTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [merchants, setMerchants] = useState<AdminMerchant[]>([]);
+  const [status, setStatus] = useState("pending");
+  const load = useCallback(() => {
+    adminApi<{ merchants: AdminMerchant[] }>(`/api/admin/p2p/merchants?status=${status}`)
+      .then((d) => setMerchants(d.merchants)).catch(() => {});
+  }, [status]);
+  useEffect(() => { load(); }, [load]);
+
+  const review = (uid: string, approve: boolean) => {
+    const tier = approve ? Number(prompt("Tier level (1-3):", "1") || "1") : 0;
+    act(() => adminApi(`/api/admin/p2p/merchants/${uid}/review`, {
+      method: "POST", body: JSON.stringify({ approve, tier }),
+    }).then(load));
+  };
+
+  return (
+    <div className="card">
+      <div className="row" style={{ marginBottom: 8 }}>
+        {["pending", "verified", "rejected", "revoked", ""].map((s) => (
+          <button key={s || "all"} className={status === s ? "small" : "secondary small"}
+            onClick={() => setStatus(s)}>
+            {s || "all"}
+          </button>
+        ))}
+      </div>
+      <table className="table">
+        <thead>
+          <tr><th>Business</th><th>User</th><th>Status</th><th>Tier</th><th>Note</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {merchants.map((m) => (
+            <tr key={m.user_id}>
+              <td>{m.business_name}</td>
+              <td>@{m.username}</td>
+              <td><span className="badge">{m.status}</span></td>
+              <td>{m.tier > 0 ? `T${m.tier} ${m.tier_name}` : "—"}</td>
+              <td className="muted">{m.note}</td>
+              <td>
+                <div className="row">
+                  {m.status === "pending" && (
+                    <>
+                      <button className="success small" onClick={() => review(m.user_id, true)}>Approve</button>
+                      <button className="secondary small" onClick={() => review(m.user_id, false)}>Reject</button>
+                    </>
+                  )}
+                  {m.status === "verified" && (
+                    <>
+                      <button className="secondary small" onClick={() => {
+                        const tier = Number(prompt("New tier level:", String(m.tier)) || "");
+                        if (tier) act(() => adminApi(`/api/admin/p2p/merchants/${m.user_id}/tier`, {
+                          method: "POST", body: JSON.stringify({ tier }),
+                        }).then(load));
+                      }}>Set tier</button>
+                      <button className="secondary small" onClick={() =>
+                        act(() => adminApi(`/api/admin/p2p/merchants/${m.user_id}/revoke`, { method: "POST" }).then(load))}>
+                        Revoke
+                      </button>
+                    </>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+          {merchants.length === 0 && <tr><td colSpan={6} className="muted">No merchants with this status</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+interface AdminCard {
+  id: string;
+  username: string;
+  label: string;
+  last4: string;
+  status: string;
+  balance_usd: string;
+  daily_limit_usd: string;
+  monthly_limit_usd: string;
+  created_at: string;
+}
+
+export function CardsTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [cards, setCards] = useState<AdminCard[]>([]);
+  const load = useCallback(() => {
+    adminApi<{ cards: AdminCard[] }>("/api/admin/cards")
+      .then((d) => setCards(d.cards)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="card">
+      <table className="table">
+        <thead>
+          <tr><th>Card</th><th>User</th><th>Status</th><th>Balance</th><th>Limits (d/m)</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {cards.map((c) => (
+            <tr key={c.id}>
+              <td>{c.label || "Card"} ···· {c.last4}</td>
+              <td>@{c.username}</td>
+              <td><span className="badge">{c.status}</span></td>
+              <td>${c.balance_usd}</td>
+              <td className="muted">${c.daily_limit_usd} / ${c.monthly_limit_usd}</td>
+              <td>
+                <div className="row">
+                  {c.status !== "frozen" && c.status !== "terminated" && (
+                    <button className="secondary small" onClick={() =>
+                      act(() => adminApi(`/api/admin/cards/${c.id}/status`, { method: "POST", body: JSON.stringify({ status: "frozen" }) }).then(load))}>
+                      Freeze
+                    </button>
+                  )}
+                  {c.status === "frozen" && (
+                    <button className="success small" onClick={() =>
+                      act(() => adminApi(`/api/admin/cards/${c.id}/status`, { method: "POST", body: JSON.stringify({ status: "active" }) }).then(load))}>
+                      Unfreeze
+                    </button>
+                  )}
+                  {c.status !== "terminated" && (
+                    <button className="secondary small" onClick={() => {
+                      if (confirm("Terminate this card permanently?"))
+                        act(() => adminApi(`/api/admin/cards/${c.id}/status`, { method: "POST", body: JSON.stringify({ status: "terminated" }) }).then(load));
+                    }}>
+                      Close
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+          {cards.length === 0 && <tr><td colSpan={6} className="muted">No cards issued</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+interface AdminTransfer {
+  tx_id: string;
+  from_username: string;
+  to_username: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  memo: string;
+  reversed: boolean;
+  created_at: string;
+}
+
+export function TransfersTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [transfers, setTransfers] = useState<AdminTransfer[]>([]);
+  const load = useCallback(() => {
+    adminApi<{ transfers: AdminTransfer[] }>("/api/admin/transfers")
+      .then((d) => setTransfers(d.transfers)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="card">
+      <table className="table">
+        <thead>
+          <tr><th>When</th><th>From</th><th>To</th><th>Amount</th><th>Memo</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {transfers.map((x) => (
+            <tr key={x.tx_id} style={x.reversed ? { opacity: 0.55 } : undefined}>
+              <td className="muted">{new Date(x.created_at).toLocaleString()}</td>
+              <td>@{x.from_username}</td>
+              <td>@{x.to_username}</td>
+              <td>{x.amount} {x.asset} <span className="muted">({x.chain})</span></td>
+              <td className="muted">{x.memo}</td>
+              <td>
+                {x.reversed
+                  ? <span className="badge">reversed</span>
+                  : <button className="secondary small" onClick={() => {
+                      if (confirm(`Reverse ${x.amount} ${x.asset} from @${x.from_username} to @${x.to_username}?`))
+                        act(() => adminApi(`/api/admin/transfers/${x.tx_id}/reverse`, { method: "POST" }).then(load));
+                    }}>
+                      Reverse
+                    </button>}
+              </td>
+            </tr>
+          ))}
+          {transfers.length === 0 && <tr><td colSpan={6} className="muted">No user-to-user transfers yet</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}

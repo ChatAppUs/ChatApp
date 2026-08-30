@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,9 +59,15 @@ import org.json.JSONObject
 
 data class WalletAcct(val id: String, val asset: String, val chain: String, val balance: String)
 data class P2POfferItem(val id: String, val owner: String, val side: String, val asset: String, val chain: String,
-    val price: String, val fiat: String, val min: String, val max: String, val methods: String)
+    val price: String, val fiat: String, val min: String, val max: String, val methods: String,
+    val ownerIsMerchant: Boolean = false, val ownerMerchantTier: Int = 0)
 data class P2PTradeItem(val id: String, val asset: String, val amount: String, val fiat: String,
     val method: String, val status: String, val buyer: String, val seller: String)
+data class MerchantInfo(val status: String, val tier: Int, val tierName: String,
+    val maxTradeUsd: String, val dailyVolumeUsd: String)
+data class CardItem(val id: String, val label: String, val last4: String, val status: String,
+    val balanceUsd: String, val dailyLimitUsd: String, val monthlyLimitUsd: String)
+data class CardTxn(val id: String, val amountUsd: String, val merchant: String, val status: String, val createdAt: String)
 
 private fun qrBitmap(content: String, size: Int = 512): Bitmap {
     val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size)
@@ -90,6 +97,12 @@ fun WalletScreen(api: ApiClient, session: Session) {
     var convResult by remember { mutableStateOf("") }
     var offers by remember { mutableStateOf(listOf<P2POfferItem>()) }
     var trades by remember { mutableStateOf(listOf<P2PTradeItem>()) }
+    var merchant by remember { mutableStateOf<MerchantInfo?>(null) }
+    var merchantNote by remember { mutableStateOf("") }
+    var cards by remember { mutableStateOf(listOf<CardItem>()) }
+    var cardTxns by remember { mutableStateOf(listOf<CardTxn>()) }
+    var cardLabel by remember { mutableStateOf("") }
+    var topupAmount by remember { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -136,7 +149,52 @@ fun WalletScreen(api: ApiClient, session: Session) {
                         ob.getString("asset"), ob.getString("chain"), ob.getString("price"),
                         ob.getString("fiat_currency"), ob.getString("min_amount"), ob.getString("max_amount"),
                         (0 until methods.length()).joinToString(", ") { methods.getString(it) },
+                        ob.optBoolean("owner_is_merchant"), ob.optInt("owner_merchant_tier"),
                     )
+                }
+                try {
+                    val m = JSONObject(withContext(Dispatchers.IO) { api.get("/api/p2p/merchant/status", token) })
+                    if (m.has("merchant") && !m.isNull("merchant")) {
+                        val mo = m.getJSONObject("merchant")
+                        merchant = MerchantInfo(
+                            mo.getString("status"), mo.optInt("tier"),
+                            mo.optString("tier_name"), m.optString("max_trade_usd"),
+                            m.optString("daily_volume_usd"),
+                        )
+                    } else {
+                        merchant = null
+                    }
+                } catch (_: Exception) { merchant = null }
+            } catch (e: Exception) { error = e.message }
+        }
+    }
+
+    fun loadCards() {
+        scope.launch {
+            try {
+                val r = withContext(Dispatchers.IO) { api.get("/api/cards", token) }
+                val arr = JSONObject(r).getJSONArray("cards")
+                cards = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    CardItem(
+                        o.getString("id"), o.optString("label"), o.getString("last4"),
+                        o.getString("status"), o.optString("balance_usd"),
+                        o.optString("daily_limit_usd"), o.optString("monthly_limit_usd"),
+                    )
+                }
+            } catch (e: Exception) { error = e.message }
+        }
+    }
+
+    fun loadCardTxns(cardId: String) {
+        scope.launch {
+            try {
+                val r = withContext(Dispatchers.IO) { api.get("/api/cards/$cardId/transactions", token) }
+                val arr = JSONObject(r).getJSONArray("transactions")
+                cardTxns = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    CardTxn(o.getString("id"), o.getString("amount_usd"),
+                        o.optString("merchant"), o.getString("status"), o.optString("created_at"))
                 }
             } catch (e: Exception) { error = e.message }
         }
@@ -144,10 +202,11 @@ fun WalletScreen(api: ApiClient, session: Session) {
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf("wallet", "deposit", "withdraw", "convert", "p2p").forEach { tb ->
+            listOf("wallet", "deposit", "withdraw", "convert", "p2p", "cards").forEach { tb ->
                 TextButton(onClick = {
                     tab = tb
                     if (tb == "p2p") loadOffers()
+                    if (tb == "cards") loadCards()
                 }) { Text(tb.replaceFirstChar { it.uppercase() }) }
             }
         }
@@ -249,10 +308,45 @@ fun WalletScreen(api: ApiClient, session: Session) {
             }
 
             "p2p" -> LazyColumn {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Merchant program", style = MaterialTheme.typography.titleMedium)
+                            if (merchant == null) {
+                                Text("Become a verified merchant to get a badge and higher trading limits.",
+                                    style = MaterialTheme.typography.bodySmall)
+                                OutlinedTextField(value = merchantNote, onValueChange = { merchantNote = it },
+                                    label = { Text("Business description") }, modifier = Modifier.fillMaxWidth())
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        error = null
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                api.post("/api/p2p/merchant/apply",
+                                                    JSONObject().put("note", merchantNote).toString(), token)
+                                            }
+                                            message = "Application submitted"
+                                            loadOffers()
+                                        } catch (e: Exception) { error = e.message }
+                                    }
+                                }) { Text("Apply") }
+                            } else {
+                                val m = merchant!!
+                                Text("Status: ${m.status}" +
+                                    (if (m.status == "verified") " · Tier ${m.tier} ${m.tierName}" else ""))
+                                if (m.status == "verified") {
+                                    Text("Limits: \$${m.maxTradeUsd}/trade · \$${m.dailyVolumeUsd}/day",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
                 items(offers) { o ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text("${o.side.uppercase()} ${o.asset} @ ${o.price} ${o.fiat} — @${o.owner}")
+                            Text("${o.side.uppercase()} ${o.asset} @ ${o.price} ${o.fiat} — @${o.owner}" +
+                                (if (o.ownerIsMerchant) " 🏪T${o.ownerMerchantTier}" else ""))
                             Text("Limits ${o.min}–${o.max} · ${o.methods}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -275,6 +369,108 @@ fun WalletScreen(api: ApiClient, session: Session) {
                                     TextButton(onClick = { tradeAction(api, token, tr.id, "release", scope, ::load) { error = it } }) { Text("Release") }
                                     TextButton(onClick = { tradeAction(api, token, tr.id, "dispute", scope, ::load) { error = it } }) { Text("Dispute") }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            "cards" -> LazyColumn {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Issue virtual card", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(value = cardLabel, onValueChange = { cardLabel = it },
+                                label = { Text("Label (optional)") }, modifier = Modifier.fillMaxWidth())
+                            TextButton(onClick = {
+                                scope.launch {
+                                    error = null
+                                    try {
+                                        val r = withContext(Dispatchers.IO) {
+                                            api.post("/api/cards",
+                                                JSONObject().put("label", cardLabel).toString(), token)
+                                        }
+                                        val pan = JSONObject(r).optString("card_number")
+                                        message = if (pan.isNotEmpty())
+                                            "Card issued · $pan (shown once — store it safely)"
+                                        else "Card issued"
+                                        loadCards()
+                                    } catch (e: Exception) { error = e.message }
+                                }
+                            }) { Text("Issue card") }
+                        }
+                    }
+                }
+                items(cards) { c ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("${c.label.ifEmpty { "Card" }} ···· ${c.last4} [${c.status}]")
+                            Text("Balance \$${c.balanceUsd} · limits \$${c.dailyLimitUsd}/d \$${c.monthlyLimitUsd}/m",
+                                style = MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (c.status == "active") {
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            try {
+                                                withContext(Dispatchers.IO) {
+                                                    api.post("/api/cards/${c.id}/status",
+                                                        JSONObject().put("status", "frozen").toString(), token)
+                                                }
+                                                loadCards()
+                                            } catch (e: Exception) { error = e.message }
+                                        }
+                                    }) { Text("Freeze") }
+                                }
+                                if (c.status == "frozen") {
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            try {
+                                                withContext(Dispatchers.IO) {
+                                                    api.post("/api/cards/${c.id}/status",
+                                                        JSONObject().put("status", "active").toString(), token)
+                                                }
+                                                loadCards()
+                                            } catch (e: Exception) { error = e.message }
+                                        }
+                                    }) { Text("Unfreeze") }
+                                }
+                                TextButton(onClick = { loadCardTxns(c.id) }) { Text("Statement") }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(value = topupAmount, onValueChange = { topupAmount = it },
+                                    label = { Text("Top-up amount ($depAsset)") },
+                                    modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        error = null
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                api.post("/api/cards/${c.id}/topup",
+                                                    JSONObject().put("amount", topupAmount)
+                                                        .put("asset", depAsset)
+                                                        .put("chain", depChain).toString(), token)
+                                            }
+                                            message = "Card topped up"
+                                            topupAmount = ""
+                                            loadCards(); load()
+                                        } catch (e: Exception) { error = e.message }
+                                    }
+                                }) { Text("Top up") }
+                            }
+                        }
+                    }
+                }
+                if (cardTxns.isNotEmpty()) {
+                    item {
+                        Text("Transactions", style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(vertical = 8.dp))
+                    }
+                    items(cardTxns) { t ->
+                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("\$${t.amountUsd} · ${t.merchant} [${t.status}]")
+                                Text(t.createdAt, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }

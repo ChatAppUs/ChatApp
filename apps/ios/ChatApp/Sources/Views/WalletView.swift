@@ -22,6 +22,8 @@ struct P2POfferItem: Identifiable {
     let price: String
     let fiat: String
     let methods: String
+    let ownerIsMerchant: Bool
+    let ownerMerchantTier: Int
 }
 
 struct P2PTradeItem: Identifiable {
@@ -30,6 +32,32 @@ struct P2PTradeItem: Identifiable {
     let amount: String
     let fiat: String
     let status: String
+}
+
+struct MerchantInfo {
+    let status: String
+    let tier: Int
+    let tierName: String
+    let maxTradeUsd: String
+    let dailyVolumeUsd: String
+}
+
+struct CardItem: Identifiable {
+    let id: String
+    let label: String
+    let last4: String
+    let status: String
+    let balanceUsd: String
+    let dailyLimitUsd: String
+    let monthlyLimitUsd: String
+}
+
+struct CardTxnItem: Identifiable {
+    let id: String
+    let amountUsd: String
+    let merchant: String
+    let status: String
+    let createdAt: String
 }
 
 private func qrImage(_ content: String) -> UIImage? {
@@ -67,6 +95,13 @@ struct WalletView: View {
     @State private var convertAmount = ""
     @State private var offers: [P2POfferItem] = []
     @State private var trades: [P2PTradeItem] = []
+    @State private var merchant: MerchantInfo?
+    @State private var merchantNote = ""
+    @State private var cards: [CardItem] = []
+    @State private var cardTxns: [CardTxnItem] = []
+    @State private var cardLabel = ""
+    @State private var topupAmount = ""
+    @State private var issuedCardDetails = ""
     @State private var scanning = false
     @State private var message: String?
     @State private var error: String?
@@ -109,7 +144,55 @@ struct WalletView: View {
                                  asset: $0["asset"] as? String ?? "",
                                  price: $0["price"] as? String ?? "",
                                  fiat: $0["fiat_currency"] as? String ?? "",
-                                 methods: ($0["payment_methods"] as? [String] ?? []).joined(separator: ", "))
+                                 methods: ($0["payment_methods"] as? [String] ?? []).joined(separator: ", "),
+                                 ownerIsMerchant: $0["owner_is_merchant"] as? Bool ?? false,
+                                 ownerMerchantTier: $0["owner_merchant_tier"] as? Int ?? 0)
+                }
+                if let mdata = try? await client().get("/api/p2p/merchant/status"),
+                   let mobj = try JSONSerialization.jsonObject(with: mdata) as? [String: Any],
+                   let m = mobj["merchant"] as? [String: Any] {
+                    merchant = MerchantInfo(
+                        status: m["status"] as? String ?? "",
+                        tier: m["tier"] as? Int ?? 0,
+                        tierName: m["tier_name"] as? String ?? "",
+                        maxTradeUsd: mobj["max_trade_usd"] as? String ?? "",
+                        dailyVolumeUsd: mobj["daily_volume_usd"] as? String ?? "")
+                } else {
+                    merchant = nil
+                }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    func loadCards() {
+        Task {
+            do {
+                let data = try await client().get("/api/cards")
+                let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                cards = (obj?["cards"] as? [[String: Any]] ?? []).map {
+                    CardItem(id: $0["id"] as? String ?? "",
+                             label: $0["label"] as? String ?? "",
+                             last4: $0["last4"] as? String ?? "",
+                             status: $0["status"] as? String ?? "",
+                             balanceUsd: $0["balance_usd"] as? String ?? "0",
+                             dailyLimitUsd: $0["daily_limit_usd"] as? String ?? "",
+                             monthlyLimitUsd: $0["monthly_limit_usd"] as? String ?? "")
+                }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    func loadCardTxns(_ cardId: String) {
+        Task {
+            do {
+                let data = try await client().get("/api/cards/\(cardId)/transactions")
+                let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                cardTxns = (obj?["transactions"] as? [[String: Any]] ?? []).map {
+                    CardTxnItem(id: $0["id"] as? String ?? "",
+                                amountUsd: $0["amount_usd"] as? String ?? "",
+                                merchant: $0["merchant"] as? String ?? "",
+                                status: $0["status"] as? String ?? "",
+                                createdAt: $0["created_at"] as? String ?? "")
                 }
             } catch { self.error = error.localizedDescription }
         }
@@ -124,11 +207,13 @@ struct WalletView: View {
                     Text("Withdraw").tag("withdraw")
                     Text("Convert").tag("convert")
                     Text("P2P").tag("p2p")
+                    Text("Cards").tag("cards")
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .onChange(of: tab) { _, newTab in
                     if newTab == "p2p" { loadOffers() }
+                    if newTab == "cards" { loadCards() }
                 }
                 if let message { Text(message).foregroundStyle(.green).font(.footnote) }
                 if let error { Text(error).foregroundStyle(.red).font(.footnote) }
@@ -228,12 +313,106 @@ struct WalletView: View {
                             }
                         }
                     }
+                case "cards":
+                    List {
+                        Section("Issue virtual card") {
+                            TextField("Label (optional)", text: $cardLabel)
+                            Button("Issue card") {
+                                Task {
+                                    do {
+                                        let data = try await client().post("/api/cards",
+                                            body: ["label": cardLabel])
+                                        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                                        let pan = obj?["card_number"] as? String ?? ""
+                                        let cvv = obj?["cvv"] as? String ?? ""
+                                        issuedCardDetails = pan.isEmpty ? "" : "\(pan)  CVV \(cvv)"
+                                        message = "Card issued — details shown once, store safely"
+                                        loadCards()
+                                    } catch { self.error = error.localizedDescription }
+                                }
+                            }
+                            if !issuedCardDetails.isEmpty {
+                                Text(issuedCardDetails).font(.footnote).textSelection(.enabled)
+                            }
+                        }
+                        Section("My cards") {
+                            ForEach(cards) { c in
+                                VStack(alignment: .leading) {
+                                    Text("\(c.label.isEmpty ? "Card" : c.label) ···· \(c.last4) [\(c.status)]")
+                                    Text("Balance $\(c.balanceUsd) · limits $\(c.dailyLimitUsd)/d $\(c.monthlyLimitUsd)/m")
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                    HStack {
+                                        if c.status == "active" {
+                                            Button("Freeze") { setCardStatus(c.id, "frozen") }
+                                        }
+                                        if c.status == "frozen" {
+                                            Button("Unfreeze") { setCardStatus(c.id, "active") }
+                                        }
+                                        Button("Statement") { loadCardTxns(c.id) }
+                                    }
+                                    HStack {
+                                        TextField("Amount \(asset)", text: $topupAmount)
+                                            .keyboardType(.decimalPad)
+                                        Button("Top up") {
+                                            Task {
+                                                do {
+                                                    _ = try await client().post("/api/cards/\(c.id)/topup", body: [
+                                                        "asset": asset.uppercased(),
+                                                        "chain": chain.lowercased(),
+                                                        "amount": topupAmount,
+                                                    ])
+                                                    message = "Card topped up"
+                                                    topupAmount = ""
+                                                    loadCards(); load()
+                                                } catch { self.error = error.localizedDescription }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !cardTxns.isEmpty {
+                            Section("Transactions") {
+                                ForEach(cardTxns) { t in
+                                    VStack(alignment: .leading) {
+                                        Text("$\(t.amountUsd) · \(t.merchant) [\(t.status)]")
+                                        Text(t.createdAt).font(.footnote).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 default:
                     List {
+                        Section("Merchant program") {
+                            if let m = merchant {
+                                Text("Status: \(m.status)" +
+                                     (m.status == "verified" ? " · Tier \(m.tier) \(m.tierName)" : ""))
+                                if m.status == "verified" {
+                                    Text("Limits: $\(m.maxTradeUsd)/trade · $\(m.dailyVolumeUsd)/day")
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Text("Become a verified merchant for a badge and higher limits.")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                TextField("Business description", text: $merchantNote)
+                                Button("Apply") {
+                                    Task {
+                                        do {
+                                            _ = try await client().post("/api/p2p/merchant/apply",
+                                                body: ["note": merchantNote])
+                                            message = "Application submitted"
+                                            loadOffers()
+                                        } catch { self.error = error.localizedDescription }
+                                    }
+                                }
+                            }
+                        }
                         Section("Offers") {
                             ForEach(offers) { o in
                                 VStack(alignment: .leading) {
-                                    Text("\(o.side.uppercased()) \(o.asset) @ \(o.price) \(o.fiat) — @\(o.owner)")
+                                    Text("\(o.side.uppercased()) \(o.asset) @ \(o.price) \(o.fiat) — @\(o.owner)" +
+                                         (o.ownerIsMerchant ? " 🏪T\(o.ownerMerchantTier)" : ""))
                                     Text(o.methods).font(.footnote).foregroundStyle(.secondary)
                                 }
                             }
@@ -268,6 +447,15 @@ struct WalletView: View {
             do {
                 _ = try await client().post("/api/p2p/trades/\(id)/\(action)")
                 load()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func setCardStatus(_ id: String, _ status: String) {
+        Task {
+            do {
+                _ = try await client().post("/api/cards/\(id)/status", body: ["status": status])
+                loadCards()
             } catch { self.error = error.localizedDescription }
         }
     }
