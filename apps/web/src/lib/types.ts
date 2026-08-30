@@ -127,6 +127,85 @@ export interface Country {
   flag: string;
 }
 
+export interface DepositAddress {
+  asset: string;
+  chain: string;
+  address: string;
+  uri: string;
+}
+
+export interface Withdrawal {
+  id: string;
+  asset: string;
+  chain: string;
+  to_address: string;
+  amount: string;
+  fee: string;
+  status: string;
+  auto_approved: boolean;
+  tx_hash: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConvertRate {
+  asset: string;
+  chain: string;
+  usd_rate: string;
+  updated_at: string;
+}
+
+export interface Conversion {
+  id: string;
+  from_asset: string;
+  from_chain: string;
+  to_asset: string;
+  to_chain: string;
+  from_amount: string;
+  to_amount: string;
+  rate: string;
+  created_at: string;
+}
+
+export interface P2PPaymentMethod {
+  country_iso: string;
+  name: string;
+  kind: string;
+}
+
+export interface P2POffer {
+  id: string;
+  owner_username: string;
+  side: string;
+  asset: string;
+  chain: string;
+  fiat_currency: string;
+  country_iso: string;
+  price: string;
+  min_amount: string;
+  max_amount: string;
+  payment_methods: string[];
+  terms: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface P2PTrade {
+  id: string;
+  offer_id: string;
+  buyer_username: string;
+  seller_username: string;
+  asset: string;
+  chain: string;
+  crypto_amount: string;
+  fiat_amount: string;
+  fiat_currency: string;
+  payment_method: string;
+  status: string;
+  created_at: string;
+  paid_at: string | null;
+}
+
 export interface Campaign {
   id: string;
   name: string;

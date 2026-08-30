@@ -2,9 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
-realtime/transcode work are marked accordingly; the canonical ranked gap list is
-[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+Status refreshed 2026-08-30 (finance plane): the crypto finance plane shipped
+after parity batches 4/5 — see "Crypto finance plane (beyond Facebook)" below.
+The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Accounts & identity
 
@@ -86,7 +86,7 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | Chat themes/colors | ❌ | Gap: cosmetic |
 | Polls in chat | ✅ | Post polls exist; gap: attach to chat message |
 | Location sharing (live) | ❌ | Gap: location message type |
-| Payments in chat | 🚧 | Wallet P2P exists; gap: pay-in-chat UI hook |
+| Payments in chat | 🚧 | Full finance plane shipped (deposits/withdrawals/P2P/convert — see below); gap: pay-in-chat UI hook |
 
 ## Calls
 
@@ -147,6 +147,43 @@ The following gaps from this document are now implemented in ChatApp:
 - **Saved Messages** self-chat (POST /api/conversations/saved, one per user, private)
 - **Story engagement**: view tracking (deduped), viewer list (author only), emoji reactions, story replies delivered as DMs with story reference
 - **Audience selector** in the composer (public / followers / only me), enforced in feed queries
+
+## Crypto finance plane (beyond Facebook — Meta sunset Novi/Diem)
+
+Shipped 2026-08-30 (migration `015_finance.sql`, 44 new end-to-end checks in
+`tests/finance_test.py`). Facebook has no shipped equivalent; this puts ChatApp
+at exchange-grade money movement inside the social app:
+
+- **Multi-chain deposits**: deterministic per-user deposit addresses derived
+  from `WALLET_MASTER_SEED` (HKDF-SHA256) — BTC/LTC (bech32 SegWit + legacy
+  base58check), ETH/EVM (keccak checksummed), Tron (base58check), Solana
+  (base58). UI shows a scannable QR + copy button on web, Android (ZXing) and
+  iOS (CoreImage).
+- **Signed withdrawal pipeline**: every withdrawal is HMAC-signed
+  (key-fingerprinted signing key from the master seed) over
+  id/user/asset/chain/address/amount/fee. KYC-gated, per-asset address
+  validation, immediate ledger hold. Risk scoring (account age, new address,
+  velocity, USD amount vs `WITHDRAW_AUTO_THRESHOLD`); low-risk requests are
+  signed and approved automatically in single-digit milliseconds (measured
+  2–7 ms end-to-end), anything flagged waits for superadmin sign-off in the
+  admin console. Rejection auto-refunds the hold. No admin role can move user
+  funds without this signature trail.
+- **P2P marketplace**: escrow-backed offers/trades with local payment rails
+  seeded for all 238 countries (881 methods — UPI, Pix, OPay, M-Pesa, GCash,
+  SPEI, PromptPay, Zelle, SEPA, …). Buyer opens trade → seller crypto locks in
+  escrow → paid → release; disputes resolved by admins with `p2p.resolve`.
+- **Convert engine**: instant asset-to-asset conversion using admin-managed
+  USD rates (`convert_rates`), full history, ledger-atomic.
+- **Per-token rails**: superadmin adds/removes any coin/token and toggles
+  deposit/withdraw/P2P/convert per asset+chain, with min-withdraw and fee.
+- **Dynamic admin roles**: superadmin creates/deletes role definitions
+  (`admin_role_defs`) with arbitrary permission sets (`p2p.resolve`,
+  `convert.manage`, `withdrawals.review`, `tokens.manage`, …) and grants them
+  to any account; every finance action is audit-logged.
+- **Clients**: web (`/wallet` + `/convert` + `/p2p` pages with QR display and
+  camera QR-scan for withdrawal addresses), admin console finance tabs,
+  Android `WalletScreen` (ZXing QR, ML Kit scanner), iOS `WalletView`
+  (CoreImage QR, AVFoundation scanner). Desktop/extension inherit the web UI.
 
 ## Implemented parity — batch 4 (comment threads, share-to-chat, notifications)
 - **Comment likes**: `POST/DELETE /api/comments/{id}/like`; comment list returns

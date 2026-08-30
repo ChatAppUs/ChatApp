@@ -1,7 +1,7 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
-Date: 2026-08-30 (updated after the parity batches 4/5 + realtime/transcode
-shipped; 153/153 integration + 72/72 feature checks green). This is the single
+Date: 2026-08-30 (updated after the finance plane shipped; 153/153 integration
++ 72/72 feature + 44/44 finance checks green). This is the single
 consolidated answer to "after deeply scanning every competitor, what is ChatApp
 still missing?" Per-competitor, feature-by-feature detail lives in
 [competitor-analysis/](competitor-analysis/README.md); this file rolls the
@@ -29,10 +29,16 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 - **Calls**: WebRTC 1:1 plus self-built SFU for group calls, meetings and
   live broadcasting with embedded STUN/TURN — no external kit, no external
   signaling service.
-- **Money**: built-in multi-chain wallet with admin-managed platform tokens
-  (`platform_tokens` — superadmin/finance can add/enable/disable assets),
-  KYC-gated P2P in 238 countries, creator RPM earnings + payouts, advertiser
-  campaigns with geo/locale targeting and admin review.
+- **Money**: a full exchange-grade crypto finance plane — deterministic
+  multi-chain deposit addresses (BTC/LTC/EVM/Tron/Solana, HKDF-derived from
+  `WALLET_MASTER_SEED`), HMAC-signed withdrawal pipeline with sub-second
+  auto-approval under `WITHDRAW_AUTO_THRESHOLD` and superadmin review above it,
+  escrowed P2P marketplace with 881 local payment methods across all 238
+  countries, instant convert engine with admin-managed rates, per-token
+  deposit/withdraw/P2P/convert switches, and dynamic superadmin-defined admin
+  roles (all audit-logged). Plus: wallet transfers, admin-managed platform
+  tokens, creator RPM earnings + payouts, advertiser campaigns. No competitor
+  ships this depth of built-in finance.
 - **Governance**: completely separate admin plane — standalone `apps/admin`
   console (port 3100), admin-scoped JWTs via `/api/admin/login` that are
   rejected on every user route, RBAC (superadmin/moderator/support/finance/

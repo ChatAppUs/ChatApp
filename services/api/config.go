@@ -47,6 +47,14 @@ type Config struct {
 	APNsTeamID      string
 	APNsTopic       string
 	APNsPrivateKey  string // base64url P-256 scalar
+
+	// Finance plane. WalletMasterSeed derives self-custody deposit addresses;
+	// WithdrawSigningKey is the superadmin authority key that signs every
+	// withdrawal (auto-policy and manual approvals alike).
+	WalletMasterSeed      string
+	WithdrawSigningKey    string
+	WithdrawAutoLimitUSD  float64 // auto-approve ceiling; above => manual sign
+	WithdrawAutoThreshold int     // risk score ceiling for auto-approval
 }
 
 func getenv(key, def string) string {
@@ -66,6 +74,23 @@ func loadConfig() Config {
 	} else if jwtSecret == "" {
 		jwtSecret = "dev-only-insecure-secret"
 		log.Println("WARNING: JWT_SECRET not set; using development default")
+	}
+	masterSeed := os.Getenv("WALLET_MASTER_SEED")
+	signingKey := os.Getenv("WITHDRAW_SIGNING_KEY")
+	if appEnv == "production" {
+		if len(masterSeed) < 32 {
+			log.Fatal("FATAL: WALLET_MASTER_SEED must be at least 32 random bytes in production")
+		}
+		if len(signingKey) < 32 {
+			log.Fatal("FATAL: WITHDRAW_SIGNING_KEY must be at least 32 random bytes in production")
+		}
+	} else {
+		if masterSeed == "" {
+			masterSeed = "dev-only-insecure-wallet-seed"
+		}
+		if signingKey == "" {
+			signingKey = "dev-only-insecure-signing-key"
+		}
 	}
 	return Config{
 		Port:            getenv("API_PORT", "8080"),
@@ -107,6 +132,11 @@ func loadConfig() Config {
 		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "localhost"),
 		WebAuthnRPName:  getenv("WEBAUTHN_RP_NAME", "ChatApp"),
 		WebAuthnOrigins: getenv("WEBAUTHN_ORIGINS", "http://localhost:3000"),
+
+		WalletMasterSeed:      masterSeed,
+		WithdrawSigningKey:    signingKey,
+		WithdrawAutoLimitUSD:  atof(getenv("WITHDRAW_AUTO_LIMIT_USD", "10000")),
+		WithdrawAutoThreshold: atoi(getenv("WITHDRAW_AUTO_THRESHOLD", "100")),
 	}
 }
 
@@ -114,4 +144,10 @@ func atof(s string) float64 {
 	var f float64
 	_, _ = fmt.Sscanf(s, "%g", &f)
 	return f
+}
+
+func atoi(s string) int {
+	var n int
+	_, _ = fmt.Sscanf(s, "%d", &n)
+	return n
 }

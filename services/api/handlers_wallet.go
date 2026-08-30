@@ -20,17 +20,6 @@ func (a *App) assetSupported(ctx context.Context, asset, chain string) bool {
 	return ok
 }
 
-// CryptoProvider is the integration point for a custody SDK (Fireblocks,
-// BitGo, Coinbase WaaS, ...). Wiring a real provider activates on-chain
-// deposits/withdrawals; without one the internal ledger and P2P transfers
-// remain fully operational.
-type CryptoProvider interface {
-	DepositAddress(ctx context.Context, userID, asset, chain string) (string, error)
-	Withdraw(ctx context.Context, userID, asset, chain, toAddress, amount string) (txHash string, err error)
-}
-
-var cryptoProvider CryptoProvider // nil until a custody SDK is configured
-
 func (a *App) handleWalletAssets(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT symbol, chain FROM platform_tokens WHERE enabled ORDER BY symbol, chain`)
@@ -101,34 +90,6 @@ func (a *App) handleWalletCreateAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
-}
-
-func (a *App) handleDepositAddress(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Asset string `json:"asset"`
-		Chain string `json:"chain"`
-	}
-	if !decodeJSON(w, r, &req) || !a.assetSupported(r.Context(), req.Asset, req.Chain) {
-		writeErr(w, http.StatusBadRequest, "unsupported asset/chain combination")
-		return
-	}
-	if cryptoProvider == nil {
-		writeErr(w, http.StatusNotImplemented,
-			"on-chain deposits require a custody provider (Fireblocks/BitGo/Coinbase WaaS) to be configured")
-		return
-	}
-	addr, err := cryptoProvider.DepositAddress(r.Context(), userIDFrom(r), req.Asset, req.Chain)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, "custody provider error")
-		return
-	}
-	acctID, err := a.ensureAccount(r.Context(), userIDFrom(r), req.Asset, req.Chain)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to create account")
-		return
-	}
-	_, _ = a.db.Exec(r.Context(), `UPDATE wallet_accounts SET address=$1 WHERE id=$2`, addr, acctID)
-	writeJSON(w, http.StatusOK, map[string]string{"address": addr})
 }
 
 // P2P transfer: double-entry ledger inside one transaction. The balance

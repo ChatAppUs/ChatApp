@@ -41,6 +41,8 @@ export default function Nav() {
           <Link className="navlink" href="/bots">{t("bots")}</Link>
           <Link className="navlink" href="/privacy">{t("privacy")}</Link>
           <Link className="navlink" href="/wallet">{t("wallet")}</Link>
+          <Link className="navlink" href="/convert">{t("convert")}</Link>
+          <Link className="navlink" href="/p2p">{t("p2p")}</Link>
           <Link className="navlink" href="/ads">{t("ads")}</Link>
           <Link className="navlink" href="/scan">▦</Link>
           <Link className="navlink" href="/settings">⚙</Link>

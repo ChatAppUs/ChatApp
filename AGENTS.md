@@ -70,3 +70,39 @@
   `/internal/transcode/complete`; done jobs rewrite `post_media.url` to the HLS master.
 - docker-compose now wires api → security, api → realtime (REALTIME_RELAY_URL),
   transcode → api (shared mediauploads volume), and parameterizes all secrets via .env.
+
+## Contracts discovered while testing (2026-08-30, session 3 — finance plane)
+- Finance plane: `infra/db/015_finance.sql` adds feature flags to
+  platform_tokens, convert_rates, withdrawal_requests, p2p_offers/p2p_trades,
+  local_payment_methods (881 rows, one row per country × its rails),
+  admin_role_defs (dynamic roles: superadmin can create/delete; permissions
+  include p2p.resolve, convert.manage, withdrawals.review, tokens.manage).
+- Deposit addresses are deterministic: HKDF-SHA256(seed=WALLET_MASTER_SEED
+  (env, default `dev-wallet-seed-change-me`), info="addr|chain|uid") →
+  per-chain encoding (bech32 SegWit, base58check legacy/Tron, keccak EVM,
+  base58 Solana). No private keys are stored — deposit address = ID only.
+- Withdrawal signature: HMAC-SHA256(signing key = HMAC(seed, "withdraw-signing"),
+  message "withdraw|id|uid|asset|chain|to|amount|fee"). Auto-approve when
+  risk_score < WITHDRAW_AUTO_THRESHOLD (default 100); the score comes from
+  account age, new address, velocity, and USD value vs
+  WITHDRAW_AUTO_LIMIT_USD (default 10000). Approved+signed →
+  executeWithdrawal → `signed` status (broadcast hot-wallet hook left at
+  execution point). Reject refund is a compensating `withdrawal_refund`
+  ledger entry.
+- Withdrawal requests debit-hold amount+fee immediately (`withdrawal_hold`);
+  balances = SUM(ledger_entries.amount) per account (no balance column).
+- POST /api/wallet/withdraw requires kyc_status='verified' and per-chain
+  address format validation; P2P trade open locks seller crypto via
+  `p2p_escrow_lock`; release/refund are idempotent via locked-status checks.
+- Admin endpoints: /api/admin/withdrawals(?status=), /{id}/review
+  (decision=approve|reject), /api/admin/wallet/tokens (POST add, DELETE remove,
+  /{id}/features toggles), /api/admin/convert/rates (POST upsert),
+  /api/admin/p2p/disputes + /api/admin/p2p/trades/{id}/resolve (to=buyer|seller),
+  /api/admin/role-defs (GET/POST/DELETE).
+- tests/finance_test.py = 44 checks; run AFTER integration/features suites with
+  ≥60s gaps (register rate limit). It bootstraps funds via psql
+  (ledger_entries insert) and grants superadmin via grant_superadmin().
+- Frontend parity: web /wallet /convert /p2p (+QRScanModal/QRDisplay
+  components), admin FinanceTabs.tsx (tokens/withdrawals/roles/rates/disputes),
+  Android ui/WalletScreen.kt (ZXing QR + ML Kit scan), iOS Views/WalletView.swift
+  (CoreImage QR + AVFoundation scan). Desktop/extension inherit web.

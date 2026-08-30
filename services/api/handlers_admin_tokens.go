@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -16,23 +17,31 @@ var symbolRe = regexp.MustCompile(`^[A-Z0-9]{2,12}$`)
 var chainRe = regexp.MustCompile(`^[a-z0-9-]{2,24}$`)
 
 type platformToken struct {
-	ID       string    `json:"id"`
-	Symbol   string    `json:"symbol"`
-	Name     string    `json:"name"`
-	Chain    string    `json:"chain"`
-	Contract *string   `json:"contract_address"`
-	Decimals int       `json:"decimals"`
-	LogoURL  string    `json:"logo_url"`
-	IsNative bool      `json:"is_native"`
-	Enabled  bool      `json:"enabled"`
-	AddedBy  *string   `json:"added_by"`
-	Created  time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	Symbol          string    `json:"symbol"`
+	Name            string    `json:"name"`
+	Chain           string    `json:"chain"`
+	Contract        *string   `json:"contract_address"`
+	Decimals        int       `json:"decimals"`
+	LogoURL         string    `json:"logo_url"`
+	IsNative        bool      `json:"is_native"`
+	Enabled         bool      `json:"enabled"`
+	DepositEnabled  bool      `json:"deposit_enabled"`
+	WithdrawEnabled bool      `json:"withdraw_enabled"`
+	P2PEnabled      bool      `json:"p2p_enabled"`
+	ConvertEnabled  bool      `json:"convert_enabled"`
+	MinWithdraw     string    `json:"min_withdraw"`
+	WithdrawFee     string    `json:"withdraw_fee"`
+	AddedBy         *string   `json:"added_by"`
+	Created         time.Time `json:"created_at"`
 }
 
 func (a *App) handleAdminListTokens(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT id, symbol, name, chain, contract_address, decimals,
-		        COALESCE(logo_url,''), is_native, enabled, added_by, created_at
+		        COALESCE(logo_url,''), is_native, enabled,
+		        deposit_enabled, withdraw_enabled, p2p_enabled, convert_enabled,
+		        min_withdraw::text, withdraw_fee::text, added_by, created_at
 		 FROM platform_tokens ORDER BY symbol, chain`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load tokens")
@@ -43,7 +52,9 @@ func (a *App) handleAdminListTokens(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t platformToken
 		if err := rows.Scan(&t.ID, &t.Symbol, &t.Name, &t.Chain, &t.Contract,
-			&t.Decimals, &t.LogoURL, &t.IsNative, &t.Enabled, &t.AddedBy, &t.Created); err == nil {
+			&t.Decimals, &t.LogoURL, &t.IsNative, &t.Enabled,
+			&t.DepositEnabled, &t.WithdrawEnabled, &t.P2PEnabled, &t.ConvertEnabled,
+			&t.MinWithdraw, &t.WithdrawFee, &t.AddedBy, &t.Created); err == nil {
 			out = append(out, t)
 		}
 	}
@@ -117,6 +128,59 @@ func (a *App) handleAdminSetTokenStatus(w http.ResponseWriter, r *http.Request) 
 		action = "wallet.token_enable"
 	}
 	a.audit(r.Context(), userIDFrom(r), action, id, nil)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// handleAdminSetTokenFeatures toggles the per-feature switches and limits of
+// a token: which rails (deposit / withdraw / P2P / convert) it is listed on.
+func (a *App) handleAdminSetTokenFeatures(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DepositEnabled  *bool   `json:"deposit_enabled"`
+		WithdrawEnabled *bool   `json:"withdraw_enabled"`
+		P2PEnabled      *bool   `json:"p2p_enabled"`
+		ConvertEnabled  *bool   `json:"convert_enabled"`
+		MinWithdraw     *string `json:"min_withdraw"`
+		WithdrawFee     *string `json:"withdraw_fee"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	id := r.PathValue("id")
+	sets := []string{}
+	args := []any{id}
+	add := func(clause string, val any) {
+		args = append(args, val)
+		sets = append(sets, fmt.Sprintf(clause, len(args)))
+	}
+	if req.DepositEnabled != nil {
+		add("deposit_enabled=$%d", *req.DepositEnabled)
+	}
+	if req.WithdrawEnabled != nil {
+		add("withdraw_enabled=$%d", *req.WithdrawEnabled)
+	}
+	if req.P2PEnabled != nil {
+		add("p2p_enabled=$%d", *req.P2PEnabled)
+	}
+	if req.ConvertEnabled != nil {
+		add("convert_enabled=$%d", *req.ConvertEnabled)
+	}
+	if req.MinWithdraw != nil {
+		add("min_withdraw=$%d::numeric", *req.MinWithdraw)
+	}
+	if req.WithdrawFee != nil {
+		add("withdraw_fee=$%d::numeric", *req.WithdrawFee)
+	}
+	if len(sets) == 0 {
+		writeErr(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+	tag, err := a.db.Exec(r.Context(),
+		`UPDATE platform_tokens SET `+strings.Join(sets, ", ")+` WHERE id=$1`, args...)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "token not found or invalid value")
+		return
+	}
+	a.audit(r.Context(), userIDFrom(r), "wallet.token_features", id, map[string]any{"set": len(sets)})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 

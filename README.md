@@ -59,9 +59,18 @@ infra/
 - **Calls**: WebRTC audio/video calls, group meetings and live broadcasting on
   the self-built SFU (`services/sfu`, Pion) with embedded STUN/TURN and HMAC
   time-limited credentials — no external WebRTC kit.
-- **Wallet**: multi-chain accounts (BTC, ETH, USDT, USDC, BNB, SOL, TRX, MATIC,
-  LTC, DOGE), double-entry ledger, atomic P2P transfers gated on KYC
-  verification, full transaction history.
+- **Wallet & finance plane**: multi-chain accounts (BTC, ETH, USDT, USDC, BNB,
+  SOL, TRX, MATIC, LTC, DOGE), double-entry ledger, atomic P2P transfers gated
+  on KYC verification, full transaction history. On top of that: deterministic
+  per-user **deposit addresses** (HKDF-derived from `WALLET_MASTER_SEED`;
+  bech32/base58check/keccak per chain) with QR + copy in every client;
+  **signed withdrawals** — every request is risk-scored, HMAC-signed and, below
+  `WITHDRAW_AUTO_THRESHOLD`, auto-approved in under a second (larger or risky
+  requests queue for superadmin sign-off; rejection auto-refunds); escrowed
+  **P2P marketplace** with 881 local payment methods across all 238 countries
+  and dispute resolution; instant **convert** engine on admin-managed rates;
+  per-token deposit/withdraw/P2P/convert switches; and superadmin-defined
+  dynamic admin roles (create/delete role, grant/revoke) — all audit-logged.
 - **KYC**: document submission, admin review queue, enforced before any
   transfer.
 - **Ads**: campaign creation with country/locale targeting, budgets, creatives,
@@ -171,9 +180,13 @@ cd apps/desktop && npm install && npm run tauri dev
 - C++: `services/media`, `services/realtime`, `services/transcode` build with
   `-Wall -Wextra` clean
 - Integration: `tests/integration_test.py` — 153 end-to-end checks, plus
-  `tests/feature_test.py` — 72 checks (watch signals, transcode jobs, groups,
-  pages, monetization, bots, push, contacts, 2FA) — all passing against real
-  PostgreSQL + Go API + Rust security + C++ media/realtime + SFU, no mocks.
+  `tests/features_test.py` — 72 checks (watch signals, transcode jobs, groups,
+  pages, monetization, bots, push, contacts, 2FA), plus
+  `tests/finance_test.py` — 44 checks (deposit address derivation per chain,
+  withdrawal auto-approval <1s + superadmin review, escrow/P2P lifecycle,
+  disputes, convert rates, token feature switches, dynamic roles) — all
+  passing against real PostgreSQL + Go API + Rust security + C++
+  media/realtime + SFU, no mocks.
 
 ## Security notes
 
@@ -184,7 +197,10 @@ cd apps/desktop && npm install && npm run tauri dev
 - Every authenticated request re-validates user status (suspension takes
   effect immediately).
 - Wallet transfers run in a single DB transaction with balance checks; KYC
-  enforced server-side.
+  enforced server-side. Withdrawals additionally require an HMAC signature
+  over the full request (destination address included), are debit-held in the
+  ledger from the moment they're requested, and no admin role can release
+  funds outside the signed pipeline.
 - Inter-service calls are HMAC-signed (Rust security service); media uploads
   require a 5-minute signed grant (`POST /api/media/upload-token`) verified by
   the C++ edge; downloads use unguessable 128-bit CSPRNG IDs.

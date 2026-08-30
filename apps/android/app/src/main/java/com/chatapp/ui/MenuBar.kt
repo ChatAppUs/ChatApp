@@ -18,6 +18,7 @@ private val ITEMS = listOf(
     MenuItem("pages", "Pages"),
     MenuItem("chat", "Chat"),
     MenuItem("monetize", "Money"),
+    MenuItem("wallet", "Wallet"),
     MenuItem("bots", "Bots"),
     MenuItem("privacy", "Privacy"),
 )

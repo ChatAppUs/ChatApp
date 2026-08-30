@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi, clearAdminSession, getAdminToken } from "@/lib/api";
+import { WithdrawalsTab, RolesTab, RatesTab, DisputesTab } from "@/components/FinanceTabs";
 
 interface Stats {
   users: number;
@@ -58,10 +59,16 @@ interface PlatformToken {
   decimals: number;
   is_native: boolean;
   enabled: boolean;
+  deposit_enabled: boolean;
+  withdraw_enabled: boolean;
+  p2p_enabled: boolean;
+  convert_enabled: boolean;
+  min_withdraw: string;
+  withdraw_fee: string;
   created_at: string;
 }
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -123,7 +130,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "tokens"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -269,6 +276,10 @@ export default function DashboardPage() {
       )}
 
       {tab === "tokens" && <TokensTab tokens={tokens} act={act} />}
+      {tab === "withdrawals" && <WithdrawalsTab act={act} />}
+      {tab === "roles" && <RolesTab act={act} />}
+      {tab === "rates" && <RatesTab act={act} />}
+      {tab === "disputes" && <DisputesTab act={act} />}
     </>
   );
 }
@@ -327,7 +338,7 @@ function TokensTab({ tokens, act }: { tokens: PlatformToken[]; act: (fn: () => P
       <div className="card">
         <table className="table">
           <thead>
-            <tr><th>symbol</th><th>name</th><th>chain</th><th>contract</th><th>status</th><th></th></tr>
+            <tr><th>symbol</th><th>name</th><th>chain</th><th>contract</th><th>rails</th><th>status</th><th></th></tr>
           </thead>
           <tbody>
             {tokens.map((t) => (
@@ -337,6 +348,32 @@ function TokensTab({ tokens, act }: { tokens: PlatformToken[]; act: (fn: () => P
                 <td>{t.chain}</td>
                 <td className="muted" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>
                   {t.is_native ? "native" : t.contract_address ?? "—"}
+                </td>
+                <td>
+                  <div className="row" style={{ gap: 4 }}>
+                    {([
+                      ["deposit_enabled", "dep", t.deposit_enabled],
+                      ["withdraw_enabled", "wd", t.withdraw_enabled],
+                      ["p2p_enabled", "p2p", t.p2p_enabled],
+                      ["convert_enabled", "conv", t.convert_enabled],
+                    ] as const).map(([field, label, on]) => (
+                      <button
+                        key={field}
+                        className={on ? "success small" : "secondary small"}
+                        title={field}
+                        onClick={() =>
+                          act(() =>
+                            adminApi(`/api/admin/wallet/tokens/${t.id}/features`, {
+                              method: "POST",
+                              body: JSON.stringify({ [field]: !on }),
+                            }),
+                          )
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </td>
                 <td><span className={`badge ${t.enabled ? "green" : "red"}`}>{t.enabled ? "enabled" : "disabled"}</span></td>
                 <td>

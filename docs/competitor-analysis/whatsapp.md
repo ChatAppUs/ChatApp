@@ -18,7 +18,7 @@ status updates, high-quality calls, and massive global reach with minimal UI.
 | Status | 24h photo/video status with privacy | stories with view tracking, viewers list, reactions, replies | ✅ |
 | Groups | 1024 members, admin roles, mentions | groups with owner/admin/member roles, member management UI | ✅ |
 | Media | photos, video, voice notes, docs | media service uploads, voice messages with inline player | ✅ |
-| Payments | WhatsApp Pay (limited countries) | multi-chain crypto wallet, P2P with KYC, 200+ countries | ✅ (broader) |
+| Payments | WhatsApp Pay (limited countries) | finance plane: deterministic multi-chain deposits (QR), signed withdrawals (auto-approval <1s, superadmin review), escrowed P2P with 881 local rails across 238 countries, convert engine — all KYC-gated | ✅ (broader) |
 | Business | catalogs, business API | ads platform with global targeting + creator monetization | ✅ (different model) |
 | Multi-device | linked devices, QR pairing | QR-code login (Telegram-style approve flow) | ✅ |
 

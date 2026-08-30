@@ -15,6 +15,31 @@ func (a *App) hasRole(ctx context.Context, userID string, roles ...string) bool 
 	return ok
 }
 
+// hasPerm resolves dynamic role definitions: superadmin (or any role holding
+// the '*' wildcard) passes everything; otherwise the permission must appear
+// in at least one of the caller's role defs.
+func (a *App) hasPerm(ctx context.Context, userID, perm string) bool {
+	var ok bool
+	_ = a.db.QueryRow(ctx,
+		`SELECT EXISTS(
+		   SELECT 1 FROM admin_roles ar JOIN admin_role_defs rd ON rd.name = ar.role
+		   WHERE ar.user_id=$1 AND ('*' = ANY(rd.permissions) OR $2 = ANY(rd.permissions)))`,
+		userID, perm).Scan(&ok)
+	return ok
+}
+
+func (a *App) requireAdminPerm(perm string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return a.requireAdminAuth(func(w http.ResponseWriter, r *http.Request) {
+			if !a.hasPerm(r.Context(), userIDFrom(r), perm) {
+				writeErr(w, http.StatusForbidden, "missing admin permission: "+perm)
+				return
+			}
+			next(w, r)
+		})
+	}
+}
+
 // ---- Admin plane ----
 //
 // The admin system is fully separated from the user system:
@@ -376,10 +401,13 @@ func (a *App) handleAdminGrantRole(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	switch req.Role {
-	case "superadmin", "moderator", "support", "finance", "ads_reviewer":
-	default:
-		writeErr(w, http.StatusBadRequest, "invalid role")
+	// Any role defined in admin_role_defs (built-in or superadmin-created)
+	// can be granted.
+	var known bool
+	_ = a.db.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM admin_role_defs WHERE name=$1)`, req.Role).Scan(&known)
+	if !known {
+		writeErr(w, http.StatusBadRequest, "unknown role")
 		return
 	}
 	_, err := a.db.Exec(r.Context(),
@@ -391,6 +419,35 @@ func (a *App) handleAdminGrantRole(w http.ResponseWriter, r *http.Request) {
 	}
 	a.audit(r.Context(), userIDFrom(r), "grant_role_"+req.Role, req.UserID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "granted"})
+}
+
+// handleAdminRevokeRole removes a role from a user. The last superadmin can
+// never be revoked, which keeps the signing authority reachable at all times.
+func (a *App) handleAdminRevokeRole(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID string `json:"user_id"`
+		Role   string `json:"role"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Role == "superadmin" {
+		var count int
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT COUNT(*) FROM admin_roles WHERE role='superadmin'`).Scan(&count)
+		if count <= 1 {
+			writeErr(w, http.StatusConflict, "cannot revoke the last superadmin")
+			return
+		}
+	}
+	tag, err := a.db.Exec(r.Context(),
+		`DELETE FROM admin_roles WHERE user_id=$1 AND role=$2`, req.UserID, req.Role)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "role assignment not found")
+		return
+	}
+	a.audit(r.Context(), userIDFrom(r), "revoke_role_"+req.Role, req.UserID, nil)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
 // User-facing report endpoint

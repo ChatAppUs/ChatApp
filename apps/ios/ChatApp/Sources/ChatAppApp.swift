@@ -47,6 +47,7 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                NavigationLink("Wallet", destination: WalletView())
                 NavigationLink("Monetization", destination: MonetizeView())
                 NavigationLink("Bots", destination: BotsView())
                 NavigationLink("Privacy", destination: PrivacyView())
