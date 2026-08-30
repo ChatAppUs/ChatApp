@@ -135,3 +135,19 @@
   153/153 (needs SFU on :8095 else 5 media-ticket fails), features 72/72, finance 44/44.
   features_test.py exits 0 with no summary line. integration_test.py needs python
   'cryptography' pkg for the passkey flow.
+
+## Contracts discovered while testing (2026-08-30, session 4b — native parity)
+- Card lifecycle statuses are `active | frozen | terminated` (NOT "closed") —
+  all clients must use "terminated". Card issue response: `card_number` + `cvv`
+  (shown once). Top-up request: `{asset, chain, amount}` (crypto amount, server
+  converts to USD at platform rate). Merchant status: `{merchant|null,
+  max_trade_usd, daily_volume_usd}` — limits are TOP-LEVEL, not inside merchant.
+- P2P offer JSON includes `owner_is_merchant` + `owner_merchant_tier` (badge).
+- Post JSON includes `my_reaction`, `feeling`, `location`, `edited_at`,
+  `publish_at`. Reactions: PUT/DELETE /api/posts/{id}/react {reaction:
+  like|love|haha|wow|sad|angry}. Pin: PUT /api/me/pinned-post {post_id}.
+- Chat theme: PUT /api/conversations/{id}/theme {theme: ""|sunset|ocean|forest|candy};
+  conversation JSON includes `theme`. Nicknames: PUT /api/conversations/{id}/nicknames/{userId}.
+- Native parity (Android WalletScreen/FeedScreen/ChatScreen, iOS WalletView/
+  FeedView/ChatListView) shipped for all of the above; sandbox has no JVM/Swift
+  toolchain so native builds are not compiled here — verify in CI/Android Studio/Xcode.
