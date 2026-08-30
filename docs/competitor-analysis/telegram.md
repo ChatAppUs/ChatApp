@@ -2,6 +2,10 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
+realtime/transcode work are marked accordingly; the canonical ranked gap list is
+[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+
 ## Core messaging
 
 | Feature | Status | Notes |
@@ -51,7 +55,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Groups up to 200k members | 🚧 | Group chat exists; gap: scale testing, admin tools |
 | Group admin permissions (granular) | 🚧 | role owner/admin/member; gap: per-permission flags |
 | Public groups with @handle | ❌ | Gap: public handles + join-by-link |
-| Join requests & invite links | ❌ | Gap: invite_links table |
+| Join requests & invite links | ✅ | Shipped: invite links + join requests |
 | Slow mode | ❌ | Gap: per-group rate limit |
 | Topics (forum groups) | ❌ | Gap: topic threads in groups |
 | Broadcast channels | ✅ | kind=channel, owner posts |
@@ -64,8 +68,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | 1:1 E2E calls | 🚧 | WebRTC; gap: E2E key verification UI (emoji) |
-| Group voice chats (live, thousands) | ❌ | Gap: SFU audio rooms |
-| Video in group voice chats | ❌ | Gap: SFU |
+| Group voice chats (live, thousands) | ✅ | Shipped: self-built SFU audio rooms |
+| Video in group voice chats | ✅ | Shipped: SFU group calls with video |
 | Live streams with unlimited viewers | ❌ | Gap: RTMP/HLS pipeline |
 | Screen sharing | ❌ | Gap: getDisplayMedia |
 | Call recording | ❌ | Gap: SFU recording |
@@ -75,7 +79,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 
 | Feature | Status | Notes |
 |---|---|---|
-| Bot API (full) | ❌ | Gap: bot accounts + long-poll/webhook API |
+| Bot API (full) | 🚧 | Core shipped (bot accounts, getUpdates long-poll, webhooks, sendMessage); inline bots phase 2 |
 | Inline bots (@bot query) | ❌ | Gap: bot platform |
 | Mini Apps (web apps in chat) | ❌ | Gap: embedded webview SDK |
 | Bot payments | ❌ | Gap: wallet hook for bots |

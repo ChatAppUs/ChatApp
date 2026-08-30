@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ChatApp — Extension options</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="theme-init.js"></script>
+  <style>
+    body { width: auto; max-width: 520px; margin: 0 auto; }
+    section { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 14px;
+    }
+    .hint { font-size: 12px; color: var(--muted); }
+    #saved { color: #22c58b; font-size: 13px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <span class="brand">ChatApp options</span>
+    <span class="spacer"></span>
+    <button id="themeBtn" class="icon" title="Toggle light/dark theme">◐</button>
+  </header>
+  <section>
+    <div>
+      <label for="webUrl">Web app URL</label>
+      <input id="webUrl" placeholder="http://localhost:3000">
+    </div>
+    <div>
+      <label for="apiUrl">API base URL</label>
+      <input id="apiUrl" placeholder="http://localhost:8080">
+      <div class="hint">Changing to a non-localhost host will prompt for a site permission.</div>
+    </div>
+    <div>
+      <label for="accessToken">Access token (optional — enables toolbar unread badge)</label>
+      <input id="accessToken" placeholder="Paste the access token from your signed-in web session">
+      <div class="hint">Stored only in this browser via chrome.storage.sync. The popup and badge
+        call the same /api endpoints the web app uses.</div>
+    </div>
+    <div class="bar" style="padding:0;border:none">
+      <button id="save" class="primary">Save</button>
+      <span id="saved"></span>
+    </div>
+  </section>
+  <script src="common.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

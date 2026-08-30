@@ -2,20 +2,24 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
+realtime/transcode work are marked accordingly; the canonical ranked gap list is
+[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+
 ## Video consumption
 
 | Feature | Status | Notes |
 |---|---|---|
 | Vertical short-video feed (FYP) | ✅ | /reels surface |
-| Adaptive bitrate streaming (HLS) | ❌ | Gap: transcoding pipeline — the single biggest video gap |
+| Adaptive bitrate streaming (HLS) | ✅ | Shipped: C++ ffmpeg transcode worker, HLS ladder 240p→1080p |
 | Preloading / instant playback | ❌ | Gap: client prefetch strategy |
-| Watch-time & completion signals | ❌ | Gap: reel_watch_events → ML ranking |
-| Rewatch detection | ❌ | Gap: same events stream |
+| Watch-time & completion signals | ✅ | Shipped: reel_watch_events → FYP ranking |
+| Rewatch detection | ✅ | Shipped: rewatch signals in the same event stream |
 | "Not interested" feedback | ❌ | Gap: negative signal endpoint |
 | Following feed (video-only) | 🚧 | Gap: filter reels by follows |
 | Search (video, users, sounds, hashtags) | 🚧 | Users/hashtags exist; gap: video & sound search |
 | Comments with likes & replies | ✅ | Comment likes + nested reply threads; reels are posts, so reel comments included |
-| Auto-captions | ❌ | Gap: speech-to-text worker (Python service) |
+| Auto-captions | ✅ | Shipped: ASR hook in the Python ML service |
 | Video playback speed control | ❌ | Gap: client player control |
 
 ## Creation tools
@@ -52,10 +56,10 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 
 | Feature | Status | Notes |
 |---|---|---|
-| Live streaming (mobile) | ❌ | Gap: RTMP ingest + HLS distribution |
+| Live streaming (mobile) | 🚧 | SFU live broadcast shipped; RTMP ingest phase 2 |
 | Live chat | 🚧 | WS chat infra reusable; gap: live room entity |
 | Live gifts & leaderboard | ❌ | Gap: gifts ledger |
-| Live subscriptions | ❌ | Gap: recurring payments |
+| Live subscriptions | ✅ | Shipped: creator subscription tiers |
 | LIVE Events (scheduled) | ❌ | Gap: scheduling metadata |
 
 ## Monetization
@@ -64,8 +68,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 |---|---|---|
 | Creator fund / rewards program | 🚧 | RPM earnings exist; gap: qualified-views accounting |
 | Creator marketplace (brand deals) | ❌ | Gap: brand-creator matching entity |
-| Tips | ❌ | Gap: wallet tip endpoint |
-| Subscriptions | ❌ | Gap: recurring fan subscription |
+| Tips | ✅ | Shipped: wallet-backed tips |
+| Subscriptions | ✅ | Shipped: creator tiers with recurring support |
 | TikTok Shop / affiliate | ❌ | Gap: commerce surface, phase 2 |
 | Series (paywalled content) | ❌ | Gap: paid content gating |
 
@@ -74,7 +78,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | Collaborative filtering baseline | ✅ | Python ML service |
-| Watch-time-weighted ranking | ❌ | Gap: watch events ingestion |
+| Watch-time-weighted ranking | ✅ | Shipped: watch events ingestion + ranking |
 | Cold-start exploration | 🚧 | Recent+follow fallback; gap: exploration budget |
 | Content embeddings | ❌ | Gap: video/audio/text embedding workers |
 | User interest vector | ❌ | Gap: implicit interest profile |

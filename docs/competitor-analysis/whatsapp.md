@@ -2,6 +2,10 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
+realtime/transcode work are marked accordingly; the canonical ranked gap list is
+[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+
 WhatsApp's core differentiators: phone-number identity, default E2E encryption,
 status updates, high-quality calls, and massive global reach with minimal UI.
 

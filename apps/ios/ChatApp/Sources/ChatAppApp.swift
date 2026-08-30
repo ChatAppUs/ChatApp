@@ -3,16 +3,21 @@ import SwiftUI
 @main
 struct ChatAppApp: App {
     @StateObject private var session = SessionStore()
+    // Persisted light/dark choice, same default (dark) as every other client.
+    @AppStorage("chatapp.theme") private var theme: String = "dark"
 
     var body: some Scene {
         WindowGroup {
-            if session.accessToken != nil {
-                MainTabView()
-                    .environmentObject(session)
-            } else {
-                LoginView()
-                    .environmentObject(session)
+            Group {
+                if session.accessToken != nil {
+                    MainTabView()
+                        .environmentObject(session)
+                } else {
+                    LoginView()
+                        .environmentObject(session)
+                }
             }
+            .preferredColorScheme(theme == "light" ? .light : .dark)
         }
     }
 }
@@ -37,12 +42,22 @@ struct MainTabView: View {
 }
 
 struct MoreView: View {
+    @AppStorage("chatapp.theme") private var theme: String = "dark"
+
     var body: some View {
         NavigationStack {
             List {
                 NavigationLink("Monetization", destination: MonetizeView())
                 NavigationLink("Bots", destination: BotsView())
                 NavigationLink("Privacy", destination: PrivacyView())
+                Section("Appearance") {
+                    Toggle(isOn: Binding(
+                        get: { theme == "dark" },
+                        set: { theme = $0 ? "dark" : "light" }
+                    )) {
+                        Label("Dark theme", systemImage: theme == "dark" ? "moon.fill" : "sun.max.fill")
+                    }
+                }
             }
             .navigationTitle("More")
         }

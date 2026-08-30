@@ -23,13 +23,17 @@ private val ITEMS = listOf(
 )
 
 // Shared top menu across authenticated screens, matching the web Nav.
+// Includes the light/dark theme toggle present on every client.
 @Composable
-fun MenuBar(onNavigate: (String) -> Unit, onLogout: () -> Unit) {
+fun MenuBar(onNavigate: (String) -> Unit, onLogout: () -> Unit, onToggleTheme: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         ITEMS.forEach { item ->
             TextButton(onClick = { onNavigate(item.route) }) {
                 Text(item.label)
             }
+        }
+        TextButton(onClick = onToggleTheme) {
+            Text("◐ Theme")
         }
         TextButton(onClick = onLogout) {
             Text("Logout")

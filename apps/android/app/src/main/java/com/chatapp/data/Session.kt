@@ -26,13 +26,21 @@ class Session(context: Context) {
             if (v == null) remove(KEY_USER) else putString(KEY_USER, v)
         }.apply()
 
+    // Light/dark theme preference (dark is the default on every client).
+    var darkTheme: Boolean
+        get() = prefs.getBoolean(KEY_DARK, true)
+        set(v) = prefs.edit().putBoolean(KEY_DARK, v).apply()
+
     fun clear() {
+        val dark = darkTheme // theme survives logout, like the web client
         prefs.edit().clear().apply()
+        darkTheme = dark
     }
 
     private companion object {
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
         const val KEY_USER = "user_id"
+        const val KEY_DARK = "dark_theme"
     }
 }

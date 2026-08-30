@@ -2,6 +2,10 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
+realtime/transcode work are marked accordingly; the canonical ranked gap list is
+[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+
 ## Core posting
 
 | Feature | Status | Notes |
@@ -38,8 +42,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | Followers/following | ✅ | |
-| Communities (reddit-like groups) | ❌ | Gap: same entity as FB groups |
-| Super Follows / subscriptions | ❌ | Gap: recurring fan subscription |
+| Communities (reddit-like groups) | ✅ | Shipped: content groups with roles + feeds |
+| Super Follows / subscriptions | ✅ | Shipped: creator subscription tiers |
 | Verified organizations / affiliations | ❌ | Gap: org badges |
 | Who-to-follow suggestions | ❌ | Gap: ML candidate generator |
 
@@ -69,8 +73,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 |---|---|---|
 | Verified badge (subscription) | 🚧 | is_verified flag exists; gap: paid verification flow |
 | Ad revenue share for creators | 🚧 | RPM earnings; gap: true ad-share |
-| Tips | ❌ | Gap: wallet-backed tip button |
-| Creator subscriptions | ❌ | Gap: recurring payments |
+| Tips | ✅ | Shipped: wallet-backed tips |
+| Creator subscriptions | ✅ | Shipped: subscription tiers + revenue dashboard |
 | Premium tiers (feature gating) | ❌ | Gap: subscription plans entity |
 
 ## Media

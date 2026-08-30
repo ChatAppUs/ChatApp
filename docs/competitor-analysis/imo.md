@@ -2,6 +2,10 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
+realtime/transcode work are marked accordingly; the canonical ranked gap list is
+[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+
 imo is strongest in low-bandwidth markets (South Asia, Middle East, Africa):
 free international calls over 2G/3G, lightweight client, massive group voice
 rooms. These are the differentiators to match.
@@ -13,7 +17,7 @@ rooms. These are the differentiators to match.
 | Free international audio calls | ✅ | WebRTC; gap: PSTN is not imo's model either |
 | Video calls on 2G/3G (adaptive quality) | 🚧 | WebRTC adapts; gap: explicit low-bitrate profile + simulcast |
 | Group video calls | ✅ | Mesh ≤8 |
-| Large group voice chat rooms (drop-in) | ❌ | Gap: SFU audio rooms with speaker/listener roles |
+| Large group voice chat rooms (drop-in) | ✅ | Shipped: self-built SFU audio rooms |
 | Call quality indicator | ❌ | Gap: client RTCP stats UI |
 | Data-usage saver mode | ❌ | Gap: client bitrate caps |
 | Call on slow networks auto-audio-only | ❌ | Gap: adaptive downgrade logic |

@@ -70,3 +70,29 @@ The built-in multichain wallet no longer ships a hardcoded asset list.
 - `GET /api/wallet/assets` is served live from enabled `platform_tokens` rows;
   disabling a token hides it from all user wallets immediately.
 - Every admin token mutation is written to the audit log.
+
+## 5. Realtime relay (`services/realtime`, C++)
+
+Replaces managed WebSocket/pub-sub infrastructure (Pusher/Ably-class).
+
+- epoll-based RFC6455 fanout edge with a hand-rolled frame codec: one node
+  holds 10k+ concurrent sockets with microsecond fanout, no GC pauses.
+- Clients connect `GET /ws?token=<access JWT>`; the relay verifies the JWT
+  itself (HS256, exp checked) and never trusts the network.
+- The Go API stays the control plane: it persists, then publishes fanout
+  events to the relay's loopback-only `/publish` port
+  (`Authorization: Bearer CLUSTER_SECRET`). If no relay is configured the Go
+  hub serves WebSocket directly — same wire contract either way.
+- Wired into docker-compose (`REALTIME_RELAY_URL=http://realtime:8301`).
+
+## 6. Transcode worker (`services/transcode`, C++)
+
+Replaces hosted transcoding (Mux/Cloudflare Stream-class).
+
+- ffmpeg-driven HLS ABR ladder (240p→1080p) + thumbnail per upload; jobs live
+  in Postgres (`transcode_jobs`) and are claimed `FOR UPDATE SKIP LOCKED` via
+  the API's internal control plane (`/internal/transcode/claim|complete`,
+  CLUSTER_SECRET bearer).
+- Finished jobs rewrite `post_media.url` to the HLS master playlist, so
+  reel/story players switch to adaptive playback without a client release.
+- Shares the media volume with `services/media` in docker-compose.

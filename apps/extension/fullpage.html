@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ChatApp</title>
+  <script src="theme-init.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0f17; }
+    html[data-theme="light"] body { background: #f4f6fb; }
+    iframe { width: 100%; height: 100%; border: 0; display: block; }
+  </style>
+</head>
+<body>
+  <!-- Full feature parity: the extension hosts the complete web app
+       (same build, same backend) in a browser tab. -->
+  <iframe id="app" title="ChatApp"></iframe>
+  <script src="common.js"></script>
+  <script>
+    (async function () {
+      const s = await getSettings();
+      document.getElementById("app").src = s.webUrl;
+    })();
+  </script>
+</body>
+</html>

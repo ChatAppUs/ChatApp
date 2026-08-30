@@ -1,7 +1,15 @@
 # Rust Conversion Plan — Safety & Security-Critical Code
 
-Date: 2026-08-29. Purpose: identify which code files must move to Rust for
-memory safety and cryptographic correctness, and which should stay in Go.
+Date: 2026-08-29; updated 2026-08-30. Purpose: identify which code files must
+move to Rust for memory safety and cryptographic correctness, and which should
+stay in Go.
+
+**Status**: `services/security` (Rust, HMAC signing + media upload grants,
+release build + unit tests green) is shipped and wired into the API and the
+C++ media edge. The 11-file Go→Rust `services/authn` conversion below is the
+approved roadmap — the Go implementations it replaces are argon2id/HMAC/
+constant-time and pass the full integration suites today, so the conversion is
+a hardening step, not a correctness fix.
 
 ## Principle
 
@@ -13,7 +21,7 @@ paths to Rust would add months of work with no safety gain. So the plan is
 **surgical**: convert the trust-critical core, keep the I/O shell in Go.
 
 Current Rust footprint: `services/security` (HMAC-SHA256 signing service,
-2 files, 318 LOC, zero dependencies, std-only).
+zero dependencies, std-only).
 
 ## Files to convert to Rust: 11 (≈2,600 LOC of ~7,500 in the Go API)
 
@@ -27,7 +35,7 @@ Current Rust footprint: `services/security` (HMAC-SHA256 signing service,
 | 6 | `services/api/handlers_wallet.go` | 319 | Custody ledger: double-entry money movement, KYC gating, `CryptoProvider` boundary to Fireblocks/BitGo. Money code deserves Rust's type discipline (newtype `Amount`, no negative amounts by construction). | P1 |
 | 7 | `services/api/handlers_ads.go` | 261 | Advertiser billing: budget debits against the same ledger. Same money-safety rationale as wallet. | P1 |
 | 8 | `services/api/handlers_qrlogin.go` | 100 | Login-token minting/approval — session-forgery surface. | P1 |
-| 9 | `services/api/providers.go` | ~120 | Holds SMTP/Stripe/Sumsub credentials and the upload-signing client; isolating secret-handling HTTP into the Rust security service keeps keys out of the Go process entirely. | P2 |
+| 9 | `services/api/providers.go` | ~120 | Holds SMTP/Sumsub credentials and the upload-signing client; isolating secret-handling HTTP into the Rust security service keeps keys out of the Go process entirely. | P2 |
 | 10 | `services/api/otp.go` | 126 | Self-built OTP engine: crypto/rand codes, salted hashes, attempt limits, resend throttling. Code generation/verification is a timing-sensitive trust boundary. | P0 |
 | 11 | `services/api/handlers_calls.go` | 194 | Mints HMAC SFU room tickets + TURN credentials — a forged ticket means hijacking calls/meetings/live rooms. Belongs with the other HMAC code in Rust. | P1 |
 

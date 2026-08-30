@@ -2,6 +2,10 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
+realtime/transcode work are marked accordingly; the canonical ranked gap list is
+[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+
 ## Accounts & identity
 
 | Feature | Status | Notes |
@@ -38,8 +42,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 
 | Feature | Status | Notes |
 |---|---|---|
-| Public/private groups with posts | ❌ | Gap: our groups are chat-only; need content groups with membership, roles (admin/mod), join requests, group feed |
-| Pages (business/creator) with followers | ❌ | Gap: pages entity, page roles, page feed |
+| Public/private groups with posts | ✅ | Shipped: content groups with membership, roles, join requests, invite links, group feed |
+| Pages (business/creator) with followers | ✅ | Shipped: pages entity, followers, page posts (Events remain phase 2) |
 | Events (RSVP, reminders) | ❌ | Gap: events entity |
 | Marketplace | ❌ | Gap: listings entity — large surface, phase 2 |
 | Fundraisers | ❌ | Gap: low priority |
@@ -52,7 +56,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Story replies (DM from story) | ✅ | Replies delivered as DMs with story reference |
 | Story reactions | ✅ | Emoji reactions on stories |
 | Story highlights (permanent collections) | ❌ | Gap: highlights entity |
-| Story privacy (close friends) | ❌ | Gap: audience flag |
+| Story privacy (close friends) | ✅ | Shipped: close-friends list + audience flag |
 | Story viewer list | ✅ | Deduped view tracking, author-only viewer list |
 | Text stories / stickers / music | ❌ | Gap: composer tools |
 
@@ -61,7 +65,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | Short video feed | ✅ | |
-| Watch-time tracking | ❌ | Gap: reel_watch_events for ranking |
+| Watch-time tracking | ✅ | Shipped: reel_watch_events ingestion feeds FYP ranking |
 | Reel comments/likes/shares | 🚧 | Likes exist; gap: comments & shares on reels |
 | Remix/duet | ❌ | Gap: needs editor |
 | Sounds/music library | ❌ | Gap: licensed audio is a legal, not tech, problem |
@@ -77,7 +81,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | E2EE | ✅ | ECDH key relay; client-side cipher |
 | Voice messages | ✅ | Recorder + inline player |
 | Video notes | ❌ | Gap: recorder UI |
-| Message requests (non-friends) | ❌ | Gap: request inbox before chat opens |
+| Message requests (non-friends) | ✅ | Shipped: request inbox, accept/decline before chat opens |
 | Nicknames per chat | ❌ | Gap: low effort |
 | Chat themes/colors | ❌ | Gap: cosmetic |
 | Polls in chat | ✅ | Post polls exist; gap: attach to chat message |
@@ -101,7 +105,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 |---|---|---|
 | In-stream ads revenue share | 🚧 | Flat RPM earnings exist; gap: true ad-share accounting |
 | Stars (virtual gifts) | ❌ | Gap: wallet-backed gift ledger |
-| Fan subscriptions | ❌ | Gap: recurring subscription entity |
+| Fan subscriptions | ✅ | Shipped: creator subscription tiers + tips + revenue dashboard |
 | Professional dashboard (analytics) | ❌ | Gap: per-content analytics rollup |
 
 ## Safety & moderation
@@ -109,8 +113,8 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | Report content/users | ✅ | reports table + admin queue |
-| Block users | ❌ | Gap: blocks table + feed/chat filtering |
-| Comment filters / hidden words | ❌ | Gap: per-user keyword filters |
+| Block users | ✅ | Shipped: blocks table + feed/chat filtering |
+| Comment filters / hidden words | ✅ | Shipped: per-user word filters |
 | Community Notes equivalent | ❌ | Gap: low priority |
 | AI moderation queue | 🚧 | Rust security service has heuristic scorer; gap: media moderation |
 
@@ -119,7 +123,7 @@ Legend: ✅ implemented · 🚧 partial · ❌ missing
 | Feature | Status | Notes |
 |---|---|---|
 | In-app notifications | ✅ | |
-| Push (FCM/APNs/Web Push) | ❌ | Gap: device tokens + push worker |
+| Push (FCM/APNs/Web Push) | ✅ | Shipped: self-built Web Push (VAPID) + FCM/APNs gateway hooks |
 | Email notifications | ❌ | Gap: digest worker (SMTP exists) |
 
 ## Implementation priority for ChatApp

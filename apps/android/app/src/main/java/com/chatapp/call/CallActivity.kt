@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.chatapp.data.ChatSocket
 import com.chatapp.data.Session
+import com.chatapp.ui.ChatAppTheme
 import org.json.JSONObject
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
@@ -70,7 +71,8 @@ class CallActivity : ComponentActivity() {
         videoEnabled = intent.getBooleanExtra("video", true)
 
         setContent {
-            MaterialTheme {
+            // Calls follow the same persisted light/dark choice as every screen.
+            ChatAppTheme(dark = Session(applicationContext).darkTheme) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.Center,

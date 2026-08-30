@@ -18,7 +18,7 @@ structurally lack. Status legend: ✅ shipped · 🚧 backend ready, UI partial 
 | **Social graph & feed** |
 | Posts with text/images/video | ✅ | ✅ | ✅ | ✅ | – | ✅ | ✅ |
 | Followers / following (asymmetric) | ✅ | ✅ | – | ✅ | – | – | ✅ |
-| Friends (symmetric) | ✅ | – | – | – | – | – | 🔴 |
+| Friends (symmetric) | ✅ | – | – | – | – | – | 🚧 (follow requests + close friends) |
 | Ranked feed (ML) | ✅ | ✅ | – | ✅ | – | – | ✅ (Python ML service) |
 | @Mentions | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | #Hashtags + trending | ✅ | ✅ | ✅ | ✅ | – | – | ✅ |
@@ -29,8 +29,8 @@ structurally lack. Status legend: ✅ shipped · 🚧 backend ready, UI partial 
 | Stories (24h, expiring) | ✅ | – | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Reels / short video feed | ✅ | ✅ | – | ✅ | – | ✅ | ✅ |
 | Comments with nested threads | ✅ | ✅ | ✅ | ✅ | – | ✅ | ✅ (2-level) |
-| Quote post | ✅ | ✅ | ✅ | ✅ | – | – | 🔴 |
-| Lists / circles | ✅ | ✅ | ✅ | – | ✅ | – | 🔴 |
+| Quote post | ✅ | ✅ | ✅ | ✅ | – | – | ✅ |
+| Lists / circles | ✅ | ✅ | ✅ | – | ✅ | – | 🚧 (close-friends list) |
 | **Messaging (Telegram/WhatsApp core)** |
 | 1:1 DM | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Group chat | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -42,20 +42,20 @@ structurally lack. Status legend: ✅ shipped · 🚧 backend ready, UI partial 
 | Message reactions | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Reply-to message | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (data model) |
 | E2E-encrypted chats | – | 🚧 | ✅ (secret) | – | ✅ | ✅ | ✅ (ECDH P-256 + AES-GCM) |
-| Disappearing messages | ✅ | – | ✅ | – | ✅ | – | 🔴 |
-| Voice messages | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🚧 (media pipeline supports audio) |
+| Disappearing messages | ✅ | – | ✅ | – | ✅ | – | ✅ (per-conversation TTL + sweeper) |
+| Voice messages | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (record → media edge → inline player) |
 | Stickers / GIFs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🔴 |
 | Block users | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Calls** |
 | 1:1 audio call | ✅ | ✅ | ✅ | – | ✅ | ✅ | ✅ (WebRTC + WS signaling) |
 | 1:1 video call | ✅ | ✅ | ✅ | – | ✅ | ✅ | ✅ |
 | Group calls / meetings | ✅ | ✅ | ✅ | – | ✅ | ✅ | ✅ (mesh, P2P DTLS-SRTP) |
-| Live streaming | ✅ | ✅ | ✅ | ✅ | – | ✅ | 🔴 |
+| Live streaming | ✅ | ✅ | ✅ | ✅ | – | ✅ | ✅ (self-built SFU broadcast) |
 | **Media & monetization** |
 | Media upload (resumable, range streaming) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (C++ edge) |
 | Creator monetization (RPM on views) | ✅ | ✅ | ✅ | ✅ | – | – | ✅ |
 | Creator payouts (KYC-gated) | ✅ | ✅ | ✅ | ✅ | – | – | ✅ |
-| Subscriptions / paid channels | ✅ | ✅ | ✅ | ✅ | – | – | 🔴 |
+| Subscriptions / paid channels | ✅ | ✅ | ✅ | ✅ | – | – | ✅ (creator tiers + tips) |
 | **Advertising** |
 | Self-serve ad campaigns | ✅ | ✅ | ✅ | ✅ | – | – | ✅ |
 | Geo + language + interest targeting | ✅ | ✅ | ✅ | ✅ | – | – | ✅ |
@@ -87,14 +87,23 @@ Polyglot split per requirement: **Go** core API (high-load, distributed),
 
 ## 3. Remaining gaps (roadmap, prioritized)
 
-1. 🔴 **Live streaming** — needs SFU (e.g. mediasoup) or HLS pipeline on the C++ edge.
-2. 🔴 **Disappearing messages** — `expires_at` on messages + sweeper job.
-3. 🔴 **Friends (symmetric)** — follows exist; add mutual-friend request/accept flow.
-4. 🔴 **Stickers/GIF packs** — media type + pack store.
-5. 🔴 **Quote posts & lists** — schema trivially extends `parent_id`.
-6. 🔴 **Paid channels/subscriptions** — wallet ledger already supports debits.
-7. 🚧 **Voice messages** — record UI on top of existing audio upload path.
-8. 🚧 **Push notifications** (FCM/APNs) — hook into WS fan-out for offline users.
+> Updated 2026-08-30: items 1–8 from the original scan have all shipped
+> (live broadcasting on the self-built SFU, disappearing messages with a
+> sweeper, voice messages end-to-end, quote posts, creator
+> subscriptions/tips, push notifications, and the C++ HLS transcode
+> pipeline). The canonical, current gap list lives in
+> [GAP_ANALYSIS.md](GAP_ANALYSIS.md). What remains:
 
-No competitor has a *structural* capability we lack after items 1–8: every
-remaining difference is execution depth, not missing concepts.
+1. 🔴 **Stickers/GIF packs** — own sticker catalog (self-reliance rule: no
+   GIPHY/Tenor dependency).
+2. 🔴 **Friends (symmetric) as a first-class surface** — follow requests +
+   close friends exist; mutual-friends view is a query increment.
+3. 🔴 **Events** (group/page events) — entity + feed reuse.
+4. 🚧 **Reels creation depth** — duet/stitch, multi-clip editing (text
+   overlays, ASR captions, speed ramp shipped).
+5. 🚧 **Messaging polish** — silent send, spoiler entities, slow mode, topics.
+6. 🚧 **SFU scale-out** — C++ RTP forwarding plane when one room saturates a
+   core (see CPP_CONVERSION_PLAN.md).
+
+No competitor has a *structural* capability we lack: every remaining
+difference is execution depth, not missing concepts.

@@ -1,9 +1,12 @@
 # ChatApp — Full Backend Security & Safety Audit
 
-Date: 2026-08-29. Scope: every backend file in the repository —
-`services/api` (Go, 23 files), `services/security` (Rust, 2 files),
-`services/media` (C++, 1 file), `services/ml` (Python, 1 file),
-`infra/db` (8 migrations), plus client-side crypto in `apps/web/src/lib/e2e.ts`.
+Date: 2026-08-29; scope re-verified 2026-08-30 (all findings below remain
+fixed; 153/153 integration + 72/72 feature checks green). Scope: every backend
+file in the repository — `services/api` (Go), `services/sfu` (Go/Pion),
+`services/security` (Rust), `services/media`, `services/realtime`,
+`services/transcode` (C++17), `services/ml` (Python/FastAPI),
+`infra/db` (migrations 001–014), plus client-side crypto in
+`apps/web/src/lib/e2e.ts`.
 
 Legend: ✅ verified safe · 🔧 fixed in this audit · ⚠️ recommendation.
 

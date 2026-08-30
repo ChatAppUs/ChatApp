@@ -1,9 +1,11 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
-Date: 2026-08-29. This is the single consolidated answer to "after deeply
-scanning every competitor, what is ChatApp still missing?" Per-competitor,
-feature-by-feature detail lives in [competitor-analysis/](competitor-analysis/README.md);
-this file rolls the results up and ranks them.
+Date: 2026-08-30 (updated after the parity batches 4/5 + realtime/transcode
+shipped; 153/153 integration + 72/72 feature checks green). This is the single
+consolidated answer to "after deeply scanning every competitor, what is ChatApp
+still missing?" Per-competitor, feature-by-feature detail lives in
+[competitor-analysis/](competitor-analysis/README.md); this file rolls the
+results up and ranks them.
 
 Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 ❌ not built yet (roadmap, with implementation path).
@@ -37,24 +39,25 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
   ads_reviewer), audit log, user/reports/KYC/ads/payouts/platform-token/
   fleet management. Users can never reach admin functionality.
 - **Clients**: Next.js web (8 locales incl. RTL), Android (Compose), iOS
-  (SwiftUI), desktop (Tauri).
+  (SwiftUI), desktop (Tauri), Chrome/Firefox MV3 browser extension — every
+  client with a persisted light/dark theme switch.
 
-## 2. The 12 remaining gaps, ranked by competitive impact
+## 2. Gap status, ranked by competitive impact
 
 | # | Gap | Competitors that have it | Status & implementation path |
 |---|-----|--------------------------|------------------------------|
-| 1 | **Video transcoding pipeline** (HLS/ABR ladder, thumbnails, progressive playback) | All six | ❌ New C++ `services/transcode` worker (ffmpeg/SVT-AV1), SKIP LOCKED job queue like the scheduler. This is the single biggest video-quality gap. |
+| 1 | **Video transcoding pipeline** (HLS/ABR ladder, thumbnails, progressive playback) | All six | ✅ **Shipped** — C++ `services/transcode` worker (ffmpeg HLS ladder 240p→1080p + thumbnails), SKIP LOCKED job queue (`transcode_jobs`), internal claim/complete control plane, auto requeue of stale jobs; done jobs rewrite `post_media.url` to the HLS master. |
 | 2 | **SFU for large calls, audio rooms, live broadcast** | FB Rooms, X Spaces, Telegram voice chats, TikTok Live, imo rooms | ✅ **Shipped** — self-built SFU (`services/sfu`, Pion: own signaling + embedded STUN/TURN, HMAC room tickets) powering meetings, group calls and live broadcasting. Scale-out path: C++ RTP forwarder (see CPP_CONVERSION_PLAN.md). |
-| 3 | **Facebook-style content Groups & Pages** (membership, roles, group feeds, business pages, events) | FB, X Communities | ❌ New `groups`/`pages`/`events` entities + feeds; reuses existing posts/comments/reactions. |
-| 4 | **Push notifications** (FCM/APNs/Web Push) | All six | ❌ Device-token table + push worker; web Push API for the PWA. In-app + WS notifications already work. |
-| 5 | **Watch-time signal ingestion → FYP ranking** | TikTok, FB reels | ❌ `reel_watch_events` table + ingestion endpoint feeding the Python ranker (watch %, rewatches, "not interested"). |
-| 6 | **Reels creation tools** (trim, multi-clip, text overlay, captions, duet/stitch) | TikTok, FB, X | ❌ Client editor + transcode pipeline (#1). Auto-captions via a speech-to-text worker in the ML service. |
-| 7 | **Monetization depth** (fan subscriptions, tips, gifts, ad-rev share) | X, TikTok, FB, TG | 🚧 Wallet rails + admin-managed platform tokens (`platform_tokens`) shipped; gap: recurring subscriptions, tips, gift catalog. |
-| 8 | **Bot API & mini-apps platform** | Telegram, Discord-class platforms | ❌ Bot accounts + long-poll/webhook API reusing the message pipeline; inline bots phase 2. |
-| 9 | **Messaging polish** (silent send, spoiler/formatting entities, link previews, custom emoji, invite links + public group handles, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | 🚧/❌ Small server-side increments on existing tables. |
-| 10 | **Stories extras** (highlights, close-friends audience, composer tools) | FB, IG, WA | ❌ `highlights` entity + audience flag. |
-| 11 | **Privacy suite depth** (custom audience lists, restricted list, profile lock, message-request inbox, mutes/word filters) | FB, X | 🚧 Blocks + audience selector shipped; the rest are settings + query-filter increments. |
-| 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade, data-saver) | imo, WhatsApp | 🚧 8 locales shipped; bitrate adaptation comes with the SFU (#2). |
+| 3 | **Facebook-style content Groups & Pages** (membership, roles, group feeds, business pages, events) | FB, X Communities | ✅ **Shipped** — groups (invite links, join requests, roles, pinned messages) and pages (create/follow/posts) with full API + UI on every client. Events remain phase 2. |
+| 4 | **Push notifications** (FCM/APNs/Web Push) | All six | ✅ **Shipped** — self-built Web Push (VAPID ECDH/AES-GCM) for the PWA + browser extension badge; FCM/APNs gateway hooks behind config. In-app + WS notifications were already live. |
+| 5 | **Watch-time signal ingestion → FYP ranking** | TikTok, FB reels | ✅ **Shipped** — `reel_watch_events` ingestion (completion %, rewatches, not-interested) feeding `/api/fyp` ranking; negative signals down-weight. |
+| 6 | **Reels creation tools** (trim, multi-clip, text overlay, captions, duet/stitch) | TikTok, FB, X | 🚧 Text overlays, ASR captions (ML service) and speed ramp shipped; duet/stitch and multi-clip editing remain phase 2 (unblocked by #1). |
+| 7 | **Monetization depth** (fan subscriptions, tips, gifts, ad-rev share) | X, TikTok, FB, TG | ✅ **Shipped** — wallet rails, platform tokens, creator subscription tiers, tips, revenue dashboard. Gift catalog remains phase 2. |
+| 8 | **Bot API & mini-apps platform** | Telegram, Discord-class platforms | ✅ **Shipped** — bot accounts, long-poll `getUpdates`, webhooks, `sendMessage`. Mini-apps/inline bots remain phase 2. |
+| 9 | **Messaging polish** (silent send, spoiler/formatting entities, link previews, custom emoji, invite links + public group handles, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | 🚧 Link previews (URL unfurling), invite links, per-conversation drafts shipped; silent send/spoilers/slow mode/topics remain phase 2. |
+| 10 | **Stories extras** (highlights, close-friends audience, composer tools) | FB, IG, WA | 🚧 Close-friends audience + story reactions/replies shipped; highlights remain phase 2. |
+| 11 | **Privacy suite depth** (custom audience lists, restricted list, profile lock, message-request inbox, mutes/word filters) | FB, X | ✅ **Shipped** — blocks, audience selector, message-request inbox, follow requests, mutes, word filters, restricted list (migration 014). |
+| 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade, data-saver) | imo, WhatsApp | 🚧 8 locales shipped; simulcast comes with the SFU scale-out (C++ RTP forwarder). |
 
 ## 3. Explicit non-goals / notes
 

@@ -54,11 +54,13 @@ services:
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: minio:9000
       SFU_INTERNAL_URL: http://sfu:8095
-      SFU_PUBLIC_URL: ws://localhost:8095/ws
-      SFU_HOST: localhost
-      SFU_SECRET: change-me-sfu-secret
-      TURN_SECRET: change-me-turn-secret
+      SFU_PUBLIC_URL: ${SFU_PUBLIC_URL:-ws://localhost:8095/ws}
+      SFU_HOST: ${SFU_HOST:-localhost}
+      SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
+      TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
       SECURITY_SERVICE_URL: http://security:8090
+      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      REALTIME_RELAY_URL: http://realtime:8301
     ports:
       - "8080:8080"
     depends_on:
@@ -66,15 +68,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      security:
+        condition: service_started
+      realtime:
+        condition: service_started
 
   # Self-built SFU: group calls, meetings, live broadcasting + embedded
   # STUN/TURN. No external media kit.
   sfu:
     build: ./services/sfu
     environment:
-      SFU_SECRET: change-me-sfu-secret
-      TURN_SECRET: change-me-turn-secret
-      PUBLIC_IP: 127.0.0.1
+      SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
+      TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
+      PUBLIC_IP: ${SFU_PUBLIC_IP:-127.0.0.1}
     ports:
       - "8095:8095"
       - "3478:3478/udp"
@@ -95,6 +101,32 @@ services:
       - "8100:8100"
     volumes:
       - mediauploads:/data/uploads
+
+  # C++ epoll WebSocket fanout edge (ultra-low-latency data plane). The Go
+  # API stays the control plane and publishes fanout events to /publish.
+  realtime:
+    build: ./services/realtime
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret}
+      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      WS_PORT: "8300"
+      CONTROL_PORT: "8301"
+    ports:
+      - "8300:8300"
+
+  # C++ ffmpeg transcode worker: HLS ABR ladder + thumbnails for
+  # reels/stories, claiming jobs from the API's internal control plane.
+  transcode:
+    build: ./services/transcode
+    environment:
+      API_INTERNAL_URL: http://api:8080
+      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      MEDIA_DIR: /data/uploads
+    volumes:
+      - mediauploads:/data/uploads
+    depends_on:
+      - api
+      - media
 
   ml:
     build: ./services/ml

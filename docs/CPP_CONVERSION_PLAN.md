@@ -1,8 +1,8 @@
 # C++ Conversion Plan — Ultra-Low-Latency Hot Paths
 
-Date: 2026-08-29. Purpose: identify which code files/paths must run in C++
-for super-fast, ultra-low-latency service at global scale, and which stay
-in Go/Rust/Python.
+Date: 2026-08-29; updated 2026-08-30. Purpose: identify which code files/paths
+must run in C++ for super-fast, ultra-low-latency service at global scale, and
+which stay in Go/Rust/Python.
 
 ## Principle
 
@@ -11,19 +11,26 @@ matter**: media bytes, realtime fanout to hundreds of thousands of sockets,
 media packet forwarding. Business logic does not belong in C++ — its
 maintenance cost would slow the whole platform down.
 
-Current C++ footprint: `services/media/main.cpp` (317 LOC) — the media edge:
-raw-socket HTTP, sendfile-style streaming with Range support, 2 GiB uploads,
-signed-upload enforcement, zero dependencies.
+C++ footprint (all shipped, `-O3 -std=c++17`, zero dependencies, clean
+`-Wall -Wextra` builds):
+- `services/media/main.cpp` — the media edge: raw-socket HTTP, sendfile-style
+  streaming with Range support, 2 GiB uploads, signed-upload enforcement.
+- `services/realtime/main.cpp` — epoll WebSocket fanout edge: RFC6455
+  server with manual frame codec, JWT-verified `/ws` (10k+ connections),
+  HMAC-guarded `/publish` control port fed by the Go API (`relay.go`).
+- `services/transcode/main.cpp` — ffmpeg HLS ladder worker: polls the API's
+  internal claim endpoint (SKIP LOCKED jobs), renders 240p→1080p renditions +
+  thumbnail into the media volume, reports the ladder back.
 
-## Conversions to C++: 2 existing paths + 3 new services
+## Conversion status
 
-| # | Source (today) | Target | Why C++ | Priority |
-|---|----------------|--------|---------|----------|
-| 1 | WebSocket hub + fanout inside `services/api/handlers_chat.go` (`Hub`, `wsClient`, `sendTo`, ~120 LOC of that file) | New `services/realtime/` C++ relay (epoll/io_uring, one thread per core, shared-nothing) | Go's per-connection goroutines + GC stop-the-world pauses cap a node at low tens of thousands of sockets with tail-latency spikes. A C++ edge relay sustains 100k+ concurrent connections per node with microsecond fanout — this is the WhatsApp/Telegram-scale messaging path. The Go API stays the control plane: it persists the message, then publishes a fanout event to the relay over an internal socket. | P0 |
-| 2 | Presence/typing fanout (same file, `handleWS` broadcast paths) | Same `services/realtime` relay | Presence and typing are the highest-frequency, lowest-value messages in the system — they must never queue behind real messages or pay GC. | P0 |
-| 3 | `services/sfu/` (shipped in Go/Pion: signaling + embedded STUN/TURN + HMAC room tickets) | Port the RTP/RTCP forwarding hot loop to C++ | The Go/Pion SFU closes the meetings/group-call/live gap functionally. When a single room's packet rate saturates a core, the forwarding plane (RTP relay, NACK/PLI handling, simulcast layer selection) ports to a C++ io_uring forwarder while Go keeps signaling — same split as the media edge. | P1 |
-| 4 | — (does not exist yet) | `services/transcode/` C++ worker (ffmpeg/x264/x265/SVT-AV1) | Closes the #1 media gap: HLS/ABR ladder generation, thumbnails, audio normalization for reels/stories. CPU-bound codec work is C++ territory; queue from Postgres with SKIP LOCKED like the scheduler. | P1 |
-| 5 | — (does not exist yet) | Trending/counter engine inside `services/realtime` or standalone | Hashtag trending, reel view counts and live viewer counts are hot in-memory counters flushed periodically to Postgres; a C++ (or Redis) counter tier removes that write pressure from the API. | P2 |
+| # | Source (today) | Target | Status |
+|---|----------------|--------|--------|
+| 1 | WebSocket hub + fanout inside `services/api/handlers_chat.go` (`Hub`, `wsClient`, `sendTo`) | `services/realtime/` C++ relay | ✅ **Shipped** — Go stays the control plane (persists, then publishes to the relay over `REALTIME_RELAY_URL`); C++ owns the socket edge. The Go hub remains as the no-relay fallback for single-process dev. |
+| 2 | Presence/typing fanout (same file, `handleWS` broadcast paths) | Same `services/realtime` relay | ✅ **Shipped** — same publish path; presence/typing never queue behind persistence. |
+| 3 | `services/sfu/` (shipped in Go/Pion: signaling + embedded STUN/TURN + HMAC room tickets) | Port the RTP/RTCP forwarding hot loop to C++ | 🚧 Roadmap (P1) — the Go/Pion SFU closes the meetings/group-call/live gap functionally. When a single room's packet rate saturates a core, the forwarding plane (RTP relay, NACK/PLI handling, simulcast layer selection) ports to a C++ io_uring forwarder while Go keeps signaling — same split as the media edge. |
+| 4 | — | `services/transcode/` C++ worker (ffmpeg HLS ladder) | ✅ **Shipped** — closes the #1 media gap: HLS/ABR ladder, thumbnails; jobs queue in Postgres with SKIP LOCKED claiming via `/internal/transcode/claim` + `/complete`. |
+| 5 | — | Trending/counter engine inside `services/realtime` or standalone | ❌ Roadmap (P2) — hashtag trending, reel view counts and live viewer counts as hot in-memory counters flushed periodically to Postgres. |
 
 ## What must NOT be converted
 
@@ -39,8 +46,9 @@ signed-upload enforcement, zero dependencies.
 
 ## Bottom line
 
-**Convert 1 existing file's worth of code (the hub/fanout core of
-`handlers_chat.go`) into a new C++ realtime relay, and build/port 3 C++
-services (SFU forwarding plane, transcoder, counters).** Everything else is already in the
-right language: C++ at the byte/packet/socket edge, Rust at the trust
+**Done: the hub/fanout core became `services/realtime`, and the transcoder is
+`services/transcode` — both shipped, wired into docker-compose, and covered by
+integration/feature suites.** Remaining C++ work: the SFU RTP forwarding plane
+(P1, scale-triggered) and the counter engine (P2). Everything else is already
+in the right language: C++ at the byte/packet/socket edge, Rust at the trust
 boundary, Go for orchestration, Python for ML.

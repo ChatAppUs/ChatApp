@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ChatApp</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="theme-init.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <span class="brand">ChatApp</span>
+    <span class="spacer"></span>
+    <button id="themeBtn" class="icon" title="Toggle light/dark theme">◐</button>
+  </header>
+
+  <section id="status" class="status muted">Checking session…</section>
+
+  <nav class="grid">
+    <button data-path="/" class="nav">Feed</button>
+    <button data-path="/fyp" class="nav">For You</button>
+    <button data-path="/chat" class="nav">Chat</button>
+    <button data-path="/reels" class="nav">Reels</button>
+    <button data-path="/groups" class="nav">Groups</button>
+    <button data-path="/pages" class="nav">Pages</button>
+    <button data-path="/live" class="nav">Live</button>
+    <button data-path="/meeting" class="nav">Meetings</button>
+    <button data-path="/wallet" class="nav">Wallet</button>
+    <button data-path="/monetize" class="nav">Monetize</button>
+    <button data-path="/notifications" class="nav">Alerts <span id="badge" class="badge" hidden></span></button>
+    <button data-path="/settings" class="nav">Settings</button>
+  </nav>
+
+  <footer class="bar">
+    <button id="openFull" class="primary">Open full app</button>
+    <button id="optionsBtn" class="icon" title="Extension options">⚙</button>
+  </footer>
+
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
