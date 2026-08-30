@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +45,16 @@ data class FeedPost(
     val edited: Boolean,
 )
 
+private data class FeedNote(
+    val id: String,
+    val username: String,
+    val text: String,
+    val helpful: Int,
+    val notHelpful: Int,
+    val myVote: String,
+    val shown: Boolean,
+)
+
 private val REACTION_EMOJI = mapOf(
     "like" to "👍", "love" to "❤️", "haha" to "😂",
     "wow" to "😮", "sad" to "😢", "angry" to "😡",
@@ -52,6 +63,10 @@ private val REACTION_EMOJI = mapOf(
 @Composable
 fun FeedScreen(api: ApiClient, session: Session, onOpenChat: () -> Unit) {
     var posts by remember { mutableStateOf(listOf<FeedPost>()) }
+    var notes by remember { mutableStateOf(mapOf<String, List<FeedNote>>()) }
+    var notesOpen by remember { mutableStateOf(setOf<String>()) }
+    var noteFor by remember { mutableStateOf<FeedPost?>(null) }
+    var noteText by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var feeling by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
@@ -92,6 +107,32 @@ fun FeedScreen(api: ApiClient, session: Session, onOpenChat: () -> Unit) {
     }
 
     LaunchedEffect(Unit) { load() }
+
+    fun loadNotes(postId: String) {
+        scope.launch {
+            try {
+                val resp = withContext(Dispatchers.IO) { api.get("/api/posts/$postId/notes", token) }
+                val arr = JSONObject(resp).getJSONArray("notes")
+                val parsed = mutableListOf<FeedNote>()
+                for (i in 0 until arr.length()) {
+                    val n = arr.getJSONObject(i)
+                    parsed.add(
+                        FeedNote(
+                            id = n.getString("id"),
+                            username = n.optString("username"),
+                            text = n.optString("body"),
+                            helpful = n.optInt("helpful"),
+                            notHelpful = n.optInt("not_helpful"),
+                            myVote = n.optString("my_vote"),
+                            shown = n.optBoolean("shown"),
+                        )
+                    )
+                }
+                notes = notes + (postId to parsed)
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -180,6 +221,14 @@ fun FeedScreen(api: ApiClient, session: Session, onOpenChat: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("👍 ${post.likeCount}", modifier = Modifier.padding(top = 12.dp))
                             Text("💬 ${post.commentCount}", modifier = Modifier.padding(top = 12.dp))
+                            TextButton(onClick = {
+                                if (post.id in notesOpen) {
+                                    notesOpen = notesOpen - post.id
+                                } else {
+                                    notesOpen = notesOpen + post.id
+                                    loadNotes(post.id)
+                                }
+                            }) { Text("📝 Notes") }
                             if (post.edited) {
                                 Text("edited", style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 12.dp))
@@ -198,9 +247,83 @@ fun FeedScreen(api: ApiClient, session: Session, onOpenChat: () -> Unit) {
                                 }) { Text("📌 Pin") }
                             }
                         }
+                        if (post.id in notesOpen) {
+                            val shown = (notes[post.id] ?: emptyList()).filter { it.shown }
+                            if (shown.isEmpty()) {
+                                Text("No community notes", style = MaterialTheme.typography.bodySmall)
+                            }
+                            shown.forEach { n ->
+                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(n.text, style = MaterialTheme.typography.bodySmall)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(onClick = {
+                                            scope.launch {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        api.post("/api/notes/${n.id}/vote",
+                                                            JSONObject().put("helpful", true).toString(), token)
+                                                    }
+                                                    loadNotes(post.id)
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                        }) { Text("👍 ${n.helpful}") }
+                                        TextButton(onClick = {
+                                            scope.launch {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        api.post("/api/notes/${n.id}/vote",
+                                                            JSONObject().put("helpful", false).toString(), token)
+                                                    }
+                                                    loadNotes(post.id)
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                        }) { Text("👎 ${n.notHelpful}") }
+                                        TextButton(onClick = {
+                                            noteText = ""
+                                            noteFor = post
+                                        }) { Text("✍️ Add note") }
+                                    }
+                                }
+                            }
+                            if (shown.isEmpty()) {
+                                TextButton(onClick = { noteText = ""; noteFor = post }) { Text("✍️ Add note") }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+    noteFor?.let { target ->
+        AlertDialog(
+            onDismissRequest = { noteFor = null },
+            title = { Text("Community note") },
+            text = {
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    placeholder = { Text("Add context other readers should know") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                api.post("/api/posts/${target.id}/notes",
+                                    JSONObject().put("body", noteText.trim()).toString(), token)
+                            }
+                            noteFor = null
+                            loadNotes(target.id)
+                        } catch (e: Exception) {
+                            error = e.message
+                        }
+                    }
+                }) { Text("Submit") }
+            },
+            dismissButton = { TextButton(onClick = { noteFor = null }) { Text("Cancel") } },
+        )
     }
 }

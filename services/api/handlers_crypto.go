@@ -309,6 +309,21 @@ func (a *App) executeWithdrawal(ctx context.Context, id string) string {
 		return "completed"
 	}
 	if cryptoProvider != nil {
+		var sig, fee string
+		_ = a.db.QueryRow(ctx,
+			`SELECT COALESCE(signature,''), fee::text FROM withdrawal_requests WHERE id=$1`,
+			id).Scan(&sig, &fee)
+		canon := "withdraw|" + id + "|" + userID + "|" + asset + "|" + chain + "|" + toAddr + "|" + amount + "|" + fee
+		cosig, err := cosignWithdrawal(ctx, a.cfg.SecuritySvcURL, userID, canon)
+		if err != nil {
+			// Custody service unreachable/rejected: stay signed, never broadcast.
+			_, _ = a.db.Exec(ctx,
+				`UPDATE withdrawal_requests SET updated_at=now() WHERE id=$1`, id)
+			return "signed"
+		}
+		if cosig != "" {
+			a.audit(ctx, userID, "withdrawal_cosigned", id, map[string]any{"cosig": cosig})
+		}
 		txHash, err := cryptoProvider.Withdraw(ctx, userID, asset, chain, toAddr, amount)
 		if err != nil {
 			_, _ = a.db.Exec(ctx,

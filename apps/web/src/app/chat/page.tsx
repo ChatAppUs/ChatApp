@@ -7,6 +7,8 @@ import { useI18n } from "@/lib/i18n";
 import {
   publishIdentityKey, hasIdentityKey, encryptFor, decryptFrom, looksEncrypted,
 } from "@/lib/e2e";
+import ChatPoll from "@/components/ChatPoll";
+import { PollModal, VideoNoteButton, LiveLocationPanel, PayModal } from "@/components/ChatTools";
 import type { Conversation, ConvMember, Message, PublicUser } from "@/lib/types";
 
 const CHAT_THEMES: Record<string, string> = {
@@ -36,6 +38,9 @@ interface WSEvent {
   ids?: string[];
   ttl_seconds?: number;
   expires_at?: string | null;
+  kind?: string;
+  poll_id?: string;
+  payment_id?: string;
 }
 
 export default function ChatPage() {
@@ -68,6 +73,9 @@ export default function ChatPage() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [members, setMembers] = useState<ConvMember[]>([]);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -121,6 +129,7 @@ export default function ChatPage() {
             id: data.id!, sender_id: data.sender_id!, sender_name: "",
             body: data.body ?? "", media_url: data.media_url ?? "",
             is_encrypted: data.is_encrypted, reply_to: data.reply_to,
+            kind: data.kind, poll_id: data.poll_id, payment_id: data.payment_id,
             created_at: data.created_at ?? new Date().toISOString(),
             reactions: {},
           };
@@ -381,6 +390,15 @@ export default function ChatPage() {
     const d = await api<{ members: typeof members }>(
       `/api/conversations/${active.id}/members`).catch(() => null);
     if (d) setMembers(d.members);
+  };
+
+  const loadMessages = async (convId: string) => {
+    try {
+      const data = await api<{ messages: Message[] }>(`/api/conversations/${convId}/messages`);
+      const ordered = data.messages.reverse();
+      const decrypted = await Promise.all(ordered.map(decryptMessage));
+      setMessages(decrypted);
+    } catch { /* ignore */ }
   };
 
   const openConversation = async (c: Conversation) => {
@@ -717,14 +735,27 @@ export default function ChatPage() {
                   )}
                   {m.forwarded_from && <div style={{ fontSize: 10, opacity: 0.7 }}>↪ forwarded</div>}
                   {m.story_id && <div style={{ fontSize: 10, opacity: 0.7 }}>📸 story reply</div>}
-                  {m.body}
-                  {m.media_url && (/\.(ogg|mp3|wav|m4a)(\?|$)/i.test(m.media_url) || /voice-[^/]*\.webm/i.test(m.media_url)) ? (
+                  {m.kind === "poll" && m.poll_id ? (
+                    <ChatPoll pollId={m.poll_id} />
+                  ) : m.kind === "payment" ? (
+                    <div style={{ fontSize: 13 }}>
+                      💸 Crypto payment
+                      {m.body && <div className="muted" style={{ fontSize: 12 }}>{m.body}</div>}
+                      <span className="muted" style={{ fontSize: 11 }}>tx {m.payment_id?.slice(0, 8)}…</span>
+                    </div>
+                  ) : m.kind === "video_note" && m.media_url ? (
+                    <video src={m.media_url} controls playsInline
+                      style={{ width: 180, height: 180, borderRadius: "50%", objectFit: "cover", marginTop: 4 }} />
+                  ) : (
+                    <>{m.body}</>
+                  )}
+                  {m.kind !== "video_note" && (m.media_url && (/\.(ogg|mp3|wav|m4a)(\?|$)/i.test(m.media_url) || /voice-[^/]*\.webm/i.test(m.media_url)) ? (
                     <audio src={m.media_url} controls style={{ maxWidth: "100%", marginTop: 4 }} />
                   ) : m.media_url && /\.(mp4|mov|webm)(\?|$)/i.test(m.media_url) ? (
                     <video src={m.media_url} controls style={{ maxWidth: "100%", borderRadius: 8, marginTop: 4 }} />
                   ) : m.media_url ? (
                     <img src={m.media_url} alt="" style={{ maxWidth: "100%", borderRadius: 8, marginTop: 4 }} />
-                  ) : null}
+                  ) : null)}
                   <div className="row" style={{ marginTop: 4, gap: 6 }}>
                     {m.is_encrypted && <span title="end-to-end encrypted">🔒</span>}
                     {m.edited_at && <span style={{ fontSize: 10, opacity: 0.7 }}>(edited)</span>}
@@ -822,7 +853,7 @@ export default function ChatPage() {
               )}
             </div>
             {!editingId && (
-              <div className="row" style={{ marginTop: 4 }}>
+              <div className="row" style={{ marginTop: 4, flexWrap: "wrap", gap: 4 }}>
                 <input
                   type="datetime-local"
                   value={scheduleAt}
@@ -837,7 +868,22 @@ export default function ChatPage() {
                 >
                   🕒 Schedule
                 </button>
+                <button className="secondary small" title="Create poll" onClick={() => setPollOpen(true)}>📊</button>
+                <VideoNoteButton convId={active.id} onSent={() => loadMessages(active.id)} />
+                <button className={locationOpen ? "small" : "secondary small"} title="Live location"
+                  onClick={() => setLocationOpen((v) => !v)}>📍</button>
+                {peerId && (
+                  <button className="secondary small" title="Send crypto" onClick={() => setPayOpen(true)}>💸</button>
+                )}
               </div>
+            )}
+            {pollOpen && (
+              <PollModal convId={active.id} onClose={() => { setPollOpen(false); loadMessages(active.id); }} />
+            )}
+            {locationOpen && <LiveLocationPanel convId={active.id} />}
+            {payOpen && peerId && (
+              <PayModal convId={active.id} toUserId={peerId}
+                onClose={() => { setPayOpen(false); loadMessages(active.id); }} />
             )}
           </>
         ) : (

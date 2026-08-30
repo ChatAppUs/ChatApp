@@ -22,9 +22,11 @@ type Config struct {
 	SMTPPort        string
 	SMTPUser        string
 	SMTPPass        string
-	SumsubAppToken  string
-	SumsubSecretKey string
 	CreatorRPM      float64 // creator revenue per 1000 views, USD
+	BTCRPCURL       string  // own bitcoind JSON-RPC (watch-only wallet)
+	EVMRPCURL       string  // own geth/erigon JSON-RPC
+	TronRPCURL      string  // own tron full-node HTTP
+	SolanaRPCURL    string  // own solana JSON-RPC
 	GoogleClientID  string
 	WebAuthnRPID    string
 	WebAuthnRPName  string
@@ -107,8 +109,10 @@ func loadConfig() Config {
 		SMTPPort:        getenv("SMTP_PORT", "587"),
 		SMTPUser:        os.Getenv("SMTP_USER"),
 		SMTPPass:        os.Getenv("SMTP_PASS"),
-		SumsubAppToken:  os.Getenv("SUMSUB_APP_TOKEN"),
-		SumsubSecretKey: os.Getenv("SUMSUB_SECRET_KEY"),
+		BTCRPCURL:       os.Getenv("BTC_RPC_URL"),
+		EVMRPCURL:       os.Getenv("EVM_RPC_URL"),
+		TronRPCURL:      os.Getenv("TRON_RPC_URL"),
+		SolanaRPCURL:    os.Getenv("SOLANA_RPC_URL"),
 		ClusterNodeID:   os.Getenv("CLUSTER_NODE_ID"),
 		ClusterRegion:   getenv("CLUSTER_REGION", "us-east"),
 		ClusterAPIURL:   os.Getenv("CLUSTER_API_URL"),

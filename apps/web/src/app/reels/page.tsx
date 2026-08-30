@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, getAccessToken } from "@/lib/api";
+import { api, getAccessToken, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Post } from "@/lib/types";
 import Composer from "@/components/Composer";
+import { RemixModal, ReelAnalytics, RemixList } from "@/components/ReelExtras";
+import CommunityNotes from "@/components/CommunityNotes";
 
 function Reel({ post }: { post: Post }) {
   const { t } = useI18n();
@@ -13,6 +15,9 @@ function Reel({ post }: { post: Post }) {
   const viewed = useRef(false);
   const [liked, setLiked] = useState(post.liked_by_me);
   const [likes, setLikes] = useState(post.like_count);
+  const [remixOpen, setRemixOpen] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showRemixes, setShowRemixes] = useState(false);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -73,7 +78,17 @@ function Reel({ post }: { post: Post }) {
           <button className={liked ? "small" : "secondary small"} onClick={toggleLike}>
             {t("like")} · {likes}
           </button>
+          <button className="secondary small" title="Remix" onClick={() => setRemixOpen(true)}>🎬</button>
+          <button className="secondary small" title="Remixes" onClick={() => setShowRemixes((v) => !v)}>⑂</button>
+          {post.author_id === getUserId() && (
+            <button className="secondary small" title="Analytics"
+              onClick={() => setShowAnalytics((v) => !v)}>📊</button>
+          )}
         </div>
+        {showAnalytics && <ReelAnalytics reelId={post.id} />}
+        {showRemixes && <RemixList reelId={post.id} />}
+        <CommunityNotes postId={post.id} />
+        {remixOpen && <RemixModal reelId={post.id} onClose={() => setRemixOpen(false)} />}
       </div>
     </div>
   );

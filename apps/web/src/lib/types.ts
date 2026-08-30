@@ -31,6 +31,9 @@ export interface Post {
   repost_of?: string;
   thread_parent_id?: string;
   edited_at?: string | null;
+  story_background?: string;
+  story_stickers?: string;
+  story_music?: string;
   quoted?: { id: string; author_name: string; author_username: string; body: string } | null;
 }
 
@@ -159,6 +162,33 @@ export interface Message {
   created_at: string;
   edited_at?: string | null;
   reactions?: Record<string, number>;
+  kind?: string;
+  poll_id?: string;
+  payment_id?: string;
+}
+
+export interface PollOption {
+  id: string;
+  label: string;
+  votes: number;
+  my_vote: boolean;
+}
+
+export interface ChatPollState {
+  id: string;
+  question: string;
+  multi: boolean;
+  closes_at: string | null;
+  options: PollOption[];
+  total_votes: number;
+}
+
+export interface LiveLocation {
+  user_id: string;
+  username: string;
+  lat: number;
+  lng: number;
+  expires_at: string;
 }
 
 export interface Channel {

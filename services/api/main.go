@@ -59,9 +59,10 @@ func main() {
 	app.startBotWebhookWorker()
 	app.startSubscriptionWorker()
 	app.startRelayBridge()
-	app.startSubscriptionWorker()
 	app.smtp = &Mailer{host: cfg.SMTPHost, port: cfg.SMTPPort, user: cfg.SMTPUser, pass: cfg.SMTPPass}
 	app.otp = NewOTPService(app, cfg.AppEnv == "development")
+	app.startDigestWorker()
+	app.startChainWatchers()
 
 	origins := map[string]bool{}
 	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
@@ -83,6 +84,7 @@ func main() {
 	// Generous enough for legitimate bursts, tight enough to blunt
 	// credential stuffing, SMS bombing and reset-token brute force.
 	loginLimiter := newRateLimiter(15, 5)
+	recoveryLimiter := newRateLimiter(5, 2)
 	registerLimiter := newRateLimiter(10, 3)
 	resetLimiter := newRateLimiter(5, 2)
 	smsSendLimiter := newRateLimiter(5, 2)
@@ -281,6 +283,59 @@ func main() {
 	mux.HandleFunc("POST /api/albums/{id}/items", app.requireAuth(app.handleAlbumAddItem))
 	mux.HandleFunc("DELETE /api/albums/{id}/items/{postId}", app.requireAuth(app.handleAlbumRemoveItem))
 	mux.HandleFunc("GET /api/users/{id}/albums", app.requireAuth(app.handleUserAlbums))
+
+	// account safety: trusted contacts, recovery, legacy contact, profiles
+	mux.HandleFunc("GET /api/me/trusted-contacts", app.requireAuth(app.handleListTrustedContacts))
+	mux.HandleFunc("POST /api/me/trusted-contacts", app.requireAuth(app.handleAddTrustedContact))
+	mux.HandleFunc("DELETE /api/me/trusted-contacts/{contactId}", app.requireAuth(app.handleRemoveTrustedContact))
+	mux.HandleFunc("POST /api/recovery/trusted/request", recoveryLimiter.limit(app.handleRecoveryRequest))
+	mux.HandleFunc("GET /api/recovery/trusted/pending", app.requireAuth(app.handleRecoveryPending))
+	mux.HandleFunc("POST /api/recovery/trusted/reveal", app.requireAuth(app.handleRecoveryReveal))
+	mux.HandleFunc("POST /api/recovery/trusted/redeem", recoveryLimiter.limit(app.handleRecoveryRedeem))
+	mux.HandleFunc("GET /api/me/legacy-contact", app.requireAuth(app.handleGetLegacyContact))
+	mux.HandleFunc("PUT /api/me/legacy-contact", app.requireAuth(app.handleSetLegacyContact))
+	mux.HandleFunc("DELETE /api/me/legacy-contact", app.requireAuth(app.handleRemoveLegacyContact))
+	mux.HandleFunc("GET /api/legacy/{userId}/export", app.requireAuth(app.handleLegacyExport))
+	mux.HandleFunc("GET /api/me/profiles", app.requireAuth(app.handleListMyProfiles))
+	mux.HandleFunc("POST /api/me/profiles", app.requireAuth(app.handleCreateProfile))
+	mux.HandleFunc("DELETE /api/me/profiles/{id}", app.requireAuth(app.handleDeleteProfile))
+	mux.HandleFunc("PUT /api/me/active-profile", app.requireAuth(app.handleSwitchProfile))
+	mux.HandleFunc("PUT /api/me/digest", app.requireAuth(app.handleSetDigest))
+
+	// chat extras: polls, video notes, live location, pay-in-chat
+	mux.HandleFunc("POST /api/conversations/{id}/polls", app.requireAuth(app.handleCreateChatPoll))
+	mux.HandleFunc("GET /api/chat-polls/{id}", app.requireAuth(app.handleGetChatPoll))
+	mux.HandleFunc("POST /api/chat-polls/{id}/vote", app.requireAuth(app.handleChatPollVote))
+	mux.HandleFunc("POST /api/conversations/{id}/video-note", app.requireAuth(app.handleSendVideoNote))
+	mux.HandleFunc("PUT /api/conversations/{id}/live-location", app.requireAuth(app.handleShareLiveLocation))
+	mux.HandleFunc("DELETE /api/conversations/{id}/live-location", app.requireAuth(app.handleStopLiveLocation))
+	mux.HandleFunc("GET /api/conversations/{id}/live-location", app.requireAuth(app.handleGetLiveLocations))
+	mux.HandleFunc("POST /api/conversations/{id}/pay", app.requireAuth(app.handlePayInChat))
+
+	// reels + notes
+	mux.HandleFunc("GET /api/reels/{id}/analytics", app.requireAuth(app.handleReelAnalytics))
+	mux.HandleFunc("GET /api/reels/{id}/remixes", app.requireAuth(app.handleReelRemixes))
+	mux.HandleFunc("POST /api/posts/{id}/notes", app.requireAuth(app.handleCreateNote))
+	mux.HandleFunc("GET /api/posts/{id}/notes", app.requireAuth(app.handleListNotes))
+	mux.HandleFunc("DELETE /api/notes/{id}", app.requireAuth(app.handleDeleteNote))
+	mux.HandleFunc("POST /api/notes/{id}/vote", app.requireAuth(app.handleVoteNote))
+
+	// calls: screen share + recordings
+	mux.HandleFunc("POST /api/calls/rooms/{roomId}/screenshare", app.requireAuth(app.handleScreenShare))
+	mux.HandleFunc("POST /api/calls/rooms/{roomId}/recordings", app.requireAuth(app.handleSaveRecording))
+	mux.HandleFunc("GET /api/calls/rooms/{roomId}/recordings", app.requireAuth(app.handleListRecordings))
+	mux.HandleFunc("DELETE /api/calls/recordings/{id}", app.requireAuth(app.handleDeleteRecording))
+
+	// admin: memorialize, media moderation, sanctions, derived rates
+	mux.HandleFunc("POST /api/admin/users/{userId}/memorialize", app.requireAdmin("superadmin", "admin")(app.handleAdminMemorialize))
+	mux.HandleFunc("POST /api/admin/moderation/block-hash", app.requireAdmin("superadmin", "admin")(app.handleAdminBlockHash))
+	mux.HandleFunc("GET /api/admin/moderation/blocked-hashes", app.requireAdmin("superadmin", "admin")(app.handleAdminListBlockedHashes))
+	mux.HandleFunc("DELETE /api/admin/moderation/block-hash/{id}", app.requireAdmin("superadmin", "admin")(app.handleAdminUnblockHash))
+	mux.HandleFunc("GET /api/admin/moderation/media", app.requireAdmin("superadmin", "admin")(app.handleAdminMediaModeration))
+	mux.HandleFunc("POST /api/admin/sanctions/import", app.requireAdmin("superadmin", "admin")(app.handleAdminImportSanctions))
+	mux.HandleFunc("GET /api/admin/sanctions/stats", app.requireAdmin("superadmin", "admin")(app.handleAdminSanctionsStats))
+	mux.HandleFunc("GET /api/admin/convert/rates/derived", app.requireAdmin("superadmin", "admin")(app.handleDerivedRates))
+	mux.HandleFunc("POST /api/admin/convert/rates/apply-derived", app.requireAdmin("superadmin", "admin")(app.handleApplyDerivedRates))
 
 	// chat personalization
 	mux.HandleFunc("PUT /api/conversations/{id}/theme", app.requireAuth(app.handleSetChatTheme))

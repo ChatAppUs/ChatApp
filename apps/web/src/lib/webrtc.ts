@@ -30,6 +30,14 @@ export function configureICE(servers: RTCIceServer[]) {
 
 export class MeshCall {
   private peers = new Map<string, RTCPeerConnection>();
+
+  /** Replace the video track being sent to every peer (screen share on/off). */
+  replaceVideoTrack(track: MediaStreamTrack | null) {
+    this.peers.forEach((pc) => {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      sender?.replaceTrack(track).catch(() => {});
+    });
+  }
   private pendingIce = new Map<string, RTCIceCandidateInit[]>();
 
   constructor(

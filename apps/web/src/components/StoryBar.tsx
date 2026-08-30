@@ -6,6 +6,31 @@ import type { Post } from "@/lib/types";
 
 const STORY_EMOJIS = ["❤️", "😂", "😮", "😢", "👏", "🔥"];
 
+const STORY_GRADIENTS: Record<string, string> = {
+  sunset: "linear-gradient(135deg,#ff9966,#ff5e62)",
+  ocean: "linear-gradient(135deg,#2193b0,#6dd5ed)",
+  forest: "linear-gradient(135deg,#134e5e,#71b280)",
+  candy: "linear-gradient(135deg,#fc5c7d,#6a82fb)",
+  midnight: "linear-gradient(135deg,#0f2027,#2c5364)",
+  mono: "linear-gradient(135deg,#232526,#414345)",
+};
+
+function parseStickers(raw?: string): { emoji: string; x: number; y: number }[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((s) => typeof s?.emoji === "string") : [];
+  } catch { return []; }
+}
+
+function parseMusic(raw?: string): string {
+  if (!raw) return "";
+  try {
+    const v = JSON.parse(raw);
+    return typeof v?.track === "string" ? v.track : "";
+  } catch { return ""; }
+}
+
 export default function StoryBar() {
   const [stories, setStories] = useState<Post[]>([]);
   const [active, setActive] = useState<Post | null>(null);
@@ -82,6 +107,24 @@ export default function StoryBar() {
             <video src={active.media[0].url} controls autoPlay style={{ maxHeight: "80vh", maxWidth: "90vw" }} />
           ) : active.media[0] ? (
             <img src={active.media[0].url} alt="" style={{ maxHeight: "80vh", maxWidth: "90vw" }} />
+          ) : active.story_background && STORY_GRADIENTS[active.story_background] ? (
+            <div style={{
+              background: STORY_GRADIENTS[active.story_background], borderRadius: 12,
+              minHeight: "60vh", width: "min(90vw, 420px)", display: "flex",
+              alignItems: "center", justifyContent: "center", padding: 24, position: "relative",
+            }}>
+              <p style={{ color: "#fff", fontSize: 22, textAlign: "center" }}>{active.body}</p>
+              {parseStickers(active.story_stickers).map((st, i) => (
+                <span key={i} style={{
+                  position: "absolute", left: `${st.x * 80}%`, top: `${st.y * 80}%`, fontSize: 32,
+                }}>{st.emoji}</span>
+              ))}
+              {parseMusic(active.story_music) && (
+                <span style={{ position: "absolute", bottom: 10, color: "#fff", fontSize: 13 }}>
+                  🎵 {parseMusic(active.story_music)}
+                </span>
+              )}
+            </div>
           ) : (
             <p style={{ color: "#fff", maxWidth: 480, fontSize: 20 }}>{active.body}</p>
           )}

@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi, clearAdminSession, getAdminToken } from "@/lib/api";
 import { WithdrawalsTab, RolesTab, RatesTab, DisputesTab, MerchantsTab, CardsTab, TransfersTab } from "@/components/FinanceTabs";
+import { SafetyTab, DerivedRatesTab } from "@/components/SafetyTabs";
 
 interface Stats {
   users: number;
@@ -68,7 +69,7 @@ interface PlatformToken {
   created_at: string;
 }
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "safety" | "derived-rates";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -130,7 +131,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "safety", "derived-rates"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -283,6 +284,8 @@ export default function DashboardPage() {
       {tab === "merchants" && <MerchantsTab act={act} />}
       {tab === "cards" && <CardsTab act={act} />}
       {tab === "transfers" && <TransfersTab act={act} />}
+      {tab === "safety" && <SafetyTab />}
+      {tab === "derived-rates" && <DerivedRatesTab />}
     </>
   );
 }

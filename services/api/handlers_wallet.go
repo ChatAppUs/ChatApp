@@ -257,9 +257,11 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	hits := a.screenName(r.Context(), req.FullName)
 	var id string
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO kyc_submissions (user_id, provider, status) VALUES ($1,'sumsub','pending') RETURNING id`, uid).Scan(&id)
+		`INSERT INTO kyc_submissions (user_id, provider, status, screening_hits, screened_at)
+		 VALUES ($1,'own','pending',$2, now()) RETURNING id`, uid, hits).Scan(&id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "submission failed")
 		return
@@ -272,10 +274,10 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "submission failed")
 		return
 	}
-	// When SUMSUB_APP_TOKEN/SUMSUB_SECRET_KEY are configured, the submission
-	// is mirrored to Sumsub and its webhook drives the final decision; the
-	// admin review endpoint remains as the manual fallback path.
-	writeJSON(w, http.StatusCreated, map[string]string{"id": id, "status": "pending"})
+	// Own pipeline: the document was screened against the sanctions lists at
+	// intake; an admin reviewer makes the final decision. Any sanctions hit
+	// is surfaced to the reviewer via screening_hits.
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "pending", "screening_hits": hits})
 }
 
 func (a *App) handleKYCStatus(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import { api, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Post, Comment, PollOption, Conversation, Album } from "@/lib/types";
 import { REACTIONS } from "@/lib/types";
+import CommunityNotes from "@/components/CommunityNotes";
 
 export default function PostCard({ post, onChanged }: { post: Post; onChanged?: () => void }) {
   const { t } = useI18n();
@@ -451,6 +452,7 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           </div>
         </div>
       )}
+      <CommunityNotes postId={post.id} />
     </div>
   );
 }

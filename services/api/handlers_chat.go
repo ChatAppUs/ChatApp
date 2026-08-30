@@ -504,7 +504,9 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	 EXISTS(SELECT 1 FROM message_pins mp WHERE mp.message_id = m.id),
 		        COALESCE((SELECT json_object_agg(emoji, cnt) FROM (
 		          SELECT emoji, count(*) AS cnt FROM message_reactions WHERE message_id = m.id GROUP BY emoji
-		        ) r), '{}'::json), m.expires_at
+		        ) r), '{}'::json), m.expires_at, m.kind,
+		COALESCE((SELECT p.id::text FROM message_polls p WHERE p.message_id = m.id), ''),
+		COALESCE(m.payment_id::text, '')
 		 FROM messages m JOIN users u ON u.id = m.sender_id
 		 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
 		   AND (m.expires_at IS NULL OR m.expires_at > now())
@@ -526,6 +528,9 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		ForwardedFrom string           `json:"forwarded_from"`
 		StoryID       string           `json:"story_id"`
 		Pinned        bool             `json:"pinned"`
+		Kind          string           `json:"kind"`
+		PollID        string           `json:"poll_id,omitempty"`
+		PaymentID     string           `json:"payment_id,omitempty"`
 		CreatedAt     time.Time        `json:"created_at"`
 		EditedAt      *time.Time       `json:"edited_at"`
 		ExpiresAt     *time.Time       `json:"expires_at"`
@@ -537,7 +542,7 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		var reactions []byte
 		if err := rows.Scan(&m.ID, &m.SenderID, &m.Sender, &m.Body, &m.MediaURL, &m.IsEncrypted,
 			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &m.ForwardedFrom, &m.StoryID, &m.Pinned,
-			&reactions, &m.ExpiresAt); err == nil {
+			&reactions, &m.ExpiresAt, &m.Kind, &m.PollID, &m.PaymentID); err == nil {
 			m.Reactions = map[string]int64{}
 			_ = json.Unmarshal(reactions, &m.Reactions)
 			out = append(out, m)

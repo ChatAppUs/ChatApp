@@ -229,3 +229,10 @@ def captions(req: CaptionRequest) -> dict[str, Any]:
         for c in chunks
     ]
     return {"available": True, "text": result.get("text", ""), "segments": segments}
+
+
+# ---------- Media moderation (known-bad hash matching) ----------
+
+from media_moderation import register_media_moderation
+
+register_media_moderation(app)

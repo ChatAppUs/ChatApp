@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { getAccessToken, getUserId, wsURL } from "@/lib/api";
+import { api, getAccessToken, getUserId, uploadMedia, wsURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { MeshCall, SignalPayload } from "@/lib/webrtc";
+
+type Recording = { id: string; username: string; media_url: string; duration_s: number; created_at: string };
 
 export default function CallPage() {
   const { t } = useI18n();
@@ -12,13 +14,22 @@ export default function CallPage() {
   const params = useParams<{ conversationId: string }>();
   const searchParams = useSearchParams();
   const wantVideo = searchParams.get("video") !== "0";
+  const roomId = `${params.conversationId}-meeting`;
 
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState("");
+  const [sharing, setSharing] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const localRef = useRef<HTMLVideoElement>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const callRef = useRef<MeshCall | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const screenRef = useRef<MediaStream | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const recChunks = useRef<Blob[]>([]);
+  const recStart = useRef(0);
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -91,9 +102,98 @@ export default function CallPage() {
   }, [params.conversationId]);
 
   const hangUp = () => {
+    recRef.current?.state === "recording" && recRef.current.stop();
     callRef.current?.leave();
+    screenRef.current?.getTracks().forEach((tr) => tr.stop());
     streamRef.current?.getTracks().forEach((tr) => tr.stop());
     router.push("/chat");
+  };
+
+  const loadRecordings = () => {
+    api<{ recordings: Recording[] }>(`/api/calls/rooms/${roomId}/recordings`)
+      .then((d) => setRecordings(d.recordings)).catch(() => {});
+  };
+
+  useEffect(loadRecordings, [roomId]);
+
+  const toggleShare = async () => {
+    setError("");
+    if (sharing) {
+      screenRef.current?.getTracks().forEach((tr) => tr.stop());
+      screenRef.current = null;
+      const cam = streamRef.current?.getVideoTracks()[0] ?? null;
+      callRef.current?.replaceVideoTrack(cam);
+      if (localRef.current && streamRef.current) localRef.current.srcObject = streamRef.current;
+      setSharing(false);
+      api(`/api/calls/rooms/${roomId}/screenshare`, { method: "POST", body: JSON.stringify({ on: false }) }).catch(() => {});
+      return;
+    }
+    try {
+      const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      screenRef.current = screen;
+      const track = screen.getVideoTracks()[0];
+      track.onended = () => { void toggleShare(); };
+      callRef.current?.replaceVideoTrack(track);
+      const mixed = new MediaStream([track, ...(streamRef.current?.getAudioTracks() ?? [])]);
+      if (localRef.current) localRef.current.srcObject = mixed;
+      setSharing(true);
+      api(`/api/calls/rooms/${roomId}/screenshare`, { method: "POST", body: JSON.stringify({ on: true }) }).catch(() => {});
+    } catch {
+      setError("screen share cancelled or unavailable");
+    }
+  };
+
+  const startRecording = () => {
+    setError("");
+    try {
+      const ctx = new AudioContext();
+      const dest = ctx.createMediaStreamDestination();
+      if (streamRef.current) ctx.createMediaStreamSource(streamRef.current).connect(dest);
+      remoteStreams.forEach((s) => { if (s.getAudioTracks().length) ctx.createMediaStreamSource(s).connect(dest); });
+      const videoTrack = streamRef.current?.getVideoTracks()[0];
+      const combined = new MediaStream([
+        ...(videoTrack ? [videoTrack] : []),
+        ...dest.stream.getAudioTracks(),
+      ]);
+      const rec = new MediaRecorder(combined, { mimeType: "video/webm" });
+      recChunks.current = [];
+      rec.ondataavailable = (e) => e.data.size && recChunks.current.push(e.data);
+      recStart.current = Date.now();
+      const tick = setInterval(() => setRecSecs(Math.round((Date.now() - recStart.current) / 1000)), 1000);
+      rec.onstop = async () => {
+        clearInterval(tick);
+        const secs = Math.max(1, Math.round((Date.now() - recStart.current) / 1000));
+        const blob = new Blob(recChunks.current, { type: "video/webm" });
+        try {
+          await api("/api/calls/rooms", { method: "POST",
+            body: JSON.stringify({ conversation_id: params.conversationId, mode: "meeting" }) });
+          const url = await uploadMedia(new File([blob], "recording.webm", { type: "video/webm" }));
+          await api(`/api/calls/rooms/${roomId}/recordings`, {
+            method: "POST", body: JSON.stringify({ media_url: url, duration_s: secs }),
+          });
+          loadRecordings();
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "failed to save recording");
+        }
+        void ctx.close();
+      };
+      recRef.current = rec;
+      rec.start(500);
+      setRecording(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "recording unavailable");
+    }
+  };
+
+  const stopRecording = () => {
+    recRef.current?.stop();
+    setRecording(false);
+    setRecSecs(0);
+  };
+
+  const deleteRecording = async (id: string) => {
+    await api(`/api/calls/recordings/${id}`, { method: "DELETE" }).catch(() => {});
+    loadRecordings();
   };
 
   return (
@@ -101,7 +201,17 @@ export default function CallPage() {
       <div className="row">
         <h3 style={{ margin: 0 }}>{wantVideo ? t("videoCall") : t("audioCall")}</h3>
         <span className="badge">{status}</span>
+        {recording && <span className="badge">⏺ {recSecs}s</span>}
         <div className="spacer" />
+        {wantVideo && (
+          <button className={sharing ? "small" : "secondary"} onClick={toggleShare}>
+            {sharing ? t("stopScreenShare") : `🖥 ${t("screenShare")}`}
+          </button>
+        )}
+        <button className={recording ? "danger" : "secondary"}
+          onClick={recording ? stopRecording : startRecording}>
+          {recording ? `■ ${t("stopRecording")}` : `⏺ ${t("startRecording")}`}
+        </button>
         <button className="danger" onClick={hangUp}>{t("endCall")}</button>
       </div>
       {error && <div className="error-text" style={{ marginTop: 8 }}>{error}</div>}
@@ -111,6 +221,23 @@ export default function CallPage() {
           <RemoteVideo key={peerId} stream={stream} />
         ))}
       </div>
+      {recordings.length > 0 && (
+        <div className="col" style={{ marginTop: 12, gap: 6 }}>
+          <h4 style={{ margin: 0 }}>{t("recordings")}</h4>
+          {recordings.map((r) => (
+            <div key={r.id} className="row" style={{ alignItems: "center", gap: 6 }}>
+              <a href={r.media_url} target="_blank" rel="noreferrer">
+                ⏺ {r.duration_s}s — @{r.username}
+              </a>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {new Date(r.created_at).toLocaleString()}
+              </span>
+              <div className="spacer" />
+              <button className="danger small" onClick={() => deleteRecording(r.id)}>{t("delete")}</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

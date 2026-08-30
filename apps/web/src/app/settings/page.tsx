@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { passkeySupported, registerPasskey } from "@/lib/passkey";
+import AccountSafety from "@/components/AccountSafety";
 
 type Passkey = {
   id: string;
@@ -181,6 +182,8 @@ export default function SettingsPage() {
           <p className="muted">This browser does not support passkeys.</p>
         )}
       </div>
+
+      <AccountSafety />
     </div>
   );
 }

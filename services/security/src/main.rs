@@ -2,6 +2,7 @@
 //! signing. Stateless, std-only, ultra-low-latency. The signing secret is
 //! supplied via SIGNING_SECRET and never leaves this process.
 
+mod custody;
 mod jwt;
 mod sha1;
 mod sha256;
@@ -61,7 +62,7 @@ fn respond(stream: &mut TcpStream, status: &str, body: &str) {
     let _ = stream.write_all(resp.as_bytes());
 }
 
-fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>) {
+fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>, custody_seed: Arc<Option<Vec<u8>>>) {
     let mut buf = vec![0u8; 64 * 1024];
     let n = match stream.read(&mut buf) {
         Ok(n) if n > 0 => n,
@@ -188,6 +189,62 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>) {
             }
         }
 
+
+        // Custody: per-user key fingerprint (never key material).
+        // {"uid":"...","purpose":"withdraw"}
+        ("POST", "/custody/derive") => {
+            let seed = match custody_seed.as_ref() {
+                Some(s) => s,
+                None => return respond(&mut stream, "503 Service Unavailable", "{\"error\":\"custody not configured\"}"),
+            };
+            let (Some(uid), Some(purpose)) = (
+                json_string_field(body, "uid"),
+                json_string_field(body, "purpose"),
+            ) else {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"uid and purpose required\"}");
+            };
+            if purpose.len() > 32 || !purpose.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"invalid purpose\"}");
+            }
+            let key = custody::custody_key(seed, &uid, &purpose);
+            respond(
+                &mut stream,
+                "200 OK",
+                &format!("{{\"key_id\":\"{}\"}}", custody::key_fingerprint(&key)),
+            );
+        }
+
+        // Custody co-signature over a canonical message. Keys never leave
+        // this process; the API must obtain this co-signature before
+        // broadcasting a withdrawal through our own nodes.
+        // {"uid":"...","purpose":"withdraw","message":"withdraw|id|uid|..."}
+        ("POST", "/custody/sign") => {
+            let seed = match custody_seed.as_ref() {
+                Some(s) => s,
+                None => return respond(&mut stream, "503 Service Unavailable", "{\"error\":\"custody not configured\"}"),
+            };
+            let (Some(uid), Some(purpose), Some(message)) = (
+                json_string_field(body, "uid"),
+                json_string_field(body, "purpose"),
+                json_string_field(body, "message"),
+            ) else {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"uid, purpose and message required\"}");
+            };
+            if message.len() > 4096 {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"message too large\"}");
+            }
+            let key = custody::custody_key(seed, &uid, &purpose);
+            respond(
+                &mut stream,
+                "200 OK",
+                &format!(
+                    "{{\"key_id\":\"{}\",\"signature\":\"{}\"}}",
+                    custody::key_fingerprint(&key),
+                    custody::custody_sign(&key, &message)
+                ),
+            );
+        }
+
         _ => respond(&mut stream, "404 Not Found", "{\"error\":\"not found\"}"),
     }
 }
@@ -233,6 +290,21 @@ fn main() {
             "dev-signing-secret".to_string()
         }
     };
+    let custody_seed: Option<Vec<u8>> = match std::env::var("CUSTODY_MASTER_SEED") {
+        Ok(v) if v.len() >= 32 => Some(v.into_bytes()),
+        Ok(_) => {
+            eprintln!("FATAL: CUSTODY_MASTER_SEED must be at least 32 bytes when set");
+            std::process::exit(1);
+        }
+        Err(_) => {
+            if app_env == "production" {
+                eprintln!("FATAL: CUSTODY_MASTER_SEED must be set in production");
+                std::process::exit(1);
+            }
+            None // custody endpoints return 503 until configured
+        }
+    };
+    let custody_seed = Arc::new(custody_seed);
     let port = std::env::var("SECURITY_PORT").unwrap_or_else(|_| "8090".to_string());
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("bind failed");
     println!("chatapp-security listening on :{}", port);
@@ -241,7 +313,8 @@ fn main() {
         match stream {
             Ok(s) => {
                 let secret = Arc::clone(&secret);
-                thread::spawn(move || handle(s, secret));
+                let custody_seed = Arc::clone(&custody_seed);
+                thread::spawn(move || handle(s, secret, custody_seed));
             }
             Err(e) => eprintln!("accept error: {}", e),
         }

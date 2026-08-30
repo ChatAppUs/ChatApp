@@ -38,6 +38,9 @@ type postOut struct {
 	MyReaction   string      `json:"my_reaction"`
 	Feeling      string      `json:"feeling"`
 	Location     string      `json:"location"`
+	StoryBG      string      `json:"story_background,omitempty"`
+	StoryStickers string     `json:"story_stickers,omitempty"`
+	StoryMusic   string      `json:"story_music,omitempty"`
 	Tagged       []string    `json:"tagged_usernames"`
 	Media        []mediaIn   `json:"media"`
 	CreatedAt    time.Time   `json:"created_at"`
@@ -69,17 +72,21 @@ func pageParams(r *http.Request) (limit, offset int) {
 
 func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type         string    `json:"type"` // post | reel | story
-		Body         string    `json:"body"`
-		Visibility   string    `json:"visibility"`
-		Media        []mediaIn `json:"media"`
-		PollOptions  []string  `json:"poll_options"` // 2-4 options turns the post into a poll
-		RepostOf     string    `json:"repost_of"`
-		ThreadParent string    `json:"thread_parent_id"`
-		Feeling      string    `json:"feeling"`  // feeling/activity metadata
-		Location     string    `json:"location"` // check-in
-		TaggedUsers  []string  `json:"tagged_user_ids"`
-		PublishAt    string    `json:"publish_at"` // RFC3339; future = scheduled post
+		Type          string    `json:"type"` // post | reel | story
+		Body          string    `json:"body"`
+		Visibility    string    `json:"visibility"`
+		Media         []mediaIn `json:"media"`
+		PollOptions   []string  `json:"poll_options"` // 2-4 options turns the post into a poll
+		RepostOf      string    `json:"repost_of"`
+		ThreadParent  string    `json:"thread_parent_id"`
+		Feeling       string    `json:"feeling"`  // feeling/activity metadata
+		Location      string    `json:"location"` // check-in
+		TaggedUsers   []string  `json:"tagged_user_ids"`
+		PublishAt     string    `json:"publish_at"`       // RFC3339; future = scheduled post
+		RemixOf       string    `json:"remix_of"`         // reel remix/duet source post id
+		StoryBG       string    `json:"story_background"` // gradient key for text stories
+		StoryStickers string    `json:"story_stickers"`   // JSON array of sticker overlays
+		StoryMusic    string    `json:"story_music"`      // JSON {track, offset_s}
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -114,9 +121,41 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "feeling up to 50 chars, location up to 100")
 		return
 	}
+	if req.RemixOf != "" && req.Type != "reel" {
+		writeErr(w, http.StatusBadRequest, "remix_of only applies to reels")
+		return
+	}
+	if req.Type != "story" && (req.StoryBG != "" || req.StoryStickers != "" || req.StoryMusic != "") {
+		writeErr(w, http.StatusBadRequest, "story composer fields only apply to stories")
+		return
+	}
+	if len(req.StoryBG) > 40 || len(req.StoryStickers) > 4000 || len(req.StoryMusic) > 1000 {
+		writeErr(w, http.StatusBadRequest, "story composer fields too large")
+		return
+	}
+	if req.Type == "story" && req.StoryBG != "" {
+		valid := map[string]bool{"": true, "sunset": true, "ocean": true, "forest": true,
+			"candy": true, "midnight": true, "mono": true}
+		if !valid[req.StoryBG] {
+			writeErr(w, http.StatusBadRequest, "unknown story background")
+			return
+		}
+	}
 	if len(req.TaggedUsers) > 20 {
 		writeErr(w, http.StatusBadRequest, "max 20 tagged people")
 		return
+	}
+	if req.RemixOf != "" {
+		var srcType string
+		if err := a.db.QueryRow(r.Context(),
+			`SELECT type FROM posts WHERE id=$1 AND deleted_at IS NULL`, req.RemixOf).Scan(&srcType); err != nil {
+			writeErr(w, http.StatusNotFound, "remix source not found")
+			return
+		}
+		if srcType != "reel" {
+			writeErr(w, http.StatusBadRequest, "only reels can be remixed")
+			return
+		}
 	}
 	var publishAt *time.Time
 	if strings.TrimSpace(req.PublishAt) != "" {
@@ -138,6 +177,16 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "post violates content policy")
 		return
 	}
+	var mediaURLs []string
+	for _, m := range req.Media {
+		if strings.TrimSpace(m.URL) != "" {
+			mediaURLs = append(mediaURLs, m.URL)
+		}
+	}
+	if a.mlModerateMedia(r.Context(), mediaURLs) == "block" {
+		writeErr(w, http.StatusUnprocessableEntity, "media violates content policy")
+		return
+	}
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
@@ -150,12 +199,29 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		t := time.Now().Add(24 * time.Hour)
 		expires = &t
 	}
+	var stickers, music []byte
+	if strings.TrimSpace(req.StoryStickers) != "" {
+		stickers = []byte(req.StoryStickers)
+		if !json.Valid(stickers) {
+			writeErr(w, http.StatusBadRequest, "story_stickers must be valid JSON")
+			return
+		}
+	}
+	if strings.TrimSpace(req.StoryMusic) != "" {
+		music = []byte(req.StoryMusic)
+		if !json.Valid(music) {
+			writeErr(w, http.StatusBadRequest, "story_music must be valid JSON")
+			return
+		}
+	}
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id,
-		                    feeling, location, publish_at)
-                 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid,$8,$9,$10) RETURNING id`,
+		                    feeling, location, publish_at, remix_of, story_background, story_stickers, story_music)
+                 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid,$8,$9,$10,
+                         NULLIF($11,'')::uuid,$12,$13,$14) RETURNING id`,
 		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent,
-		strings.TrimSpace(req.Feeling), strings.TrimSpace(req.Location), publishAt).Scan(&postID)
+		strings.TrimSpace(req.Feeling), strings.TrimSpace(req.Location), publishAt,
+		req.RemixOf, req.StoryBG, stickers, music).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
@@ -218,6 +284,13 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 			a.notifyUser(r.Context(), taggedID, "tagged_in_post", map[string]string{"post_id": postID, "by": uid})
 		}
 	}
+	if req.RemixOf != "" {
+		var srcAuthor string
+		if err := a.db.QueryRow(r.Context(),
+			`SELECT author_id FROM posts WHERE id=$1`, req.RemixOf).Scan(&srcAuthor); err == nil && srcAuthor != uid {
+			a.notifyUser(r.Context(), srcAuthor, "reel_remix", map[string]string{"post_id": postID, "by": uid})
+		}
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": postID})
 }
 
@@ -227,7 +300,8 @@ SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url, p.type, p.bo
        COALESCE(p.repost_of::text,''), COALESCE(p.thread_parent_id::text,''), p.edited_at,
        EXISTS(SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $1),
        COALESCE((SELECT pr.reaction FROM post_reactions pr WHERE pr.post_id = p.id AND pr.user_id = $1), ''),
-       p.feeling, p.location, p.publish_at
+       p.feeling, p.location, p.publish_at,
+       COALESCE(p.story_background,''), COALESCE(p.story_stickers::text,''), COALESCE(p.story_music::text,'')
 FROM posts p JOIN users u ON u.id = p.author_id`
 
 func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postOut, error) {
@@ -243,7 +317,8 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 		if err := rows.Scan(&p.ID, &p.AuthorID, &p.AuthorName, &p.AuthorUser, &p.AuthorAvatar,
 			&p.Type, &p.Body, &p.Visibility, &p.LikeCount, &p.CommentCount, &p.ShareCount,
 			&p.ViewCount, &p.CreatedAt, &p.RepostOf, &p.ThreadParent, &p.EditedAt, &p.LikedByMe,
-			&p.MyReaction, &p.Feeling, &p.Location, &p.PublishAt); err != nil {
+			&p.MyReaction, &p.Feeling, &p.Location, &p.PublishAt,
+					&p.StoryBG, &p.StoryStickers, &p.StoryMusic); err != nil {
 			return nil, err
 		}
 		p.Media = []mediaIn{}
