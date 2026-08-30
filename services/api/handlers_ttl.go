@@ -107,18 +107,7 @@ func (a *App) sweepExpired() {
 
 // fanoutConv sends a payload to every member of a conversation.
 func (a *App) fanoutConv(ctx context.Context, convID string, payload []byte) {
-	rows, err := a.db.Query(ctx,
-		`SELECT user_id FROM conversation_members WHERE conversation_id = $1`, convID)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err == nil {
-			a.hub.sendTo(uid, payload)
-		}
-	}
+	a.fanoutToMembers(ctx, convID, payload, "")
 }
 
 // GET /api/conversations/{id}/members — member list with roles.

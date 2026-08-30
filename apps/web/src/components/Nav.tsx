@@ -27,13 +27,19 @@ export default function Nav() {
       {authed && (
         <>
           <Link className="navlink" href="/">{t("feed")}</Link>
+          <Link className="navlink" href="/fyp">{t("forYou")}</Link>
           <Link className="navlink" href="/reels">{t("reels")}</Link>
           <Link className="navlink" href="/chat">{t("chat")}</Link>
           <Link className="navlink" href="/notifications">🔔</Link>
           <Link className="navlink" href="/channels">📢</Link>
+          <Link className="navlink" href="/groups">{t("groups")}</Link>
+          <Link className="navlink" href="/pages">{t("pages")}</Link>
           <Link className="navlink" href="/trending">#</Link>
           <Link className="navlink" href="/bookmarks">★</Link>
           <Link className="navlink" href="/creator">{t("creator")}</Link>
+          <Link className="navlink" href="/monetize">{t("monetize")}</Link>
+          <Link className="navlink" href="/bots">{t("bots")}</Link>
+          <Link className="navlink" href="/privacy">{t("privacy")}</Link>
           <Link className="navlink" href="/wallet">{t("wallet")}</Link>
           <Link className="navlink" href="/ads">{t("ads")}</Link>
           <Link className="navlink" href="/scan">▦</Link>
@@ -41,6 +47,18 @@ export default function Nav() {
         </>
       )}
       <div className="spacer" />
+      <button
+        className="secondary"
+        aria-label="toggle theme"
+        onClick={() => {
+          const next =
+            document.documentElement.dataset.theme === "light" ? "dark" : "light";
+          document.documentElement.dataset.theme = next;
+          try { localStorage.setItem("chatapp.theme", next); } catch { /* ignore */ }
+        }}
+      >
+        ◐
+      </button>
       <select
         aria-label="language"
         value={locale}

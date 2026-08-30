@@ -15,9 +15,14 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+const themeInit = `(function(){try{var t=localStorage.getItem("chatapp.theme");if(t!=="light")t="dark";document.documentElement.dataset.theme=t;}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       <body>
         <I18nProvider>
           <Nav />

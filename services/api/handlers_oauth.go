@@ -317,7 +317,7 @@ func (a *App) finishOAuthLogin(w http.ResponseWriter, r *http.Request, userID, t
 			writeErr(w, http.StatusUnauthorized, "totp_required")
 			return
 		}
-		if totpSecret == nil || !verifyTOTP(*totpSecret, totpCode, time.Now()) {
+		if totpSecret == nil || !a.checkTOTP(*totpSecret, totpCode) {
 			writeErr(w, http.StatusUnauthorized, "invalid totp code")
 			return
 		}

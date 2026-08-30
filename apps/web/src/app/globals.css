@@ -11,6 +11,19 @@
   --radius: 12px;
 }
 
+html[data-theme="light"] {
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --panel-2: #eceff6;
+  --text: #1a2233;
+  --muted: #5b667a;
+  --accent: #3560d8;
+  --accent-2: #0f9d6e;
+  --danger: #d3354a;
+  --border: #d5dbe8;
+}
+html[data-theme="light"] .reel { background: #111; }
+
 * { box-sizing: border-box; }
 
 html, body {

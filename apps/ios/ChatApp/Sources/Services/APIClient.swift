@@ -39,8 +39,16 @@ struct APIClient {
         try await request(path, method: "POST", body: body)
     }
 
+    func put(_ path: String, body: [String: Any] = [:]) async throws -> Data {
+        try await request(path, method: "PUT", body: body)
+    }
+
     func delete(_ path: String) async throws -> Data {
         try await request(path, method: "DELETE")
+    }
+
+    func delete(_ path: String, body: [String: Any]) async throws -> Data {
+        try await request(path, method: "DELETE", body: body)
     }
 
     private func request(_ path: String, method: String, body: [String: Any]? = nil) async throws -> Data {

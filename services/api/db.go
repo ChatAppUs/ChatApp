@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -16,6 +17,8 @@ type App struct {
 	hub  *Hub
 	smtp *Mailer
 	otp  *OTPService
+
+	vapidKey *ecdsa.PrivateKey
 }
 
 func connectDB(ctx context.Context, url string) (*pgxpool.Pool, error) {

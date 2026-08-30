@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +72,13 @@ func (h *Hub) sendTo(userID string, payload []byte) {
 	}
 }
 
+// isOnline reports whether the user has at least one live WS connection.
+func (h *Hub) isOnline(userID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients[userID]) > 0
+}
+
 // upgrader.CheckOrigin is installed in main() from cfg.AllowedOrigins:
 // browser cross-site connections are restricted to our own app origins;
 // native clients (no Origin header) are always allowed. Token auth in the
@@ -111,6 +120,8 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 			Body           string          `json:"body"`
 			MediaURL       string          `json:"media_url"`
 			IsEncrypted    bool            `json:"is_encrypted"`
+			Silent         bool            `json:"silent"`
+			TopicID        string          `json:"topic_id"`
 			ReplyTo        string          `json:"reply_to"`
 			Signal         json.RawMessage `json:"signal"` // WebRTC SDP/ICE payload
 		}
@@ -119,7 +130,7 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		switch evt.Type {
 		case "message":
-			a.persistAndFanout(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL, evt.IsEncrypted, evt.ReplyTo)
+			a.persistMessage(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL, evt.IsEncrypted, evt.Silent, evt.TopicID, evt.ReplyTo)
 		case "signal":
 			// WebRTC call signaling: forward SDP offers/answers and ICE
 			// candidates to conversation members. Peer connections are
@@ -165,7 +176,17 @@ func (a *App) fanoutSignal(ctx context.Context, senderID, convID string, signal 
 	}
 }
 
+// persistAndFanout keeps the original 7-arg call shape used by older
+// callers (bots, story replies) and delegates to persistMessage.
 func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, mediaURL string, isEncrypted bool, replyTo string) {
+	a.persistMessage(ctx, senderID, convID, body, mediaURL, isEncrypted, false, "", replyTo)
+}
+
+// persistMessage is the single message-write path: membership + channel +
+// slow-mode checks, insert with TTL/topic/silent, realtime fanout, bot
+// update enqueue, message-request creation for first-time DMs, and push
+// for offline members.
+func (a *App) persistMessage(ctx context.Context, senderID, convID, body, mediaURL string, isEncrypted, silent bool, topicID, replyTo string) {
 	if strings.TrimSpace(body) == "" && mediaURL == "" {
 		return
 	}
@@ -175,23 +196,42 @@ func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, medi
 	// Broadcast channels: only owner/admin may post.
 	var isChannel bool
 	var role string
-	var ttl int
+	var ttl, slowMode int
 	_ = a.db.QueryRow(ctx,
-		`SELECT c.is_channel, c.message_ttl_seconds, m.role FROM conversations c
+		`SELECT c.is_channel, c.message_ttl_seconds, c.slow_mode_seconds, m.role FROM conversations c
 		 JOIN conversation_members m ON m.conversation_id = c.id AND m.user_id = $2
-		 WHERE c.id = $1`, convID, senderID).Scan(&isChannel, &ttl, &role)
+		 WHERE c.id = $1`, convID, senderID).Scan(&isChannel, &ttl, &slowMode, &role)
 	if isChannel && role != "owner" && role != "admin" {
 		return
+	}
+	// Slow mode: owner/admin are exempt; others wait slow_mode_seconds
+	// between messages (Telegram parity).
+	if slowMode > 0 && role != "owner" && role != "admin" {
+		// Advance the mark only when the cooldown elapsed; if the returned
+		// timestamp is too recent the mark was not advanced: reject.
+		var lastSent time.Time
+		err := a.db.QueryRow(ctx,
+			`INSERT INTO message_rate_marks (conversation_id, user_id, last_sent_at)
+			 VALUES ($1,$2,now())
+			 ON CONFLICT (conversation_id, user_id) DO UPDATE
+			 SET last_sent_at = CASE
+			   WHEN message_rate_marks.last_sent_at + make_interval(secs => $3) <= now() THEN now()
+			   ELSE message_rate_marks.last_sent_at END
+			 RETURNING last_sent_at`, convID, senderID, slowMode).Scan(&lastSent)
+		if err != nil || time.Since(lastSent) < time.Duration(slowMode)*time.Second-time.Second {
+			return
+		}
 	}
 	var msgID string
 	var createdAt time.Time
 	var expiresAt *time.Time
 	err := a.db.QueryRow(ctx,
-		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id, expires_at)
+		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id, expires_at, is_silent, topic_id)
 		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,
-		         CASE WHEN $7 > 0 THEN now() + make_interval(secs => $7) END)
+		         CASE WHEN $7 > 0 THEN now() + make_interval(secs => $7) END,
+		         $8, NULLIF($9,'')::uuid)
 		 RETURNING id, created_at, expires_at`,
-		convID, senderID, body, mediaURL, isEncrypted, replyTo, ttl).Scan(&msgID, &createdAt, &expiresAt)
+		convID, senderID, body, mediaURL, isEncrypted, replyTo, ttl, silent, topicID).Scan(&msgID, &createdAt, &expiresAt)
 	if err != nil {
 		return
 	}
@@ -203,9 +243,132 @@ func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, medi
 		"body":            body,
 		"media_url":       mediaURL,
 		"is_encrypted":    isEncrypted,
+		"is_silent":       silent,
+		"topic_id":        topicID,
 		"reply_to":        replyTo,
 		"created_at":      createdAt,
 		"expires_at":      expiresAt,
+	})
+	a.fanoutConv(ctx, convID, payload)
+	a.enqueueBotUpdates(ctx, convID, senderID, msgID, body, mediaURL)
+	a.afterMessageNotify(ctx, senderID, convID, body, silent)
+	if previewURL := firstURL(body); previewURL != "" {
+		go a.attachLinkPreview(context.Background(), msgID, convID, previewURL)
+	}
+}
+
+// afterMessageNotify creates the message-request row for first-time DMs and
+// queues push notifications for members without a live connection.
+func (a *App) afterMessageNotify(ctx context.Context, senderID, convID, body string, silent bool) {
+	rows, err := a.db.Query(ctx,
+		`SELECT user_id FROM conversation_members WHERE conversation_id=$1 AND user_id<>$2`, convID, senderID)
+	if err != nil {
+		return
+	}
+	var recipients []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err == nil {
+			recipients = append(recipients, uid)
+		}
+	}
+	rows.Close()
+	var isGroup bool
+	_ = a.db.QueryRow(ctx, `SELECT is_group OR is_channel FROM conversations WHERE id=$1`, convID).Scan(&isGroup)
+	var senderName string
+	_ = a.db.QueryRow(ctx, `SELECT display_name FROM users WHERE id=$1`, senderID).Scan(&senderName)
+	for _, uid := range recipients {
+		if !isGroup {
+			// First-time DM from someone the recipient does not follow and who
+			// does not follow them becomes a message request.
+			var isReq bool
+			_ = a.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM message_requests WHERE conversation_id=$1 AND recipient_id=$2)`, convID, uid).Scan(&isReq)
+			if !isReq {
+				var related bool
+				_ = a.db.QueryRow(ctx,
+					`SELECT EXISTS(SELECT 1 FROM follows WHERE (follower_id=$1 AND followee_id=$2) OR (follower_id=$2 AND followee_id=$1))`,
+					uid, senderID).Scan(&related)
+				if !related {
+					_, _ = a.db.Exec(ctx,
+						`INSERT INTO message_requests (conversation_id, recipient_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+						convID, uid)
+				}
+			}
+		}
+		if silent {
+			continue // silent messages never push
+		}
+		if a.hub.isOnline(uid) {
+			continue // already delivered over the live socket
+		}
+		preview := body
+		if len(preview) > 120 {
+			preview = preview[:120]
+		}
+		title := senderName
+		if title == "" {
+			title = "New message"
+		}
+		a.queuePush(ctx, uid, "message", title, preview,
+			map[string]any{"conversation_id": convID, "sender_id": senderID})
+	}
+}
+
+// firstURL extracts the first http(s) URL in a message body.
+func firstURL(body string) string {
+	for _, field := range strings.Fields(body) {
+		if strings.HasPrefix(field, "https://") || strings.HasPrefix(field, "http://") {
+			return strings.TrimRight(field, ".,;)!]>}")
+		}
+	}
+	return ""
+}
+
+// attachLinkPreview resolves the first link in a message asynchronously and
+// fans the preview out to the conversation when found.
+func (a *App) attachLinkPreview(ctx context.Context, msgID, convID, rawURL string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", "ChatApp-LinkPreview/1.0")
+	req.Header.Set("Accept", "text/html")
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		return
+	}
+	page, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if err != nil {
+		return
+	}
+	html := string(page)
+	pick := func(re *regexp.Regexp) string {
+		if m := re.FindStringSubmatch(html); len(m) == 2 {
+			return strings.TrimSpace(m[1])
+		}
+		return ""
+	}
+	title := pick(ogTitleRe)
+	if title == "" {
+		title = pick(titleTagRe)
+	}
+	if title == "" {
+		return
+	}
+	preview := map[string]string{
+		"url": rawURL, "title": title, "description": pick(ogDescRe), "image": pick(ogImageRe),
+	}
+	pj, _ := json.Marshal(preview)
+	if _, err := a.db.Exec(ctx, `UPDATE messages SET link_preview=$2 WHERE id=$1`, msgID, pj); err != nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"type": "link_preview", "conversation_id": convID, "message_id": msgID, "preview": preview,
 	})
 	a.fanoutConv(ctx, convID, payload)
 }
@@ -344,7 +507,8 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		 FROM messages m JOIN users u ON u.id = m.sender_id
 		 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
 		   AND (m.expires_at IS NULL OR m.expires_at > now())
-		 ORDER BY m.created_at DESC LIMIT $2 OFFSET $3`, convID, limit, offset)
+		   AND NOT EXISTS(SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $4)
+		 ORDER BY m.created_at DESC LIMIT $2 OFFSET $3`, convID, limit, offset, userIDFrom(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load messages")
 		return

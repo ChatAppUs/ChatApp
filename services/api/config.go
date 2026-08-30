@@ -34,11 +34,19 @@ type Config struct {
 	ClusterAPIURL   string
 	ClusterMediaURL string
 	ClusterSecret   string
+	RelayURL        string // C++ realtime relay control plane
 	SFUInternalURL  string
 	SFUPublicURL    string
 	SFUHost         string
 	SFUSecret       string
 	TURNSecret      string
+	VAPIDSubject    string // mailto: or https: contact for push services
+	VAPIDPrivateKey string // base64url P-256 scalar
+	FCMServerKey    string
+	APNsKeyID       string
+	APNsTeamID      string
+	APNsTopic       string
+	APNsPrivateKey  string // base64url P-256 scalar
 }
 
 func getenv(key, def string) string {
@@ -81,11 +89,19 @@ func loadConfig() Config {
 		ClusterAPIURL:   os.Getenv("CLUSTER_API_URL"),
 		ClusterMediaURL: os.Getenv("CLUSTER_MEDIA_URL"),
 		ClusterSecret:   os.Getenv("CLUSTER_SECRET"),
+		RelayURL:        os.Getenv("REALTIME_RELAY_URL"),
 		SFUInternalURL:  getenv("SFU_INTERNAL_URL", "http://localhost:8095"),
 		SFUPublicURL:    getenv("SFU_PUBLIC_URL", "ws://localhost:8095/ws"),
 		SFUHost:         getenv("SFU_HOST", "localhost"),
 		SFUSecret:       getenv("SFU_SECRET", "dev-sfu-secret"),
 		TURNSecret:      getenv("TURN_SECRET", "dev-turn-secret"),
+		VAPIDSubject:    getenv("VAPID_SUBJECT", "mailto:ops@chatapp.local"),
+		VAPIDPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
+		FCMServerKey:    os.Getenv("FCM_SERVER_KEY"),
+		APNsKeyID:       os.Getenv("APNS_KEY_ID"),
+		APNsTeamID:      os.Getenv("APNS_TEAM_ID"),
+		APNsTopic:       os.Getenv("APNS_TOPIC"),
+		APNsPrivateKey:  os.Getenv("APNS_PRIVATE_KEY"),
 		CreatorRPM:      atof(getenv("CREATOR_RPM", "0.50")),
 		GoogleClientID:  os.Getenv("GOOGLE_CLIENT_ID"),
 		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "localhost"),

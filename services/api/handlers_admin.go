@@ -90,7 +90,7 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusUnauthorized, "totp_required")
 			return
 		}
-		if !verifyTOTP(*totpSecret, req.TOTPCode, time.Now()) {
+		if !a.checkTOTP(*totpSecret, req.TOTPCode) {
 			writeErr(w, http.StatusUnauthorized, "invalid 2FA code")
 			return
 		}

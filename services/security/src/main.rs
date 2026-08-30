@@ -2,7 +2,11 @@
 //! signing. Stateless, std-only, ultra-low-latency. The signing secret is
 //! supplied via SIGNING_SECRET and never leaves this process.
 
+mod jwt;
+mod sha1;
 mod sha256;
+#[cfg(test)]
+mod tests;
 
 use sha256::{ct_eq, hmac_sha256, sha256, to_hex};
 use std::io::{Read, Write};
@@ -138,8 +142,78 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>) {
             );
         }
 
+        // RFC 6238 TOTP verification (30s steps, ±1 step drift tolerance).
+        // {"secret":"BASE32...","code":"123456"}
+        ("POST", "/totp/verify") => {
+            let (Some(tsecret), Some(code)) = (
+                json_string_field(body, "secret"),
+                json_string_field(body, "code"),
+            ) else {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"secret and code required\"}");
+            };
+            let valid = sha1::totp_verify(&tsecret, &code, now_secs(), 30);
+            respond(&mut stream, "200 OK", &format!("{{\"valid\":{}}}", valid));
+        }
+
+        // Generate a 160-bit base32 TOTP secret (randomness from /dev/urandom).
+        ("POST", "/totp/generate") => {
+            match random_base32(20) {
+                Some(s) => respond(&mut stream, "200 OK", &format!("{{\"secret\":\"{}\"}}", s)),
+                None => respond(&mut stream, "500 Internal Server Error", "{\"error\":\"entropy unavailable\"}"),
+            }
+        }
+
+        // HS256 user-token verification for edge services that do not share
+        // JWT_SECRET themselves. {"token":"...","secret":"<JWT_SECRET>"}
+        // The caller supplies the secret so this service never holds it at
+        // rest; SIGNING_SECRET-only deployments stay unaffected.
+        ("POST", "/jwt/verify") => {
+            let (Some(token), Some(jwt_secret)) = (
+                json_string_field(body, "token"),
+                json_string_field(body, "secret"),
+            ) else {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"token and secret required\"}");
+            };
+            match jwt::verify_hs256(&token, jwt_secret.as_bytes(), now_secs()) {
+                Some(claims) => respond(
+                    &mut stream,
+                    "200 OK",
+                    &format!(
+                        "{{\"valid\":true,\"sub\":\"{}\",\"exp\":{}}}",
+                        json_escape(&claims.sub),
+                        claims.exp
+                    ),
+                ),
+                None => respond(&mut stream, "200 OK", "{\"valid\":false}"),
+            }
+        }
+
         _ => respond(&mut stream, "404 Not Found", "{\"error\":\"not found\"}"),
     }
+}
+
+fn random_base32(n: usize) -> Option<String> {
+    let mut buf = vec![0u8; n];
+    std::fs::File::open("/dev/urandom")
+        .ok()?
+        .read_exact(&mut buf)
+        .ok()?;
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let mut out = String::with_capacity(n * 8 / 5 + 1);
+    let mut acc: u32 = 0;
+    let mut bits = 0u32;
+    for b in buf {
+        acc = (acc << 8) | b as u32;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(ALPHABET[((acc >> bits) & 31) as usize] as char);
+        }
+    }
+    if bits > 0 {
+        out.push(ALPHABET[((acc << (5 - bits)) & 31) as usize] as char);
+    }
+    Some(out)
 }
 
 fn main() {

@@ -12,17 +12,22 @@ import (
 // fanoutToMembers pushes a JSON payload to all members of a conversation.
 func (a *App) fanoutToMembers(ctx context.Context, convID string, payload []byte, exceptUser string) {
 	rows, err := a.db.Query(ctx,
-		`SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND user_id <> $2`, convID, exceptUser)
+		`SELECT user_id FROM conversation_members WHERE conversation_id = $1`, convID)
 	if err != nil {
 		return
 	}
 	defer rows.Close()
+	var members []string
 	for rows.Next() {
 		var uid string
-		if err := rows.Scan(&uid); err == nil {
-			a.hub.sendTo(uid, payload)
+		if err := rows.Scan(&uid); err == nil && uid != exceptUser {
+			members = append(members, uid)
 		}
 	}
+	for _, uid := range members {
+		a.hub.sendTo(uid, payload)
+	}
+	publishRelay(members, payload)
 }
 
 func (a *App) messageConv(ctx context.Context, msgID string) (convID, senderID string, ok bool) {
@@ -205,7 +210,13 @@ func (a *App) handlePresence(w http.ResponseWriter, r *http.Request) {
 	online := len(a.hub.clients[target]) > 0
 	a.hub.mu.RUnlock()
 	var lastSeen *time.Time
-	_ = a.db.QueryRow(r.Context(), `SELECT last_seen_at FROM users WHERE id=$1`, target).Scan(&lastSeen)
+	var showActive bool
+	_ = a.db.QueryRow(r.Context(),
+		`SELECT last_seen_at, show_active_status FROM users WHERE id=$1`, target).Scan(&lastSeen, &showActive)
+	if !showActive {
+		online = false
+		lastSeen = nil
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"online": online, "last_seen": lastSeen})
 }
 

@@ -376,7 +376,7 @@ func (a *App) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		var secret *string
 		_ = a.db.QueryRow(r.Context(),
 			`SELECT totp_secret FROM users WHERE id=$1`, userID).Scan(&secret)
-		if secret == nil || !verifyTOTP(*secret, req.TOTPCode, time.Now()) {
+		if secret == nil || !a.checkTOTP(*secret, req.TOTPCode) {
 			writeErr(w, http.StatusUnauthorized, "invalid totp code")
 			return
 		}

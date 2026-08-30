@@ -133,3 +133,99 @@ def moderate(req: ModerateRequest) -> dict[str, Any]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ---------- Watch-signal ranking (For You page) ----------
+
+
+class WatchFeatures(BaseModel):
+    post_id: str
+    author_id: str
+    created_at: float
+    like_count: int = 0
+    comment_count: int = 0
+    share_count: int = 0
+    view_count: int = 0
+    unique_watchers: int = 0
+    avg_completion: float = 0.0  # 0..1 mean fraction of the video watched
+    rewatch_rate: float = 0.0  # mean replays per watcher
+    author_followed: bool = False
+
+
+class WatchRankRequest(BaseModel):
+    user_id: str
+    posts: list[WatchFeatures] = Field(default_factory=list)
+
+
+def score_watch_post(p: WatchFeatures, now: float) -> float:
+    age_hours = max((now - p.created_at) / 3600.0, 0.0)
+    recency = math.exp(-age_hours / 36.0)
+    # Completion is the dominant FYP signal (TikTok-style); rewatching is the
+    # strongest positive watch interaction.
+    completion = 5.0 * max(min(p.avg_completion, 1.0), 0.0)
+    rewatch = 3.0 * math.log1p(max(p.rewatch_rate, 0.0))
+    engagement = p.like_count + 2.0 * p.comment_count + 3.0 * p.share_count
+    engagement_score = math.log1p(engagement)
+    reach = math.log1p(max(p.unique_watchers, 0))
+    affinity = 1.0 if p.author_followed else 0.0
+    return 2.0 * recency + completion + rewatch + engagement_score + reach + affinity
+
+
+@app.post("/rank/watch")
+def rank_watch(req: WatchRankRequest) -> dict[str, Any]:
+    now = time.time()
+    scored = [(p.post_id, score_watch_post(p, now)) for p in req.posts]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return {"ranking": [{"post_id": pid, "score": round(s, 6)} for pid, s in scored]}
+
+
+# ---------- Captions (Whisper ASR) ----------
+
+_asr = None
+_asr_error: str | None = None
+if os.environ.get("WHISPER_MODEL"):
+    try:
+        from transformers import pipeline  # type: ignore
+
+        _asr = pipeline("automatic-speech-recognition", model=os.environ["WHISPER_MODEL"])
+    except Exception as exc:  # model optional; endpoint reports unavailable
+        _asr_error = str(exc)
+
+
+class CaptionRequest(BaseModel):
+    media_url: str
+    language: str | None = None
+
+
+@app.post("/captions")
+def captions(req: CaptionRequest) -> dict[str, Any]:
+    """Transcribe an audio/video URL with Whisper.
+
+    Real ASR: requires WHISPER_MODEL (e.g. openai/whisper-small) and the
+    transformers+torch stack. Callers fall back to uncaptioned media when
+    the model is not loaded; the response always states why.
+    """
+    if _asr is None:
+        reason = _asr_error or "WHISPER_MODEL not configured"
+        return {"available": False, "reason": reason, "text": "", "segments": []}
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(req.media_url, timeout=30) as resp:
+            audio = resp.read(256 * 1024 * 1024)  # 256MB cap
+    except Exception as exc:
+        return {"available": False, "reason": f"fetch failed: {exc}", "text": "", "segments": []}
+    try:
+        result = _asr(audio, return_timestamps=True)  # type: ignore[call-arg]
+    except Exception as exc:
+        return {"available": False, "reason": f"asr failed: {exc}", "text": "", "segments": []}
+    chunks = result.get("chunks") or []
+    segments = [
+        {
+            "start": round((c.get("timestamp") or [0.0, 0.0])[0] or 0.0, 3),
+            "end": round((c.get("timestamp") or [0.0, 0.0])[1] or 0.0, 3),
+            "text": c.get("text", ""),
+        }
+        for c in chunks
+    ]
+    return {"available": True, "text": result.get("text", ""), "segments": segments}

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -82,7 +85,7 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	if req.Visibility == "" {
 		req.Visibility = "public"
 	}
-	if req.Visibility != "public" && req.Visibility != "followers" && req.Visibility != "private" {
+	if req.Visibility != "public" && req.Visibility != "followers" && req.Visibility != "private" && req.Visibility != "close_friends" {
 		writeErr(w, http.StatusBadRequest, "invalid visibility")
 		return
 	}
@@ -99,6 +102,12 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userIDFrom(r)
+	// ML moderation gate: the ML service owns the policy decision. Transport
+	// failures are fail-open so moderation downtime never blocks posting.
+	if decision, _ := a.mlModerate(req.Body); decision == "block" {
+		writeErr(w, http.StatusUnprocessableEntity, "post violates content policy")
+		return
+	}
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
@@ -249,7 +258,12 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
                   AND (p.visibility = 'public'
                        OR p.author_id = $1
                        OR (p.visibility = 'followers' AND EXISTS(
-                             SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)))
+                             SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id))
+                       OR (p.visibility = 'close_friends' AND EXISTS(
+                             SELECT 1 FROM close_friends cf WHERE cf.user_id = p.author_id AND cf.friend_id = $1)))
+                  AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id = $1 AND m.muted_id = p.author_id)
+                  AND NOT EXISTS(SELECT 1 FROM restricted_list rl WHERE rl.user_id = p.author_id AND rl.restricted_id = $1)
+                  AND NOT EXISTS(SELECT 1 FROM word_filters wf WHERE wf.user_id = $1 AND p.body ILIKE '%'||wf.phrase||'%')
                 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, uid, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load feed")
@@ -263,6 +277,9 @@ func (a *App) handleReels(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	posts, err := a.scanPosts(r.Context(), postSelect+`
                 WHERE p.deleted_at IS NULL AND p.type = 'reel' AND p.visibility = 'public'
+                  AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id = $1 AND m.muted_id = p.author_id)
+                  AND NOT EXISTS(SELECT 1 FROM restricted_list rl WHERE rl.user_id = p.author_id AND rl.restricted_id = $1)
+                  AND NOT EXISTS(SELECT 1 FROM word_filters wf WHERE wf.user_id = $1 AND p.body ILIKE '%'||wf.phrase||'%')
                 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`, uid, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load reels")
@@ -278,7 +295,10 @@ func (a *App) handleStories(w http.ResponseWriter, r *http.Request) {
                   AND (p.expires_at IS NULL OR p.expires_at > now())
                   AND (p.author_id = $1 OR EXISTS(
                         SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)
+                       OR (p.visibility = 'close_friends' AND EXISTS(
+                             SELECT 1 FROM close_friends cf WHERE cf.user_id = p.author_id AND cf.friend_id = $1))
                        OR p.visibility = 'public')
+                  AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id = $1 AND m.muted_id = p.author_id)
                 ORDER BY p.created_at DESC LIMIT 100`, uid)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load stories")
@@ -491,15 +511,32 @@ func (a *App) handleFollow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "cannot follow this user")
 		return
 	}
+	var locked bool
+	if err := a.db.QueryRow(r.Context(),
+		`SELECT profile_locked FROM users WHERE id=$1 AND status='active'`, target).Scan(&locked); err != nil {
+		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if locked {
+		_, err := a.db.Exec(r.Context(),
+			`INSERT INTO follow_requests (follower_id, followee_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, uid, target)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "request failed")
+			return
+		}
+		a.notify(r.Context(), target, "follow_request", "Follow request",
+			"Someone requested to follow you", map[string]any{"by": uid})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "requested"})
+		return
+	}
 	_, err := a.db.Exec(r.Context(),
 		`INSERT INTO follows (follower_id, followee_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, uid, target)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "user not found")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'follow',$2)`,
-		target, map[string]string{"by": uid})
+	a.notify(r.Context(), target, "follow", "New follower",
+		"Someone started following you", map[string]any{"by": uid})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "following"})
 }
 
@@ -602,4 +639,33 @@ func (a *App) handleNotifications(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"notifications": out})
+}
+
+// mlModerate runs the text through the ML moderation endpoint. Fail-open.
+func (a *App) mlModerate(text string) (string, float64) {
+	if a.cfg.MLServiceURL == "" || strings.TrimSpace(text) == "" {
+		return "allow", 0
+	}
+	body, _ := json.Marshal(map[string]any{"text": text})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		a.cfg.MLServiceURL+"/moderate", bytes.NewReader(body))
+	if err != nil {
+		return "allow", 0
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "allow", 0
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Decision string  `json:"decision"`
+		Score    float64 `json:"score"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
+		return "allow", 0
+	}
+	return out.Decision, out.Score
 }

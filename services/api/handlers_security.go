@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +61,49 @@ func verifyTOTP(secret, code string, at time.Time) bool {
 	return false
 }
 
+// checkTOTP verifies a TOTP code. When the Rust security service is
+// configured it owns this crypto (same delegation pattern as media signing);
+// the local RFC 6238 implementation remains as the fallback so the login
+// plane stays up if the security service is unreachable.
+func (a *App) checkTOTP(secret, code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	if a.cfg.SecuritySvcURL != "" {
+		if remote, ok := a.totpRemote(secret, code); ok {
+			return remote
+		}
+	}
+	return verifyTOTP(secret, code, time.Now())
+}
+
+func (a *App) totpRemote(secret, code string) (bool, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	body, _ := json.Marshal(map[string]string{"secret": secret, "code": code})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		a.cfg.SecuritySvcURL+"/totp/verify", bytes.NewReader(body))
+	if err != nil {
+		return false, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, false
+	}
+	var out struct {
+		Valid bool `json:"valid"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<10)).Decode(&out); err != nil {
+		return false, false
+	}
+	return out.Valid, true
+}
+
 func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	secret, err := generateTOTPSecret()
@@ -90,7 +137,7 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "run 2FA setup first")
 		return
 	}
-	if !verifyTOTP(secret, req.Code, time.Now()) {
+	if !a.checkTOTP(secret, req.Code) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
@@ -117,7 +164,7 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "2FA not configured")
 		return
 	}
-	if enabled && !verifyTOTP(secret, req.Code, time.Now()) {
+	if enabled && !a.checkTOTP(secret, req.Code) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
