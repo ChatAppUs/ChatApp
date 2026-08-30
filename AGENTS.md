@@ -151,3 +151,31 @@
 - Native parity (Android WalletScreen/FeedScreen/ChatScreen, iOS WalletView/
   FeedView/ChatListView) shipped for all of the above; sandbox has no JVM/Swift
   toolchain so native builds are not compiled here — verify in CI/Android Studio/Xcode.
+
+## Contracts discovered while testing (2026-08-30, session 5 — gap pack 2)
+- Migration 017_gap_pack2.sql: user_profiles (multiple), blocked_media_hashes,
+  media_verdicts, sanctions_entries + sanctions_hits, trusted_contacts (max 4)
+  + account_recoveries, users.legacy_contact_id/memorialized, posts.remix_of,
+  reel_watch aggregates, call_screen_shares + call_recordings, live_locations,
+  chat_polls + chat_poll_votes, posts.story_background/story_stickers/story_music
+  (jsonb), platform_tokens.rpc_url.
+- postSelect story_stickers/story_music are jsonb columns: SELECT with ::text
+  and unmarshal in postOut, else feed scan 500s.
+- tests/gaps2_test.py covers: multiple profiles (/api/me/profiles + /activate),
+  live location start/stop/view (haversine fallback without PostGIS), chat polls,
+  video notes (uploaded media_id), own media moderation (blocked sha256/dhash;
+  ML svc POST /moderate/media), chain watcher (own-node deposit credits from
+  platform_tokens.rpc_url), trusted-contacts recovery (TOTP-gated claim),
+  legacy contact + memorialize, reel remix + analytics, call screenshare +
+  recordings, story composer fields, sanctions screening (admin CSV import of
+  OFAC/EU/UN lists, trigram name match), P2P-order-book-derived convert rates.
+- i18n: new UI strings go in the extras block of apps/web/src/lib/i18n.tsx
+  (all 8 locales); t() falls back to en.
+- Community notes API (all clients): GET /api/posts/{id}/notes, POST note
+  {body}, POST /api/notes/{id}/vote {helpful}, DELETE /api/notes/{id}.
+  Wired in web CommunityNotes.tsx (PostCard + reels), Android FeedScreen,
+  iOS FeedView.
+- Call recording: MediaRecorder webm via POST /api/media/upload-token grant,
+  then POST /api/calls/rooms/{id}/recordings {media_id, duration_s}; list +
+  delete on the same path. Screenshare is client getDisplayMedia + signaling
+  via /api/calls/rooms/{id}/screenshare.
