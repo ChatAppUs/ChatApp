@@ -30,3 +30,16 @@
 ## Tooling quirks
 - Terminal tool rejects heredoc combined with a second command; chain with `&&` only.
 - `file_editor` create fails if parent dirs don't exist — `mkdir -p` first.
+## Contracts discovered while testing (2026-08-30)
+- Message requests: a DM conversation alone creates NO message_request. The request row is
+  created when the first MESSAGE is sent (WS) and the recipient neither follows nor is
+  followed by the sender. Recipient accepts via POST /api/me/message-requests/{convId}/accept.
+- FYP (/api/fyp) only returns posts that HAVE watch signals (completion/rewatch > 0 ranked
+  first, then not-interested/down-weighted). posts = [] with no signals is correct.
+- post_media ordering column is `position` (not sort_order).
+- Direct conversation validation counts the OTHER member (1) plus creator.
+- integration_test.py shells out to psql as postgres://chatapp:chatapp@... — the chatapp
+  role must exist (CREATE USER chatapp PASSWORD 'chatapp' SUPERUSER).
+- SFU occupies :8095 (WS signaling) + udp/3478 (STUN/TURN); only one instance can run.
+- Desktop app (apps/desktop) is a Tauri shell loading the web app — feature parity is
+  inherited from apps/web; no per-feature desktop code needed.
