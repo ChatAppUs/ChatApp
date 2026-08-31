@@ -43,7 +43,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | Public/private groups with posts | ✅ | Shipped: content groups with membership, roles, join requests, invite links, group feed |
-| Pages (business/creator) with followers | ✅ | Shipped: pages entity, followers, page posts (Events remain phase 2) |
+| Pages (business/creator) with followers | ✅ | Shipped: pages entity, followers, page posts |
 | Events (RSVP, reminders) | ✅ | events + RSVPs + reminder notifications (24h sweep) |
 | Marketplace | ✅ | marketplace_listings CRUD + category browse (019) |
 | Fundraisers | ✅ | fundraisers + wallet donations with raised tracking (019) |
@@ -69,7 +69,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Reel comments/likes/shares | ✅ | reels are posts.type='reel'; comments/likes/share-to-chat all apply |
 | Remix/duet | 🚧 | posts.remix_of attribution + reel analytics (017); visual editor is client work |
 | Sounds/music library | ✅ | self-hosted sounds catalog (019); licensing stays a legal process |
-| Creator monetization on reels | 🚧 | RPM-based earnings exist; gap: per-reel analytics |
+| Creator monetization on reels | ✅ | RPM-based earnings + per-reel analytics (reel_watch aggregates, /api/reels/analytics) |
 
 ## Messaging (Messenger parity)
 
@@ -86,7 +86,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Chat themes/colors | ✅ | conversations.theme + 🎨 gradient picker in chat header |
 | Polls in chat | ✅ | Post polls exist; gap: attach to chat message |
 | Location sharing (live) | ✅ | live_locations start/stop/view with haversine fallback (017) |
-| Payments in chat | 🚧 | Full finance plane shipped (deposits/withdrawals/P2P/convert — see below); gap: pay-in-chat UI hook |
+| Payments in chat | ✅ | POST /api/conversations/{id}/pay (hold+transfer+payment message); pay-in-chat UI on web/Android/iOS |
 
 ## Calls
 
@@ -94,16 +94,16 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | 1:1 audio/video | ✅ | WebRTC mesh |
 | Group calls | ✅ | Self-built SFU (services/sfu) powers group calls/meetings/live |
-| Messenger Rooms (drop-in video rooms) | 🚧 | Call rooms + join tickets shipped; persistent drop-in links partial |
+| Messenger Rooms (drop-in video rooms) | ✅ | Persistent drop-in links: POST/GET /api/rooms, /{slug}/join (SFU tickets), /{slug}/end; web /room/[slug] + create/share on web/Android/iOS |
 | Screen sharing | ✅ | getDisplayMedia + /api/calls/rooms/{id}/screenshare signaling (017) |
 | Call recording | ✅ | MediaRecorder webm upload + call_recordings list/delete (017) |
-| AR effects/filters | ❌ | Gap: low priority |
+| AR effects/filters | ✅ | Canvas VideoFilter publishes filtered outgoing track (warm/cool/bw/vivid/soft) on web call/meeting/room pages |
 
 ## Monetization
 
 | Feature | Status | Notes |
 |---|---|---|
-| In-stream ads revenue share | 🚧 | Flat RPM earnings exist; gap: true ad-share accounting |
+| In-stream ads revenue share | ✅ | Ads campaigns (create/creatives/review/fund) + impression-level 55% creator rev-share ledgered from platform treasury |
 | Stars (virtual gifts) | ✅ | gift catalog in handlers_monetization.go |
 | Fan subscriptions | ✅ | Shipped: creator subscription tiers + tips + revenue dashboard |
 | Professional dashboard (analytics) | ✅ | GET /api/me/analytics rollup (019) |
@@ -116,7 +116,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Block users | ✅ | Shipped: blocks table + feed/chat filtering |
 | Comment filters / hidden words | ✅ | Shipped: per-user word filters |
 | Community Notes equivalent | ✅ | GET/POST /api/posts/{id}/notes + vote + delete, wired on all clients |
-| AI moderation queue | 🚧 | Rust security service has heuristic scorer; gap: media moderation |
+| AI moderation queue | ✅ | Heuristic scorer + media moderation (blocked sha256/dhash via ML /moderate/media) + own-media verdicts |
 
 ## Notifications
 

@@ -236,3 +236,9 @@ def captions(req: CaptionRequest) -> dict[str, Any]:
 from media_moderation import register_media_moderation
 
 register_media_moderation(app)
+
+# ---------- KYC verification (own document + face-match pipeline) ----------
+
+from kyc_verify import register_kyc_verify
+
+register_kyc_verify(app)

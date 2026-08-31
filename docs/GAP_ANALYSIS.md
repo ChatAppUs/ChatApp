@@ -109,6 +109,34 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
   profile visitors.
 - Tests: tests/gaps3_test.py — 82 end-to-end checks against the live API.
 
+## 3.5 Shipped since (gap pack 5)
+
+- **Drop-in rooms (Messenger Rooms parity)**: persistent shareable links —
+  `drop_in_rooms` table (020), `POST/GET /api/rooms`, `GET /api/rooms/{slug}`,
+  `POST /api/rooms/{slug}/join` (SFU ticket), `POST /api/rooms/{slug}/end`;
+  web `/room/[slug]` page + create/copy from the chat sidebar; create/share
+  affordances on Android and iOS.
+- **Own KYC pipeline**: `services/ml/kyc_verify.py` (`POST /kyc/verify`) —
+  doc-number format, decodability/resolution/sharpness/glare/aspect metrics,
+  selfie liveness texture, distinct-capture, NCC face match; the auto-score
+  is stored on the submission (020) and drives the kyc_status transition
+  (≥0.75 and sanctions-clean auto-verifies; otherwise manual review), with
+  the checks surfaced as ML evidence in the admin KYC queue.
+- **Ads platform**: `ad_campaigns`/`ad_creatives` (020), create → creatives →
+  submit → admin review → activate → wallet-funded budget (double-entry into
+  the platform treasury); `POST /api/ads/serve` with target-country matching,
+  campaign attribution on placed impressions, and 55% creator revenue share
+  ledgered from the treasury (`revshare` reference in ledger_entries).
+- **Redis scaling cache**: `services/api/cache.go` — optional Redis backend
+  (`REDIS_URL`, fail-open on outage; no cache when unset); the FYP ranking
+  query (`/api/fyp`) is cache-through with per-viewer keys
+  (`fyp:<uid>:<limit>:<offset>`, 15s TTL).
+- **AR effects**: canvas `VideoFilter` publishes the filtered outgoing track
+  (remote participants see the effect) on web call, meeting, and room pages.
+- **Pay-in-chat UI**: completed on web, Android, and iOS (backend shipped in
+  gap pack 2).
+- Tests: tests/gaps5_test.py — 39 end-to-end checks against the live API.
+
 ## 4. Explicit non-goals / notes
 
 - **TikTok Shop / affiliate commerce**: the remaining commerce surface —
@@ -123,8 +151,9 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
   (Fireblocks/BitGo/Coinbase WaaS) behind `CryptoProvider`, and the
   crypto-card provider API. Everything else — calls, meetings, SFU,
   live broadcasting, phone OTP verification (self-built engine replacing
-  Twilio), messaging, voice/video messages, feed, ranking, moderation — is
-  own code.
+  Twilio), messaging, voice/video messages, feed, ranking, moderation,
+  KYC document/selfie verification (self-built ML `/kyc/verify` pipeline,
+  gap pack 5), deposit watching via own chain nodes — is own code.
 
 ## 5. Maintenance & hardening references
 

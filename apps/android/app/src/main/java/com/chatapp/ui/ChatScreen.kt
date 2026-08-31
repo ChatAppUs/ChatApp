@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +40,8 @@ data class ChatMessage(
     val senderId: String,
     val body: String,
     val encrypted: Boolean,
+    val kind: String = "",
+    val paymentId: String = "",
 )
 
 private val CHAT_THEMES: Map<String, List<androidx.compose.ui.graphics.Color>> = mapOf(
@@ -57,6 +61,12 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
     var nickname by remember { mutableStateOf("") }
     var typing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var payOpen by remember { mutableStateOf(false) }
+    var payAmount by remember { mutableStateOf("") }
+    var payAsset by remember { mutableStateOf("USDT:tron") }
+    var payBusy by remember { mutableStateOf(false) }
+    var roomLink by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val token = session.accessToken ?: ""
     val myId = session.userId ?: ""
@@ -72,6 +82,8 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
                             senderId = evt.getString("sender_id"),
                             body = evt.optString("body"),
                             encrypted = evt.optBoolean("is_encrypted"),
+                            kind = evt.optString("kind"),
+                            paymentId = evt.optString("payment_id"),
                         )
                     }
                 }
@@ -106,6 +118,8 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
                             senderId = m.getString("sender_id"),
                             body = m.optString("body"),
                             encrypted = m.optBoolean("is_encrypted"),
+                            kind = m.optString("kind"),
+                            paymentId = m.optString("payment_id"),
                         )
                     )
                 }
@@ -124,7 +138,37 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Chat", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Chat", style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = {
+                scope.launch {
+                    try {
+                        val resp = withContext(Dispatchers.IO) {
+                            api.post("/api/rooms", JSONObject().put("title", "").toString(), token)
+                        }
+                        roomLink = JSONObject(resp).optString("link")
+                    } catch (_: Exception) {
+                        error = "Failed to create room"
+                    }
+                }
+            }) { Text("🔗 Room") }
+        }
+        if (roomLink.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(roomLink, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, roomLink)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(send, "Share room link"))
+                }) { Text("Share") }
+            }
+        }
         conversationId?.let { convId ->
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 CHAT_THEMES.keys.forEach { name ->
@@ -182,10 +226,21 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
                     horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
                 ) {
                     Card {
-                        Text(
-                            (if (m.encrypted) "🔒 " else "") + m.body,
-                            modifier = Modifier.padding(10.dp),
-                        )
+                        if (m.kind == "payment") {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("💸 Crypto payment", style = MaterialTheme.typography.titleSmall)
+                                if (m.body.isNotEmpty()) Text(m.body)
+                                Text(
+                                    "tx ${m.paymentId.take(8)}…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        } else {
+                            Text(
+                                (if (m.encrypted) "🔒 " else "") + m.body,
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -200,10 +255,70 @@ fun ChatScreen(api: ApiClient, session: Session, wsBaseUrl: String) {
                 placeholder = { Text("Message") },
                 modifier = Modifier.weight(1f),
             )
+            // Pay-in-chat: send crypto to the other member of a direct chat.
+            val peerId = messages.firstOrNull { it.senderId != myId }?.senderId
+            if (peerId != null) {
+                TextButton(onClick = { payOpen = true }) { Text("Pay") }
+            }
             Button(onClick = {
                 conversationId?.let { socket.sendMessage(it, draft) }
                 draft = ""
             }) { Text("Send") }
+        }
+        val payPeer = messages.firstOrNull { it.senderId != myId }?.senderId
+        if (payOpen && payPeer != null && conversationId != null) {
+            val convId = conversationId!!
+            AlertDialog(
+                onDismissRequest = { if (!payBusy) payOpen = false },
+                title = { Text("Send crypto in chat") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("USDT:tron", "USDT:ethereum", "BTC:bitcoin", "ETH:ethereum", "SOL:solana")
+                                .forEach { opt ->
+                                    TextButton(onClick = { payAsset = opt }) {
+                                        Text(if (payAsset == opt) "[${opt.substringBefore(":")}]" else opt.substringBefore(":"))
+                                    }
+                                }
+                        }
+                        OutlinedTextField(
+                            value = payAmount,
+                            onValueChange = { payAmount = it },
+                            placeholder = { Text("Amount") },
+                        )
+                        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (payBusy) return@TextButton
+                        payBusy = true
+                        scope.launch {
+                            try {
+                                val (asset, chain) = payAsset.split(":").let { it[0] to it[1] }
+                                withContext(Dispatchers.IO) {
+                                    api.post("/api/conversations/$convId/pay",
+                                        JSONObject()
+                                            .put("to_user_id", payPeer)
+                                            .put("asset", asset)
+                                            .put("chain", chain)
+                                            .put("amount", payAmount.trim())
+                                            .toString(), token)
+                                }
+                                payOpen = false
+                                payAmount = ""
+                            } catch (e: Exception) {
+                                error = "Payment failed"
+                            } finally {
+                                payBusy = false
+                            }
+                        }
+                    }) { Text(if (payBusy) "Sending…" else "Send payment") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { if (!payBusy) payOpen = false }) { Text("Cancel") }
+                },
+            )
         }
     }
 }

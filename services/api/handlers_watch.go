@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -65,6 +66,13 @@ func deref(s *string) string {
 func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	limit, offset := pageParams(r)
+	cacheKey := fmt.Sprintf("fyp:%s:%d:%d", uid, limit, offset)
+	if cached, ok := a.cache.get(r.Context(), cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Cache", "hit")
+		_, _ = w.Write(cached)
+		return
+	}
 	rows, err := a.db.Query(r.Context(),
 		`WITH agg AS (
 		   SELECT post_id,
@@ -124,7 +132,15 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	a.mlRerankFYP(uid, posts)
-	writeJSON(w, http.StatusOK, map[string]any{"posts": posts})
+	body, err := json.Marshal(map[string]any{"posts": posts})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "feed failed")
+		return
+	}
+	a.cache.set(r.Context(), cacheKey, body, 15*time.Second)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 // mlRerankFYP re-orders FYP candidates using the ML service's watch-signal

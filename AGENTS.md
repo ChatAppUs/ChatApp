@@ -236,3 +236,39 @@
 - tests/gaps4_test.py = 96 checks (needs migration 019 + SFU not required).
   Full sweep 2026-08-31 (session 6): gaps4 96/96, integration 153/153,
   features 72/72, finance 44/44, gaps 92/92, gaps2 70/70.
+
+## Contracts discovered while testing (2026-08-31, session 7 — gap pack 5)
+- Migration 020_gap_pack5.sql: drop_in_rooms (slug 128-bit CSPRNG, link
+  /room/<slug>, ended_at), kyc_submissions.auto_score/auto_checks columns,
+  ad_campaigns + ad_creatives (review→active→fund lifecycle).
+- Drop-in rooms: POST /api/rooms {title} → {slug, link}; GET /api/rooms/{slug}
+  (410 when ended); POST .../join registers SFU room `dropin-<slug>` and
+  returns a full SfuSession ({room_id, mode:"meeting", role:"publisher",
+  ticket, sfu_url, ice_servers}); POST .../end is host-only.
+- KYC auto-verify: ML svc POST /kyc/verify {doc_image_url, selfie_url,
+  doc_type, doc_number, full_name} → {score, checks} (checks = flat dict of
+  bool/str/dict). handleKYCSubmit (handlers_wallet.go) scores SYNCHRONOUSLY
+  in the submit tx: score ≥0.75 AND sanctions-clean (screenName hits==0)
+  auto-verifies; ML unreachable fails open to manual review. Admin KYC queue
+  rows include auto_score/auto_checks; review decision value is "verified"
+  (not "approve").
+- Ads: POST /api/ads/campaigns, /{id}/creatives, /{id}/submit, admin
+  /api/admin/ads/review {decision}, /{id}/activate, /{id}/fund (moveUSD into
+  platform treasury via moveUSDToTreasury — wallet tx rows need BOTH a debit
+  and credit row, treasury user 00000000-…). POST /api/ads/serve
+  {country, placement_post_id?} → {ad: {...}, share_usd}; target_countries
+  must match exactly or be empty ("ALL" does NOT match); unattributed serves
+  record spend, attributed ones also ledger 55% rev-share to the creator.
+- Redis cache: services/api/cache.go — *cache wraps go-redis, newCache
+  returns nil when REDIS_URL unset/invalid (caching simply off, no in-process
+  stand-in); all calls fail open with 300ms ctx timeout. Only /api/fyp is
+  cached: key `fyp:<uid>:<limit>:<offset>`, 15s TTL, X-Cache: hit header.
+- Web VideoFilter (lib/webrtc.ts): canvas ctx.filter presets (warm/cool/bw/
+  vivid/soft) publish the filtered outgoing track via replaceVideoTrack —
+  SfuCall now has replaceVideoTrack too. Room page: /room/[slug].
+- Web chat page has NO error state — don't call setError there.
+- Android ChatScreen: material3.TextButton must be imported explicitly.
+- tests/gaps5_test.py = 39 checks. Full sweep 2026-08-31 (session 7):
+  integration 153/153, features 72/72, finance 44/44, gaps 92/92,
+  gaps2 70/70, gaps3 82/82, gaps4 96/96, gaps5 39/39, go test OK,
+  web next build OK, admin tsc OK.

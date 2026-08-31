@@ -40,6 +40,8 @@ interface KYCItem {
   username: string;
   display_name: string;
   created_at: string;
+  auto_score: number | null;
+  auto_checks: { score?: number; checks?: Record<string, boolean | string | object> } | null;
 }
 
 interface AdItem {
@@ -221,13 +223,29 @@ export default function DashboardPage() {
         <div className="card">
           <table className="table">
             <thead>
-              <tr><th>username</th><th>name</th><th></th></tr>
+              <tr><th>username</th><th>name</th><th>ML auto-check</th><th></th></tr>
             </thead>
             <tbody>
               {kycQueue.map((k) => (
                 <tr key={k.id}>
                   <td>@{k.username}</td>
                   <td>{k.display_name}</td>
+                  <td>
+                    {k.auto_score != null ? (
+                      <span title={JSON.stringify(k.auto_checks?.checks ?? {}, null, 2)}>
+                        score {k.auto_score.toFixed(2)}
+                        {(() => {
+                          const failed = Object.entries(k.auto_checks?.checks ?? {})
+                            .filter(([, v]) => v === false).map(([n]) => n);
+                          return failed.length > 0 && (
+                            <span className="muted" style={{ fontSize: 12 }}> — failed: {failed.join(", ")}</span>
+                          );
+                        })()}
+                      </span>
+                    ) : (
+                      <span className="muted">no evidence</span>
+                    )}
+                  </td>
                   <td>
                     <div className="row">
                       <button className="success small" onClick={() => act(() => adminApi(`/api/admin/kyc/${k.id}/review`, { method: "POST", body: JSON.stringify({ decision: "verified" }) }))}>
@@ -240,7 +258,7 @@ export default function DashboardPage() {
                   </td>
                 </tr>
               ))}
-              {kycQueue.length === 0 && <tr><td colSpan={3} className="muted">Queue empty</td></tr>}
+              {kycQueue.length === 0 && <tr><td colSpan={4} className="muted">Queue empty</td></tr>}
             </tbody>
           </table>
         </div>

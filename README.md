@@ -114,6 +114,13 @@ infra/
   getUpdates + webhooks, sendMessage), push notifications (Web Push/VAPID
   self-built, FCM/APNs gateways optional), phone contact discovery (hashed),
   payment cards (tokenized storage, never PANs), URL unfurling.
+- **Gap pack 5**: drop-in call rooms with persistent shareable links (SFU
+  tickets, web `/room/[slug]`, create/share on Android/iOS), self-built KYC
+  auto-verification pipeline in the ML service (doc metrics, liveness, face
+  match, admin ML evidence), ads platform (campaigns, creatives, review,
+  wallet-funded budgets, 55% creator rev-share from the platform treasury),
+  optional Redis scaling cache on the FYP path (fail-open), AR video filters on
+  web calls/meetings/rooms, pay-in-chat UI on web/Android/iOS.
 - **Video pipeline**: C++ ffmpeg transcode worker producing HLS ABR ladders
   (240p→1080p) + thumbnails for reels/stories, claimed SKIP LOCKED from the
   API job control plane.

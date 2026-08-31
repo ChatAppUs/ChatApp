@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, getAccessToken } from "@/lib/api";
-import { SfuCall, SfuSession } from "@/lib/webrtc";
+import { SfuCall, SfuSession, VideoFilter, VIDEO_FILTERS } from "@/lib/webrtc";
 
 // Large group calls / meetings run through the ChatApp SFU (self-built,
 // services/sfu) — no external media kit involved.
@@ -16,6 +16,25 @@ export default function MeetingPage() {
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const callRef = useRef<SfuCall | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const filterRef = useRef<VideoFilter | null>(null);
+  const [filter, setFilter] = useState("none");
+
+  const applyFilter = (name: string) => {
+    setFilter(name);
+    const camTrack = streamRef.current?.getVideoTracks()[0];
+    if (!camTrack) return;
+    if (name === "none") {
+      filterRef.current?.stop();
+      filterRef.current = null;
+      callRef.current?.replaceVideoTrack(camTrack);
+      return;
+    }
+    if (!filterRef.current) filterRef.current = new VideoFilter(camTrack);
+    filterRef.current.setFilter(name);
+    callRef.current?.replaceVideoTrack(filterRef.current.track);
+  };
+
+  useEffect(() => () => filterRef.current?.stop(), []);
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -81,6 +100,12 @@ export default function MeetingPage() {
         <h3 style={{ margin: 0 }}>Meeting</h3>
         <span className="badge">{status}</span>
         <div className="spacer" />
+        <select className="secondary" value={filter} title="AR effect"
+          onChange={(e) => applyFilter(e.target.value)}>
+          {Object.keys(VIDEO_FILTERS).map((f) => (
+            <option key={f} value={f}>✨ {f}</option>
+          ))}
+        </select>
         <button className="danger" onClick={hangUp}>Leave</button>
       </div>
       {error && <div className="error-text" style={{ marginTop: 8 }}>{error}</div>}

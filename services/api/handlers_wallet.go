@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -258,15 +260,43 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	hits := a.screenName(r.Context(), req.FullName)
+
+	// Own verification pipeline: the ML service scores the document and
+	// selfie (quality, doc-number format, face match, liveness heuristics).
+	// Fail-open to manual review when the ML service is unreachable.
+	autoScore, autoChecks := a.mlKYCVerify(r.Context(), kycVerifyRequest{
+		FullName: req.FullName, DocType: req.DocType, DocNumber: req.DocNumber,
+		DocImageURL: req.DocImageURL, SelfieURL: req.SelfieURL,
+	})
+
 	var id string
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO kyc_submissions (user_id, provider, status, screening_hits, screened_at)
-		 VALUES ($1,'own','pending',$2, now()) RETURNING id`, uid, hits).Scan(&id)
+		`INSERT INTO kyc_submissions
+		   (user_id, provider, status, screening_hits, screened_at,
+		    full_name, country, doc_type, doc_number, doc_image_url, selfie_url,
+		    auto_score, auto_checks)
+		 VALUES ($1,'own','pending',$2, now(), $3,$4,$5,$6,$7,$8, $9, $10) RETURNING id`,
+		uid, hits, req.FullName, req.Country, req.DocType, req.DocNumber,
+		req.DocImageURL, req.SelfieURL, autoScore, autoChecks).Scan(&id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "submission failed")
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `UPDATE users SET kyc_status='pending' WHERE id=$1`, uid); err != nil {
+
+	// Auto-verify only high-confidence, sanctions-clean submissions;
+	// everything else waits for an admin reviewer who sees the same
+	// auto_checks breakdown in the console.
+	finalStatus := "pending"
+	if hits == 0 && autoScore >= kycAutoVerifyThreshold {
+		finalStatus = "verified"
+		if _, err := tx.Exec(r.Context(),
+			`UPDATE kyc_submissions SET status='verified', reviewed_at=now(),
+			  review_note='auto-verified by own ML pipeline' WHERE id=$1`, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "submission failed")
+			return
+		}
+	}
+	if _, err := tx.Exec(r.Context(), `UPDATE users SET kyc_status=$2 WHERE id=$1`, uid, finalStatus); err != nil {
 		writeErr(w, http.StatusInternalServerError, "submission failed")
 		return
 	}
@@ -274,10 +304,53 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "submission failed")
 		return
 	}
-	// Own pipeline: the document was screened against the sanctions lists at
-	// intake; an admin reviewer makes the final decision. Any sanctions hit
-	// is surfaced to the reviewer via screening_hits.
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "pending", "screening_hits": hits})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id": id, "status": finalStatus, "screening_hits": hits,
+		"auto_score": autoScore, "auto_checks": json.RawMessage(autoChecks),
+	})
+}
+
+// kycAutoVerifyThreshold is the minimum ML pipeline score for automatic
+// verification; below it a human reviewer decides.
+const kycAutoVerifyThreshold = 0.75
+
+type kycVerifyRequest struct {
+	FullName    string
+	DocType     string
+	DocNumber   string
+	DocImageURL string
+	SelfieURL   string
+}
+
+// mlKYCVerify calls the ML service's /kyc/verify endpoint. Returns score 0
+// and an error note when the service is unreachable, which keeps the
+// submission in the manual-review path.
+func (a *App) mlKYCVerify(ctx context.Context, req kycVerifyRequest) (float64, []byte) {
+	body, _ := json.Marshal(map[string]string{
+		"doc_image_url": req.DocImageURL, "selfie_url": req.SelfieURL,
+		"doc_type": req.DocType, "doc_number": req.DocNumber, "full_name": req.FullName,
+	})
+	reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	hreq, err := http.NewRequestWithContext(reqCtx, "POST", a.cfg.MLServiceURL+"/kyc/verify", bytes.NewReader(body))
+	if err != nil {
+		return 0, []byte(`{"error":"request build failed"}`)
+	}
+	hreq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(hreq)
+	if err != nil {
+		return 0, []byte(`{"error":"ml service unreachable"}`)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Score  float64        `json:"score"`
+		Checks map[string]any `json:"checks"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&out) != nil {
+		return 0, []byte(`{"error":"ml response invalid"}`)
+	}
+	checks, _ := json.Marshal(out.Checks)
+	return out.Score, checks
 }
 
 func (a *App) handleKYCStatus(w http.ResponseWriter, r *http.Request) {

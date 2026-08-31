@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -279,7 +280,8 @@ func (a *App) handleAdminResolveReport(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleAdminListKYC(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
-		`SELECT k.id, k.user_id, u.username, u.display_name, k.status, k.created_at
+		`SELECT k.id, k.user_id, u.username, u.display_name, k.status, k.created_at,
+		        k.auto_score, k.auto_checks
 		 FROM kyc_submissions k JOIN users u ON u.id = k.user_id
 		 WHERE k.status = 'pending' ORDER BY k.created_at ASC LIMIT 100`)
 	if err != nil {
@@ -288,17 +290,20 @@ func (a *App) handleAdminListKYC(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type k struct {
-		ID        string    `json:"id"`
-		UserID    string    `json:"user_id"`
-		Username  string    `json:"username"`
-		Name      string    `json:"display_name"`
-		Status    string    `json:"status"`
-		CreatedAt time.Time `json:"created_at"`
+		ID         string          `json:"id"`
+		UserID     string          `json:"user_id"`
+		Username   string          `json:"username"`
+		Name       string          `json:"display_name"`
+		Status     string          `json:"status"`
+		CreatedAt  time.Time       `json:"created_at"`
+		AutoScore  *float64        `json:"auto_score"`
+		AutoChecks json.RawMessage `json:"auto_checks"`
 	}
 	out := []k{}
 	for rows.Next() {
 		var x k
-		if err := rows.Scan(&x.ID, &x.UserID, &x.Username, &x.Name, &x.Status, &x.CreatedAt); err == nil {
+		if err := rows.Scan(&x.ID, &x.UserID, &x.Username, &x.Name, &x.Status, &x.CreatedAt,
+			&x.AutoScore, &x.AutoChecks); err == nil {
 			out = append(out, x)
 		}
 	}

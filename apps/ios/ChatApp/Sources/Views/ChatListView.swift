@@ -22,6 +22,7 @@ private let chatThemeNames = ["", "sunset", "ocean", "forest", "candy"]
 struct ChatListView: View {
     @EnvironmentObject var session: SessionStore
     @State private var conversations: [Conversation] = []
+    @State private var roomLink = ""
 
     var body: some View {
         NavigationStack {
@@ -49,8 +50,34 @@ struct ChatListView: View {
                 }
             }
             .navigationTitle("Chats")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await createRoom() }
+                    } label: { Image(systemName: "link.badge.plus") }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if !roomLink.isEmpty {
+                    HStack {
+                        Text(roomLink).font(.caption).lineLimit(1).truncationMode(.middle)
+                        ShareLink(item: roomLink) { Image(systemName: "square.and.arrow.up") }
+                    }
+                    .padding(10)
+                    .background(.bar)
+                }
+            }
             .task { await load() }
             .refreshable { await load() }
+        }
+    }
+
+    private func createRoom() async {
+        guard let token = session.accessToken else { return }
+        if let data = try? await APIClient(token: token).post("/api/rooms", body: ["title": ""]),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let link = obj["link"] as? String {
+            roomLink = link
         }
     }
 
@@ -82,6 +109,8 @@ struct ChatMessage: Identifiable {
     let senderId: String
     let body: String
     let encrypted: Bool
+    var kind: String = ""
+    var paymentId: String = ""
 }
 
 struct ChatView: View {
@@ -94,6 +123,9 @@ struct ChatView: View {
     @State private var nickname = ""
     @State private var typing = false
     @State private var socket: ChatSocket?
+    @State private var payOpen = false
+    @State private var payAmount = ""
+    @State private var payPair = "USDT:tron"
 
     var body: some View {
         VStack {
@@ -121,12 +153,26 @@ struct ChatView: View {
                         ForEach(messages) { m in
                             HStack {
                                 if m.senderId == session.userId { Spacer() }
-                                Text((m.encrypted ? "🔒 " : "") + m.body)
+                                if m.kind == "payment" {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("💸 Crypto payment").font(.headline)
+                                        if !m.body.isEmpty { Text(m.body).font(.subheadline) }
+                                        Text("tx \(m.paymentId.prefix(8))…")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
                                     .padding(10)
                                     .background(m.senderId == session.userId
                                                 ? Color.accentColor.opacity(0.3)
                                                 : Color.gray.opacity(0.2),
                                                 in: RoundedRectangle(cornerRadius: 12))
+                                } else {
+                                    Text((m.encrypted ? "🔒 " : "") + m.body)
+                                        .padding(10)
+                                        .background(m.senderId == session.userId
+                                                    ? Color.accentColor.opacity(0.3)
+                                                    : Color.gray.opacity(0.2),
+                                                    in: RoundedRectangle(cornerRadius: 12))
+                                }
                                 if m.senderId != session.userId { Spacer() }
                             }
                             .id(m.id)
@@ -153,6 +199,10 @@ struct ChatView: View {
                     .onChange(of: draft) { _, _ in
                         socket?.sendTyping(conversationId: conversation.id)
                     }
+                if peerId != nil {
+                    Button("Pay") { payOpen = true }
+                        .buttonStyle(.bordered)
+                }
                 Button("Send") {
                     socket?.sendMessage(conversationId: conversation.id, body: draft)
                     draft = ""
@@ -165,6 +215,60 @@ struct ChatView: View {
         .navigationTitle(conversation.title.isEmpty ? "Chat" : conversation.title)
         .onAppear { connect() }
         .onDisappear { socket?.close() }
+        .sheet(isPresented: $payOpen) {
+            paySheet
+        }
+    }
+
+    // Pay-in-chat: send crypto to the other member of a direct chat.
+    private var peerId: String? {
+        messages.first { $0.senderId != session.userId }?.senderId
+    }
+
+    private static let payAssets: [(String, String)] = [
+        ("USDT", "tron"), ("USDT", "ethereum"), ("BTC", "bitcoin"),
+        ("ETH", "ethereum"), ("SOL", "solana"),
+    ]
+
+    private var paySheet: some View {
+        NavigationStack {
+            Form {
+                Picker("Asset", selection: $payPair) {
+                    ForEach(Array(ChatView.payAssets.enumerated()), id: \.offset) { _, pair in
+                        Text("\(pair.0) (\(pair.1))").tag("\(pair.0):\(pair.1)")
+                    }
+                }
+                TextField("Amount", text: $payAmount)
+                    .keyboardType(.decimalPad)
+            }
+            .navigationTitle("Send crypto in chat")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { payOpen = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send payment") { sendPayment() }
+                        .disabled(payAmount.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func sendPayment() {
+        guard let token = session.accessToken, let peer = peerId else { return }
+        let parts = payPair.split(separator: ":").map(String.init)
+        guard parts.count == 2 else { return }
+        let amount = payAmount.trimmingCharacters(in: .whitespaces)
+        Task {
+            _ = try? await APIClient(token: token)
+                .post("/api/conversations/\(conversation.id)/pay",
+                      body: ["to_user_id": peer, "asset": parts[0],
+                             "chain": parts[1], "amount": amount])
+            await MainActor.run {
+                payOpen = false
+                payAmount = ""
+            }
+        }
     }
 
     private func connect() {
@@ -182,7 +286,9 @@ struct ChatView: View {
                 id: evt["id"] as? String ?? UUID().uuidString,
                 senderId: evt["sender_id"] as? String ?? "",
                 body: evt["body"] as? String ?? "",
-                encrypted: evt["is_encrypted"] as? Bool ?? false
+                encrypted: evt["is_encrypted"] as? Bool ?? false,
+                kind: evt["kind"] as? String ?? "",
+                paymentId: evt["payment_id"] as? String ?? ""
             )
             DispatchQueue.main.async { messages.append(msg) }
         }
@@ -199,7 +305,9 @@ struct ChatView: View {
                         id: m["id"] as? String ?? "",
                         senderId: m["sender_id"] as? String ?? "",
                         body: m["body"] as? String ?? "",
-                        encrypted: m["is_encrypted"] as? Bool ?? false
+                        encrypted: m["is_encrypted"] as? Bool ?? false,
+                        kind: m["kind"] as? String ?? "",
+                        paymentId: m["payment_id"] as? String ?? ""
                     )
                 }
                 await MainActor.run { messages = history }

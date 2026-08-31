@@ -148,10 +148,18 @@ func (a *App) handleSubmitCampaign(w http.ResponseWriter, r *http.Request) {
 
 // Serve an ad targeted to the viewer's country/locale. An impression is
 // recorded and the advertiser's USD ledger is charged CPM-style per view.
+// adCreatorShare is the fraction of each attributed impression's cost paid
+// to the creator whose content the ad ran against (in-stream rev share).
+const adCreatorShare = "0.55"
+
+// platformTreasuryID is the platform treasury user (migration 019).
+const platformTreasuryID = "00000000-0000-0000-0000-000000000000"
+
 func (a *App) handleServeAd(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	country := strings.ToUpper(r.URL.Query().Get("country"))
 	locale := r.URL.Query().Get("locale")
+	placementPostID := r.URL.Query().Get("placement_post_id")
 	var creativeID, campaignID, title, body, mediaURL, ctaURL string
 	err := a.db.QueryRow(r.Context(),
 		`SELECT cr.id, c.id, cr.title, cr.body, cr.media_url, cr.cta_url
@@ -169,6 +177,19 @@ func (a *App) handleServeAd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	const cpmCost = "0.005" // $5 CPM
+
+	// Resolve the placement creator before opening the tx (account lookups
+	// use the pool; doing them inside the tx risks self-deadlock).
+	creatorID, creatorAcct, treasuryAcct := "", "", ""
+	if placementPostID != "" {
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT author_id::text FROM posts WHERE id=$1::uuid`, placementPostID).Scan(&creatorID)
+	}
+	if creatorID != "" {
+		treasuryAcct, _ = a.ensureAccount(r.Context(), platformTreasuryID, "USD", "internal")
+		creatorAcct, _ = a.ensureAccount(r.Context(), creatorID, "USD", "internal")
+	}
+
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "ad serving failed")
@@ -176,8 +197,9 @@ func (a *App) handleServeAd(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	if _, err := tx.Exec(r.Context(),
-		`INSERT INTO ad_events (creative_id, user_id, kind, cost) VALUES ($1,$2,'impression',$3::numeric)`,
-		creativeID, uid, cpmCost); err != nil {
+		`INSERT INTO ad_events (creative_id, user_id, kind, cost, placement_post_id)
+		 VALUES ($1,$2,'impression',$3::numeric, NULLIF($4,'')::uuid)`,
+		creativeID, uid, cpmCost, placementPostID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "ad serving failed")
 		return
 	}
@@ -185,6 +207,33 @@ func (a *App) handleServeAd(w http.ResponseWriter, r *http.Request) {
 		`UPDATE ad_campaigns SET spent = spent + $1::numeric WHERE id=$2`, cpmCost, campaignID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "ad serving failed")
 		return
+	}
+	// True rev-share accounting: the creator's cut of this impression moves
+	// from the platform treasury to the creator in the same transaction, so
+	// an impression, the budget decrement and the payout never disagree.
+	if creatorAcct != "" && treasuryAcct != "" {
+		var funded bool
+		if err := tx.QueryRow(r.Context(),
+			`SELECT COALESCE(SUM(amount),0) >= ($1::numeric * $2::numeric)
+			 FROM ledger_entries WHERE account_id=$3`,
+			cpmCost, adCreatorShare, treasuryAcct).Scan(&funded); err == nil && funded {
+			var shareTx string
+			_ = tx.QueryRow(r.Context(), `SELECT gen_random_uuid()`).Scan(&shareTx)
+			if _, err := tx.Exec(r.Context(),
+				`INSERT INTO ledger_entries (tx_id, account_id, amount, kind, counterparty, memo)
+				 VALUES ($1,$2, -($3::numeric * $4::numeric), 'ad_share_send', $5, $6),
+				        ($1,$7,  ($3::numeric * $4::numeric), 'ad_share_recv', $8, $6)`,
+				shareTx, treasuryAcct, cpmCost, adCreatorShare, creatorID,
+				"placement "+placementPostID, creatorAcct, platformTreasuryID); err == nil {
+				if _, err := tx.Exec(r.Context(),
+					`INSERT INTO creator_earnings (creator_id, source, amount, currency, post_id)
+					 VALUES ($1,'ad_share', ($2::numeric * $3::numeric), 'USD', $4::uuid)`,
+					creatorID, cpmCost, adCreatorShare, placementPostID); err != nil {
+					writeErr(w, http.StatusInternalServerError, "ad serving failed")
+					return
+				}
+			}
+		}
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "ad serving failed")
@@ -240,10 +289,16 @@ func (a *App) handleFundCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 	var txID string
 	_ = tx.QueryRow(r.Context(), `SELECT gen_random_uuid()`).Scan(&txID)
+	treasuryAcct, err := a.ensureAccount(r.Context(), platformTreasuryID, "USD", "internal")
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "funding failed")
+		return
+	}
 	if _, err := tx.Exec(r.Context(),
 		`INSERT INTO ledger_entries (tx_id, account_id, amount, kind, memo)
-		 VALUES ($1,$2, -$3::numeric, 'ad_spend', $4)`,
-		txID, acctID, req.Amount, "campaign "+campaignID); err != nil {
+		 VALUES ($1,$2, -$3::numeric, 'ad_spend', $4),
+		        ($1,$5,  $3::numeric, 'ad_credit', $4)`,
+		txID, acctID, req.Amount, "campaign "+campaignID, treasuryAcct); err != nil {
 		writeErr(w, http.StatusInternalServerError, "funding failed")
 		return
 	}

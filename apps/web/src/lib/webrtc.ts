@@ -243,11 +243,70 @@ export class SfuCall {
     this.pendingIce = [];
   }
 
+  /** Replace the outgoing video track (screen share, AR filter). */
+  replaceVideoTrack(track: MediaStreamTrack | null) {
+    const sender = this.pc?.getSenders().find((s) => s.track?.kind === "video");
+    sender?.replaceTrack(track).catch(() => {});
+  }
+
   leave() {
     if (this.closed) return;
     this.closed = true;
     this.pc?.close();
     this.ws?.close();
+  }
+}
+
+/**
+ * VideoFilter applies canvas-based AR/color effects to the OUTGOING video, so
+ * remote participants receive the filtered picture (not just a local preview
+ * overlay). Frames are drawn through a 2D context with ctx.filter presets and
+ * re-published via canvas.captureStream.
+ */
+export const VIDEO_FILTERS: Record<string, string> = {
+  none: "",
+  warm: "sepia(0.45) saturate(1.4)",
+  cool: "hue-rotate(180deg) saturate(1.2)",
+  bw: "grayscale(1)",
+  vivid: "saturate(1.9) contrast(1.15)",
+  soft: "blur(1.2px) brightness(1.08)",
+};
+
+export class VideoFilter {
+  private video: HTMLVideoElement;
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private raf = 0;
+  private filterName = "none";
+  readonly track: MediaStreamTrack;
+
+  constructor(source: MediaStreamTrack) {
+    this.video = document.createElement("video");
+    this.video.muted = true;
+    this.video.playsInline = true;
+    this.video.srcObject = new MediaStream([source]);
+    this.canvas = document.createElement("canvas");
+    const settings = source.getSettings();
+    this.canvas.width = settings.width ?? 640;
+    this.canvas.height = settings.height ?? 480;
+    this.ctx = this.canvas.getContext("2d")!;
+    this.track = this.canvas.captureStream(30).getVideoTracks()[0];
+    const draw = () => {
+      this.ctx.filter = VIDEO_FILTERS[this.filterName] ?? "";
+      this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+      this.raf = requestAnimationFrame(draw);
+    };
+    this.video.play().then(() => draw()).catch(() => {});
+  }
+
+  setFilter(name: string) {
+    this.filterName = name in VIDEO_FILTERS ? name : "none";
+  }
+
+  stop() {
+    cancelAnimationFrame(this.raf);
+    this.track.stop();
+    this.video.srcObject = null;
   }
 }
 

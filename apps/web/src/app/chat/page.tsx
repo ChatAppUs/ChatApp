@@ -67,6 +67,7 @@ export default function ChatPage() {
   const [msgQuery, setMsgQuery] = useState("");
   const [msgHits, setMsgHits] = useState<Message[] | null>(null);
   const [groupOpen, setGroupOpen] = useState(false);
+  const [roomLink, setRoomLink] = useState("");
   const [groupTitle, setGroupTitle] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
   const [ttl, setTtl] = useState(0);
@@ -526,6 +527,18 @@ export default function ChatPage() {
     peerRef.current = userId;
   };
 
+  const createRoom = async () => {
+    try {
+      const d = await api<{ slug: string; link: string }>("/api/rooms", {
+        method: "POST",
+        body: JSON.stringify({ title: "" }),
+      });
+      setRoomLink(d.link);
+    } catch {
+      setRoomLink("");
+    }
+  };
+
   const myLastRead = (m: Message): boolean => {
     if (m.sender_id !== getUserId()) return false;
     return Object.entries(reads).some(([uid, at]) => uid !== getUserId() && at >= m.created_at);
@@ -542,6 +555,23 @@ export default function ChatPage() {
         <button className="secondary small" onClick={() => setGroupOpen((v) => !v)}>
           👥 New group
         </button>
+        <button className="secondary small" title="Create a shareable drop-in call room"
+          onClick={createRoom}>
+          🔗 Room link
+        </button>
+        {roomLink && (
+          <div className="card" style={{ padding: 8, fontSize: 12 }}>
+            <div className="muted">Anyone signed-in can join via this link:</div>
+            <div className="row" style={{ gap: 6 }}>
+              <input readOnly value={roomLink} onFocus={(e) => e.target.select()} />
+              <button className="small"
+                onClick={() => navigator.clipboard?.writeText(roomLink).catch(() => {})}>
+                Copy
+              </button>
+              <button className="small" onClick={() => router.push(roomLink)}>Open</button>
+            </div>
+          </div>
+        )}
         {groupOpen && (
           <div className="card" style={{ padding: 8 }}>
             <input

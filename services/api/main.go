@@ -51,7 +51,7 @@ func main() {
 	}
 	defer db.Close()
 
-	app := &App{cfg: cfg, db: db, hub: newHub()}
+	app := &App{cfg: cfg, db: db, hub: newHub(), cache: newCache(cfg.RedisURL)}
 	app.startCluster()
 	app.startScheduler()
 	app.startExpirySweeper()
@@ -227,6 +227,12 @@ func main() {
 	mux.HandleFunc("POST /api/wallet/deposit-address", app.requireAuth(app.handleDepositAddress))
 	mux.HandleFunc("POST /api/wallet/transfer", app.requireAuth(app.handleP2PTransfer))
 	mux.HandleFunc("POST /api/calls/rooms", app.requireAuth(app.handleCreateCallRoom))
+// persistent drop-in rooms (Messenger Rooms parity)
+mux.HandleFunc("POST /api/rooms", app.requireAuth(app.handleCreateDropinRoom))
+mux.HandleFunc("GET /api/rooms/{slug}", app.requireAuth(app.handleGetDropinRoom))
+mux.HandleFunc("POST /api/rooms/{slug}/join", app.requireAuth(app.handleJoinDropinRoom))
+mux.HandleFunc("POST /api/rooms/{slug}/end", app.requireAuth(app.handleEndDropinRoom))
+mux.HandleFunc("GET /api/me/rooms", app.requireAuth(app.handleListMyDropinRooms))
 	mux.HandleFunc("POST /api/calls/rooms/{roomId}/join", app.requireAuth(app.handleJoinCallRoom))
 	mux.HandleFunc("GET /api/live", app.requireAuth(app.handleLiveNow))
 	mux.HandleFunc("GET /api/wallet/history", app.requireAuth(app.handleWalletHistory))

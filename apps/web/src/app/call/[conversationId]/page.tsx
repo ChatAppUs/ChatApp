@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api, getAccessToken, getUserId, uploadMedia, wsURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { MeshCall, SignalPayload } from "@/lib/webrtc";
+import { MeshCall, SignalPayload, VideoFilter, VIDEO_FILTERS } from "@/lib/webrtc";
 
 type Recording = { id: string; username: string; media_url: string; duration_s: number; created_at: string };
 
@@ -30,6 +30,8 @@ export default function CallPage() {
   const recRef = useRef<MediaRecorder | null>(null);
   const recChunks = useRef<Blob[]>([]);
   const recStart = useRef(0);
+  const filterRef = useRef<VideoFilter | null>(null);
+  const [filter, setFilter] = useState("none");
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -191,6 +193,25 @@ export default function CallPage() {
     setRecSecs(0);
   };
 
+  // AR/color effects: process the camera through a canvas and publish the
+  // filtered track, so remote participants see the effect too.
+  const applyFilter = (name: string) => {
+    setFilter(name);
+    const camTrack = streamRef.current?.getVideoTracks()[0];
+    if (!camTrack || sharing) return;
+    if (name === "none") {
+      filterRef.current?.stop();
+      filterRef.current = null;
+      callRef.current?.replaceVideoTrack(camTrack);
+      return;
+    }
+    if (!filterRef.current) filterRef.current = new VideoFilter(camTrack);
+    filterRef.current.setFilter(name);
+    callRef.current?.replaceVideoTrack(filterRef.current.track);
+  };
+
+  useEffect(() => () => filterRef.current?.stop(), []);
+
   const deleteRecording = async (id: string) => {
     await api(`/api/calls/recordings/${id}`, { method: "DELETE" }).catch(() => {});
     loadRecordings();
@@ -207,6 +228,14 @@ export default function CallPage() {
           <button className={sharing ? "small" : "secondary"} onClick={toggleShare}>
             {sharing ? t("stopScreenShare") : `🖥 ${t("screenShare")}`}
           </button>
+        )}
+        {wantVideo && (
+          <select className="secondary" value={filter} title="AR effect"
+            onChange={(e) => applyFilter(e.target.value)}>
+            {Object.keys(VIDEO_FILTERS).map((f) => (
+              <option key={f} value={f}>✨ {f}</option>
+            ))}
+          </select>
         )}
         <button className={recording ? "danger" : "secondary"}
           onClick={recording ? stopRecording : startRecording}>

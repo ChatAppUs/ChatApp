@@ -17,6 +17,7 @@ type Config struct {
 	AllowedOrigins  string // comma-separated CORS origins; empty = dev wildcard
 	MediaServiceURL string
 	MLServiceURL    string
+	RedisURL        string
 	SecuritySvcURL  string
 	SMTPHost        string
 	SMTPPort        string
@@ -104,6 +105,7 @@ func loadConfig() Config {
 		AllowedOrigins:  os.Getenv("ALLOWED_ORIGINS"),
 		MediaServiceURL: getenv("MEDIA_SERVICE_URL", "http://localhost:8100"),
 		MLServiceURL:    getenv("ML_SERVICE_URL", "http://localhost:8200"),
+		RedisURL:        os.Getenv("REDIS_URL"),
 		SecuritySvcURL:  getenv("SECURITY_SERVICE_URL", "http://localhost:8090"),
 		SMTPHost:        os.Getenv("SMTP_HOST"),
 		SMTPPort:        getenv("SMTP_PORT", "587"),
