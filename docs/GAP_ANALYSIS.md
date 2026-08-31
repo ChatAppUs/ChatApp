@@ -1,7 +1,7 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
-Date: 2026-08-30 (updated after the finance plane shipped; 153/153 integration
-+ 72/72 feature + 44/44 finance checks green). This is the single
+Date: 2026-08-31 (gap-pack-3 shipped — migration 018; 153/153 integration +
+92/92 gaps + 82/82 gap-pack-3 checks green). This is the single
 consolidated answer to "after deeply scanning every competitor, what is ChatApp
 still missing?" Per-competitor, feature-by-feature detail lives in
 [competitor-analysis/](competitor-analysis/README.md); this file rolls the
@@ -60,12 +60,28 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 | 6 | **Reels creation tools** (trim, multi-clip, text overlay, captions, duet/stitch) | TikTok, FB, X | 🚧 Text overlays, ASR captions (ML service) and speed ramp shipped; duet/stitch and multi-clip editing remain phase 2 (unblocked by #1). |
 | 7 | **Monetization depth** (fan subscriptions, tips, gifts, ad-rev share) | X, TikTok, FB, TG | ✅ **Shipped** — wallet rails, platform tokens, creator subscription tiers, tips, revenue dashboard. Gift catalog shipped (handlers_monetization.go). |
 | 8 | **Bot API & mini-apps platform** | Telegram, Discord-class platforms | ✅ **Shipped** — bot accounts, long-poll `getUpdates`, webhooks, `sendMessage`. Mini-apps/inline bots remain phase 2. |
-| 9 | **Messaging polish** (silent send, spoiler/formatting entities, link previews, custom emoji, invite links + public group handles, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | 🚧 Link previews (URL unfurling), invite links, per-conversation drafts shipped; silent send/spoilers/slow mode/topics remain phase 2. |
+| 9 | **Messaging polish** (silent send, spoiler/formatting entities, custom emoji, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | 🚧 Link previews, invite links, per-conversation drafts, public group @handles + join-by-handle, chat archive, chat folders and sticker packs shipped (018); silent send/spoilers/slow mode/topics remain phase 2. |
 | 10 | **Stories extras** (highlights, close-friends audience, composer tools) | FB, IG, WA | 🚧 Close-friends audience + story reactions/replies shipped; story highlights shipped (story_highlights + /api/highlights). |
-| 11 | **Privacy suite depth** (custom audience lists, restricted list, profile lock, message-request inbox, mutes/word filters) | FB, X | ✅ **Shipped** — blocks, audience selector, message-request inbox, follow requests, mutes, word filters, restricted list (migration 014). |
-| 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade, data-saver) | imo, WhatsApp | 🚧 8 locales shipped; simulcast comes with the SFU scale-out (C++ RTP forwarder). |
+| 11 | **Privacy suite depth** (custom audience lists, restricted list, profile lock, message-request inbox, mutes/word filters, presence/phone granularity, account self-destruct TTL) | FB, X, Telegram, imo | ✅ **Shipped** — blocks, audience selector, message-request inbox, follow requests, mutes, word filters, restricted list (014); presence/phone privacy matrix, data-saver, safety-mode flag and account TTL worker (018). |
+| 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade) | imo, WhatsApp | 🚧 8 locales + data-saver flag shipped (018); simulcast comes with the SFU scale-out (C++ RTP forwarder). |
 
-## 3. Explicit non-goals / notes
+## 3. Gap-pack-3 (migration 018) — shipped 2026-08-31
+
+- **X parity**: reply policy on posts (everyone/following/mentioned/nobody,
+  enforced in the comment path), hidden replies (author-visible), creator
+  comment pinning, lists + list feed, bookmark folders, content warnings +
+  sensitive flag, alt text on media, paid-verification request/review flow.
+- **Telegram parity**: self-hosted sticker packs + sticker messages, chat
+  folders, chat archive, public group @handles with join-by-handle, granular
+  group-admin permissions + member role management, sessions list/revoke,
+  account self-destruct TTL worker, phone-number privacy.
+- **TikTok parity**: creator playlists, profile-visitors history, comment
+  pinning, content warnings.
+- **imo parity**: last-seen/online privacy matrix, data-saver mode, stickers,
+  profile visitors.
+- Tests: tests/gaps3_test.py — 82 end-to-end checks against the live API.
+
+## 4. Explicit non-goals / notes
 
 - **Marketplace, TikTok Shop, fundraisers**: commerce surfaces — phase 2
   after the ads platform matures.
@@ -80,7 +96,7 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
   Twilio), messaging, voice/video messages, feed, ranking, moderation — is
   own code.
 
-## 4. Maintenance & hardening references
+## 5. Maintenance & hardening references
 
 - Security posture + this quarter's fixes: [SECURITY_AUDIT.md](SECURITY_AUDIT.md)
 - Files to convert to Rust (safety-critical): [RUST_CONVERSION_PLAN.md](RUST_CONVERSION_PLAN.md)

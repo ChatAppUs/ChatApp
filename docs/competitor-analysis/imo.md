@@ -2,8 +2,14 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
-realtime/transcode work are marked accordingly; the canonical ranked gap list is
+Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped — privacy
+suite depth (presence/phone granularity, data saver, account self-destruct TTL,
+safety mode flag), sessions management, chat archive, sticker packs, chat
+folders, lists + list feed, bookmark folders, profile visitors, playlists,
+paid-verification request/review flow, reply policy enforcement, content
+warnings, alt text, hidden replies, creator comment pinning, public group
+handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
+(017) are also marked. Canonical ranked gap list:
 [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 imo is strongest in low-bandwidth markets (South Asia, Middle East, Africa):
@@ -19,7 +25,7 @@ rooms. These are the differentiators to match.
 | Group video calls | ✅ | Mesh ≤8 |
 | Large group voice chat rooms (drop-in) | ✅ | Shipped: self-built SFU audio rooms |
 | Call quality indicator | ❌ | Gap: client RTCP stats UI |
-| Data-usage saver mode | ❌ | Gap: client bitrate caps |
+| Data-usage saver mode | ✅ | users.data_saver flag drives client bitrate caps (018) |
 | Call on slow networks auto-audio-only | ❌ | Gap: adaptive downgrade logic |
 
 ## Messaging
@@ -28,7 +34,7 @@ rooms. These are the differentiators to match.
 |---|---|---|
 | Text/photo/video messages | ✅ | |
 | Voice messages | ✅ | MediaRecorder capture, inline audio player |
-| Stickers (big catalog) | ❌ | Gap: sticker packs |
+| Stickers (big catalog) | ✅ | self-hosted sticker packs + sticker messages (018) |
 | Group chats (up to 100k) | 🚧 | Groups exist; gap: scale validation |
 | Stories | ✅ | |
 | Chat backup/restore | ❌ | Gap: export/import |
@@ -44,7 +50,7 @@ rooms. These are the differentiators to match.
 | Levels & gamification (active-user levels) | ❌ | Gap: XP/levels entity |
 | Virtual gifts in rooms | ❌ | Gap: wallet-backed gifts |
 | Big groups directory by interest | ❌ | Gap: public group discovery |
-| Profile visitors ("who viewed me") | ❌ | Gap: profile_views table |
+| Profile visitors ("who viewed me") | ✅ | profile_views + /api/me/profile-visitors (018) |
 
 ## International reach
 
@@ -60,7 +66,7 @@ rooms. These are the differentiators to match.
 | Feature | Status | Notes |
 |---|---|---|
 | Block contacts | ✅ | Block/unblock enforced in messaging |
-| Last-seen / online privacy | ❌ | Gap: privacy settings |
+| Last-seen / online privacy | ✅ | last_seen_privacy everyone|contacts|nobody enforced on presence (018) |
 | Screenshot alert (secret chats) | ❌ | Gap: best-effort client signal |
 | Encrypted chats | ✅ | E2EE key relay |
 

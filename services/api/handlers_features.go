@@ -211,8 +211,26 @@ func (a *App) handlePresence(w http.ResponseWriter, r *http.Request) {
 	a.hub.mu.RUnlock()
 	var lastSeen *time.Time
 	var showActive bool
+	var privacy string
 	_ = a.db.QueryRow(r.Context(),
-		`SELECT last_seen_at, show_active_status FROM users WHERE id=$1`, target).Scan(&lastSeen, &showActive)
+		`SELECT last_seen_at, show_active_status, last_seen_privacy FROM users WHERE id=$1`, target).
+		Scan(&lastSeen, &showActive, &privacy)
+	viewer := userIDFrom(r)
+	switch privacy {
+	case "nobody":
+		if viewer != target {
+			online, lastSeen = false, nil
+		}
+	case "contacts":
+		var contact bool
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM follows WHERE follower_id=$1 AND followee_id=$2)
+			    OR EXISTS(SELECT 1 FROM follows WHERE follower_id=$2 AND followee_id=$1)`,
+			viewer, target).Scan(&contact)
+		if !contact && viewer != target {
+			online, lastSeen = false, nil
+		}
+	}
 	if !showActive {
 		online = false
 		lastSeen = nil

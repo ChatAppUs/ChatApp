@@ -2,8 +2,14 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
-realtime/transcode work are marked accordingly; the canonical ranked gap list is
+Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped — privacy
+suite depth (presence/phone granularity, data saver, account self-destruct TTL,
+safety mode flag), sessions management, chat archive, sticker packs, chat
+folders, lists + list feed, bookmark folders, profile visitors, playlists,
+paid-verification request/review flow, reply policy enforcement, content
+warnings, alt text, hidden replies, creator comment pinning, public group
+handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
+(017) are also marked. Canonical ranked gap list:
 [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Core messaging
@@ -39,13 +45,13 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | Photo/video messages | ✅ | media_urls |
 | Files up to 2GB (4GB Premium) | 🚧 | 2 GiB cap at media edge; gap: chunked resumable upload |
 | Voice messages with waveform | 🚧 | Voice messages shipped (recorder + inline player); gap: waveform data |
-| Video messages (round) | ❌ | Gap: recorder UI |
-| Stickers (static/animated/video) | ❌ | Gap: sticker packs entity |
+| Video messages (round) | ✅ | video-note messages (017); round-mask render in clients |
+| Stickers (static/animated/video) | ✅ | sticker_packs + stickers + sticker message send (018) |
 | GIF search | ❌ | Gap: Tenor/GIPHY integration |
 | Animated emoji | ❌ | Gap: low priority |
 | Media compression options (photo vs file) | ❌ | Gap: upload pipeline choice |
 | Polls & quizzes in chat | 🚧 | Post polls exist; gap: chat-embedded |
-| Location & live location | ❌ | Gap: location message type |
+| Location & live location | ✅ | live_locations start/stop/view (017) |
 | Contacts sharing | ❌ | Gap: contact card message type |
 
 ## Groups & channels
@@ -53,8 +59,8 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | Feature | Status | Notes |
 |---|---|---|
 | Groups up to 200k members | 🚧 | Group chat exists; gap: scale testing, admin tools |
-| Group admin permissions (granular) | 🚧 | role owner/admin/member; gap: per-permission flags |
-| Public groups with @handle | ❌ | Gap: public handles + join-by-link |
+| Group admin permissions (granular) | ✅ | conversation_members.perms flags + member role endpoint (018) |
+| Public groups with @handle | ✅ | conversations.handle + GET/POST /api/handles/{handle} lookup/join (018) |
 | Join requests & invite links | ✅ | Shipped: invite links + join requests |
 | Slow mode | ❌ | Gap: per-group rate limit |
 | Topics (forum groups) | ❌ | Gap: topic threads in groups |
@@ -71,8 +77,8 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | Group voice chats (live, thousands) | ✅ | Shipped: self-built SFU audio rooms |
 | Video in group voice chats | ✅ | Shipped: SFU group calls with video |
 | Live streams with unlimited viewers | ❌ | Gap: RTMP/HLS pipeline |
-| Screen sharing | ❌ | Gap: getDisplayMedia |
-| Call recording | ❌ | Gap: SFU recording |
+| Screen sharing | ✅ | getDisplayMedia + screenshare signaling (017) |
+| Call recording | ✅ | call_recordings via MediaRecorder upload (017) |
 | Noise suppression | ❌ | Gap: client DSP |
 
 ## Platform & ecosystem
@@ -86,8 +92,8 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | QR login | ✅ | Scan-to-approve |
 | Active sessions management | 🚧 | Sessions stored; gap: UI to list/revoke |
 | Proxy support (MTProto/SOCKS5) | ❌ | Gap: not applicable to our transport |
-| Folders for chats | ❌ | Gap: chat folders |
-| Archive chats | ❌ | Gap: archived flag |
+| Folders for chats | ✅ | chat_folders + chat_folder_conversations (018) |
+| Archive chats | ✅ | conversation_members.archived_at + archive/unarchive endpoints (018) |
 | Multi-account in one app | ❌ | Gap: account switcher |
 | Usernames & public links (t.me/u) | 🚧 | Usernames exist; gap: public URL routing |
 | People nearby / local groups | ❌ | Gap: geo discovery |
@@ -99,9 +105,9 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 |---|---|---|
 | 2FA (cloud password) | ✅ | TOTP; Telegram uses SRP password — equivalent strength |
 | Passkey/biometric app lock | 🚧 | Passkey login exists; gap: local app-lock screen |
-| Phone number privacy (who can see/find) | ❌ | Gap: privacy settings matrix |
+| Phone number privacy (who can see/find) | ✅ | users.phone_privacy + /api/me/privacy matrix (018) |
 | Blocked users | ✅ | POST/DELETE /api/users/{id}/block, enforced in messaging |
-| Auto-delete account if away | ❌ | Gap: account TTL worker |
+| Auto-delete account if away | ✅ | account_ttl_days + startAccountTTLWorker (018) |
 | Report spam | ✅ | |
 
 ## Implementation priority for ChatApp

@@ -179,3 +179,28 @@
   then POST /api/calls/rooms/{id}/recordings {media_id, duration_s}; list +
   delete on the same path. Screenshare is client getDisplayMedia + signaling
   via /api/calls/rooms/{id}/screenshare.
+
+## Contracts discovered while testing (2026-08-31, session 6 — gap pack 3)
+- Migration 018_gap_pack3.sql: users.last_seen_privacy/phone_privacy/
+  data_saver/safety_mode/account_ttl_days, conversations.handle (unique
+  public @handle), conversation_members.perms (granular admin flags),
+  sticker_packs + stickers, chat_folders + chat_folder_conversations,
+  lists + list_members, bookmark_folders + bookmarks.folder_id,
+  profile_views, playlists + playlist_items, verification_requests,
+  posts.reply_policy/content_warning/sensitive/pinned_comment_id,
+  post_media.alt_text, comments.hidden_at.
+- Reply policy enforced in handleAddComment via checkReplyPolicy (403 on
+  violation); author is always allowed; "mentioned" checks post_tags +
+  @mention of the author's username in the comment body.
+- Hidden replies (comments.hidden_at): invisible to everyone except the
+  comment author and the post author; hide/unhide = POST /api/comments/{id}/
+  hide|unhide (post author or comment author only).
+- Public handles: PUT /api/conversations/{id}/handle (owner only,
+  3-32 [a-z0-9_]), GET /api/handles/{handle} preview, POST .../join.
+  Member roles: PUT /api/conversations/{id}/members/{uid}/role (owner only).
+- startAccountTTLWorker (main.go) flips status='deleted' after inactivity
+  past account_ttl_days. Sessions: GET/DELETE /api/me/sessions{,/{id}}.
+- tests/gaps3_test.py = 82 checks. Full sweep 2026-08-31: gaps3 82/82,
+  integration 153/153, gaps 92/92, gaps2 70/70, features 72/72, finance
+  44/44 (SFU on :8095, fresh Postgres 17 in sandbox, Go 1.23 toolchain
+  under ~/tools/go, binaries built to /tmp).

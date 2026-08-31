@@ -19,36 +19,40 @@ type mediaIn struct {
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 	DurationS int    `json:"duration_s"`
+	AltText   string `json:"alt_text,omitempty"`
 }
 
 type postOut struct {
-	ID           string      `json:"id"`
-	AuthorID     string      `json:"author_id"`
-	AuthorName   string      `json:"author_name"`
-	AuthorUser   string      `json:"author_username"`
-	AuthorAvatar string      `json:"author_avatar"`
-	Type         string      `json:"type"`
-	Body         string      `json:"body"`
-	Visibility   string      `json:"visibility"`
-	LikeCount    int         `json:"like_count"`
-	CommentCount int         `json:"comment_count"`
-	ShareCount   int         `json:"share_count"`
-	ViewCount    int64       `json:"view_count"`
-	LikedByMe    bool        `json:"liked_by_me"`
-	MyReaction   string      `json:"my_reaction"`
-	Feeling      string      `json:"feeling"`
-	Location     string      `json:"location"`
-	StoryBG      string      `json:"story_background,omitempty"`
-	StoryStickers string     `json:"story_stickers,omitempty"`
-	StoryMusic   string      `json:"story_music,omitempty"`
-	Tagged       []string    `json:"tagged_usernames"`
-	Media        []mediaIn   `json:"media"`
-	CreatedAt    time.Time   `json:"created_at"`
-	PublishAt    *time.Time  `json:"publish_at"`
-	RepostOf     string      `json:"repost_of"`
-	ThreadParent string      `json:"thread_parent_id"`
-	EditedAt     *time.Time  `json:"edited_at"`
-	Quoted       *quotedPost `json:"quoted,omitempty"`
+	ID             string      `json:"id"`
+	AuthorID       string      `json:"author_id"`
+	AuthorName     string      `json:"author_name"`
+	AuthorUser     string      `json:"author_username"`
+	AuthorAvatar   string      `json:"author_avatar"`
+	Type           string      `json:"type"`
+	Body           string      `json:"body"`
+	Visibility     string      `json:"visibility"`
+	LikeCount      int         `json:"like_count"`
+	CommentCount   int         `json:"comment_count"`
+	ShareCount     int         `json:"share_count"`
+	ViewCount      int64       `json:"view_count"`
+	LikedByMe      bool        `json:"liked_by_me"`
+	MyReaction     string      `json:"my_reaction"`
+	Feeling        string      `json:"feeling"`
+	Location       string      `json:"location"`
+	StoryBG        string      `json:"story_background,omitempty"`
+	StoryStickers  string      `json:"story_stickers,omitempty"`
+	StoryMusic     string      `json:"story_music,omitempty"`
+	Tagged         []string    `json:"tagged_usernames"`
+	Media          []mediaIn   `json:"media"`
+	CreatedAt      time.Time   `json:"created_at"`
+	PublishAt      *time.Time  `json:"publish_at"`
+	RepostOf       string      `json:"repost_of"`
+	ThreadParent   string      `json:"thread_parent_id"`
+	EditedAt       *time.Time  `json:"edited_at"`
+	Quoted         *quotedPost `json:"quoted,omitempty"`
+	ContentWarning string      `json:"content_warning,omitempty"`
+	Sensitive      bool        `json:"sensitive,omitempty"`
+	ReplyPolicy    string      `json:"reply_policy"`
 }
 
 type quotedPost struct {
@@ -72,21 +76,24 @@ func pageParams(r *http.Request) (limit, offset int) {
 
 func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type          string    `json:"type"` // post | reel | story
-		Body          string    `json:"body"`
-		Visibility    string    `json:"visibility"`
-		Media         []mediaIn `json:"media"`
-		PollOptions   []string  `json:"poll_options"` // 2-4 options turns the post into a poll
-		RepostOf      string    `json:"repost_of"`
-		ThreadParent  string    `json:"thread_parent_id"`
-		Feeling       string    `json:"feeling"`  // feeling/activity metadata
-		Location      string    `json:"location"` // check-in
-		TaggedUsers   []string  `json:"tagged_user_ids"`
-		PublishAt     string    `json:"publish_at"`       // RFC3339; future = scheduled post
-		RemixOf       string    `json:"remix_of"`         // reel remix/duet source post id
-		StoryBG       string    `json:"story_background"` // gradient key for text stories
-		StoryStickers string    `json:"story_stickers"`   // JSON array of sticker overlays
-		StoryMusic    string    `json:"story_music"`      // JSON {track, offset_s}
+		Type           string    `json:"type"` // post | reel | story
+		Body           string    `json:"body"`
+		Visibility     string    `json:"visibility"`
+		Media          []mediaIn `json:"media"`
+		PollOptions    []string  `json:"poll_options"` // 2-4 options turns the post into a poll
+		RepostOf       string    `json:"repost_of"`
+		ThreadParent   string    `json:"thread_parent_id"`
+		Feeling        string    `json:"feeling"`  // feeling/activity metadata
+		Location       string    `json:"location"` // check-in
+		TaggedUsers    []string  `json:"tagged_user_ids"`
+		PublishAt      string    `json:"publish_at"`       // RFC3339; future = scheduled post
+		RemixOf        string    `json:"remix_of"`         // reel remix/duet source post id
+		StoryBG        string    `json:"story_background"` // gradient key for text stories
+		StoryStickers  string    `json:"story_stickers"`   // JSON array of sticker overlays
+		StoryMusic     string    `json:"story_music"`      // JSON {track, offset_s}
+		ReplyPolicy    string    `json:"reply_policy"`     // everyone|following|mentioned|nobody
+		ContentWarning string    `json:"content_warning"`  // shown behind a click-through
+		Sensitive      bool      `json:"sensitive"`        // blur media until tapped
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -120,6 +127,25 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	if len(req.Feeling) > 50 || len(req.Location) > 100 {
 		writeErr(w, http.StatusBadRequest, "feeling up to 50 chars, location up to 100")
 		return
+	}
+	switch req.ReplyPolicy {
+	case "", "everyone", "following", "mentioned", "nobody":
+	default:
+		writeErr(w, http.StatusBadRequest, "invalid reply_policy")
+		return
+	}
+	if req.ReplyPolicy == "" {
+		req.ReplyPolicy = "everyone"
+	}
+	if len(req.ContentWarning) > 100 {
+		writeErr(w, http.StatusBadRequest, "content_warning up to 100 chars")
+		return
+	}
+	for _, m := range req.Media {
+		if len(m.AltText) > 1000 {
+			writeErr(w, http.StatusBadRequest, "alt_text up to 1000 chars")
+			return
+		}
 	}
 	if req.RemixOf != "" && req.Type != "reel" {
 		writeErr(w, http.StatusBadRequest, "remix_of only applies to reels")
@@ -216,12 +242,14 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id,
-		                    feeling, location, publish_at, remix_of, story_background, story_stickers, story_music)
+		                    feeling, location, publish_at, remix_of, story_background, story_stickers, story_music,
+		                    reply_policy, content_warning, sensitive)
                  VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid,$8,$9,$10,
-                         NULLIF($11,'')::uuid,$12,$13,$14) RETURNING id`,
+                         NULLIF($11,'')::uuid,$12,$13,$14,$15,$16,$17) RETURNING id`,
 		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent,
 		strings.TrimSpace(req.Feeling), strings.TrimSpace(req.Location), publishAt,
-		req.RemixOf, req.StoryBG, stickers, music).Scan(&postID)
+		req.RemixOf, req.StoryBG, stickers, music,
+		req.ReplyPolicy, strings.TrimSpace(req.ContentWarning), req.Sensitive).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
@@ -268,9 +296,9 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := tx.Exec(r.Context(),
-			`INSERT INTO post_media (post_id, kind, url, thumb_url, width, height, duration_s, position)
-                         VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,0),$8)`,
-			postID, m.Kind, m.URL, m.ThumbURL, m.Width, m.Height, m.DurationS, i); err != nil {
+			`INSERT INTO post_media (post_id, kind, url, thumb_url, width, height, duration_s, position, alt_text)
+                         VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,0),$8,$9)`,
+			postID, m.Kind, m.URL, m.ThumbURL, m.Width, m.Height, m.DurationS, i, m.AltText); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to attach media")
 			return
 		}
@@ -301,7 +329,8 @@ SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url, p.type, p.bo
        EXISTS(SELECT 1 FROM likes l WHERE l.post_id = p.id AND l.user_id = $1),
        COALESCE((SELECT pr.reaction FROM post_reactions pr WHERE pr.post_id = p.id AND pr.user_id = $1), ''),
        p.feeling, p.location, p.publish_at,
-       COALESCE(p.story_background,''), COALESCE(p.story_stickers::text,''), COALESCE(p.story_music::text,'')
+       COALESCE(p.story_background,''), COALESCE(p.story_stickers::text,''), COALESCE(p.story_music::text,''),
+       p.content_warning, p.sensitive, p.reply_policy
 FROM posts p JOIN users u ON u.id = p.author_id`
 
 func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postOut, error) {
@@ -318,7 +347,8 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 			&p.Type, &p.Body, &p.Visibility, &p.LikeCount, &p.CommentCount, &p.ShareCount,
 			&p.ViewCount, &p.CreatedAt, &p.RepostOf, &p.ThreadParent, &p.EditedAt, &p.LikedByMe,
 			&p.MyReaction, &p.Feeling, &p.Location, &p.PublishAt,
-					&p.StoryBG, &p.StoryStickers, &p.StoryMusic); err != nil {
+			&p.StoryBG, &p.StoryStickers, &p.StoryMusic,
+			&p.ContentWarning, &p.Sensitive, &p.ReplyPolicy); err != nil {
 			return nil, err
 		}
 		p.Media = []mediaIn{}
@@ -344,7 +374,7 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 	}
 	trows.Close()
 	mrows, err := a.db.Query(ctx,
-		`SELECT post_id, kind, url, thumb_url, COALESCE(width,0), COALESCE(height,0), COALESCE(duration_s,0)
+		`SELECT post_id, kind, url, thumb_url, COALESCE(width,0), COALESCE(height,0), COALESCE(duration_s,0), alt_text
                  FROM post_media WHERE post_id = ANY($1) ORDER BY position`, ids)
 	if err != nil {
 		return nil, err
@@ -354,7 +384,7 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 	for mrows.Next() {
 		var pid string
 		var m mediaIn
-		if err := mrows.Scan(&pid, &m.Kind, &m.URL, &m.ThumbURL, &m.Width, &m.Height, &m.DurationS); err != nil {
+		if err := mrows.Scan(&pid, &m.Kind, &m.URL, &m.ThumbURL, &m.Width, &m.Height, &m.DurationS, &m.AltText); err != nil {
 			return nil, err
 		}
 		byPost[pid] = append(byPost[pid], m)
@@ -579,6 +609,10 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid, postID := userIDFrom(r), r.PathValue("id")
+	if err := a.checkReplyPolicy(r.Context(), postID, uid, req.Body); err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "comment failed")
@@ -643,6 +677,8 @@ func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
                  EXISTS(SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $4)
                  FROM comments c JOIN users u ON u.id = c.author_id
                  WHERE c.post_id = $1 AND c.deleted_at IS NULL
+                 AND (c.hidden_at IS NULL OR c.author_id = $4
+                      OR EXISTS(SELECT 1 FROM posts p WHERE p.id = c.post_id AND p.author_id = $4))
                  ORDER BY `+orderBy+` LIMIT $2 OFFSET $3`,
 		r.PathValue("id"), limit, offset, userIDFrom(r))
 	if err != nil {
@@ -728,6 +764,7 @@ func (a *App) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "user not found")
 		return
 	}
+	a.recordProfileView(r.Context(), r.PathValue("id"), userIDFrom(r))
 	var followers, following int
 	_ = a.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM follows WHERE followee_id=$1`, u.ID).Scan(&followers)
 	_ = a.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM follows WHERE follower_id=$1`, u.ID).Scan(&following)

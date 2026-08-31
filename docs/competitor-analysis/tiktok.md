@@ -2,8 +2,14 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-30: features shipped in parity batches 4/5 and the
-realtime/transcode work are marked accordingly; the canonical ranked gap list is
+Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped — privacy
+suite depth (presence/phone granularity, data saver, account self-destruct TTL,
+safety mode flag), sessions management, chat archive, sticker packs, chat
+folders, lists + list feed, bookmark folders, profile visitors, playlists,
+paid-verification request/review flow, reply policy enforcement, content
+warnings, alt text, hidden replies, creator comment pinning, public group
+handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
+(017) are also marked. Canonical ranked gap list:
 [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Video consumption
@@ -15,7 +21,7 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | Preloading / instant playback | ❌ | Gap: client prefetch strategy |
 | Watch-time & completion signals | ✅ | Shipped: reel_watch_events → FYP ranking |
 | Rewatch detection | ✅ | Shipped: rewatch signals in the same event stream |
-| "Not interested" feedback | ❌ | Gap: negative signal endpoint |
+| "Not interested" feedback | ✅ | watch signals incl. not-interested/down-weight (014/017) |
 | Following feed (video-only) | 🚧 | Gap: filter reels by follows |
 | Search (video, users, sounds, hashtags) | 🚧 | Users/hashtags exist; gap: video & sound search |
 | Comments with likes & replies | ✅ | Comment likes + nested reply threads; reels are posts, so reel comments included |
@@ -46,8 +52,8 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 | Likes on videos | ✅ | |
 | Shares with counter | ❌ | Gap: shares entity |
 | Favorites/collections | 🚧 | Bookmarks exist; gap: collections |
-| Duets chains / remix attribution | ❌ | Gap: remix_of on reels |
-| Comment pinning by creator | ❌ | Gap: pinned comment |
+| Duets chains / remix attribution | ✅ | posts.remix_of + reel_watch analytics (017) |
+| Comment pinning by creator | ✅ | posts.pinned_comment_id + PUT /api/posts/{id}/pinned-comment (018) |
 | Q&A on profiles | ❌ | Gap: low priority |
 | Live gifts during streams | ❌ | Gap: wallet-backed gifts |
 | Co-hosting lives | ❌ | Gap: multi-publisher SFU |
@@ -100,9 +106,9 @@ realtime/transcode work are marked accordingly; the canonical ranked gap list is
 
 | Feature | Status | Notes |
 |---|---|---|
-| Profile views history | ❌ | Gap: profile_views table |
-| Pinned videos | ❌ | Gap: pinned reel ids |
-| Playlists (creator-curated) | ❌ | Gap: playlist entity |
+| Profile views history | ✅ | profile_views + /api/me/profile-visitors (018) |
+| Pinned videos | ✅ | users.pinned_post_id, profile shows pinned post first (016) |
+| Playlists (creator-curated) | ✅ | playlists + playlist_items (018) |
 | Bio links | 🚧 | bio text; gap: link metadata |
 
 ## Implementation priority for ChatApp

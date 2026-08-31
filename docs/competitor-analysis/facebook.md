@@ -2,9 +2,11 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-30 (finance plane): the crypto finance plane shipped
-after parity batches 4/5 — see "Crypto finance plane (beyond Facebook)" below.
-The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped; rows
+delivered by gap-pack-2 (017) — trusted contacts, legacy contact, multiple
+profiles, story composer fields, video notes, live location, screenshare, call
+recording, community notes — are now marked accordingly. The canonical ranked
+gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Accounts & identity
 
@@ -14,10 +16,10 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Google/SSO login | ✅ | Google ID-token sign-in (JWKS verified) |
 | 2FA (TOTP/SMS) | ✅ | RFC 6238 TOTP; phone codes via our self-built OTP engine (crypto/rand codes, salted hashes, throttled resend) — no third-party verification service |
 | Passkey / biometric login | ✅ | WebAuthn platform authenticators |
-| Trusted contacts / account recovery | ❌ | Gap: nominate friends to help recover account |
+| Trusted contacts / account recovery | ✅ | trusted_contacts (max 4) + TOTP-gated account_recoveries claim flow (017) |
 | Profile lock (non-friends see limited info) | ✅ | users.profile_locked enforced in social + stories handlers |
-| Legacy contact / memorialization | ❌ | Gap: low priority |
-| Multiple profiles per account | ❌ | Gap: FB allows up to 4 extra profiles |
+| Legacy contact / memorialization | ✅ | users.legacy_contact_id + memorialize flow (017) |
+| Multiple profiles per account | ✅ | user_profiles + /api/me/profiles /activate (017) |
 
 ## Feed & posting
 
@@ -58,7 +60,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Story highlights (permanent collections) | ✅ | story_highlights + /api/highlights routes |
 | Story privacy (close friends) | ✅ | Shipped: close-friends list + audience flag |
 | Story viewer list | ✅ | Deduped view tracking, author-only viewer list |
-| Text stories / stickers / music | ❌ | Gap: composer tools |
+| Text stories / stickers / music | ✅ | posts.story_background/story_stickers/story_music jsonb + story composer fields (017) |
 
 ## Reels / video
 
@@ -67,7 +69,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Short video feed | ✅ | |
 | Watch-time tracking | ✅ | Shipped: reel_watch_events ingestion feeds FYP ranking |
 | Reel comments/likes/shares | ✅ | reels are posts.type='reel'; comments/likes/share-to-chat all apply |
-| Remix/duet | ❌ | Gap: needs editor |
+| Remix/duet | 🚧 | posts.remix_of attribution + reel analytics (017); visual editor is client work |
 | Sounds/music library | ❌ | Gap: licensed audio is a legal, not tech, problem |
 | Creator monetization on reels | 🚧 | RPM-based earnings exist; gap: per-reel analytics |
 
@@ -80,12 +82,12 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Typing indicators, read receipts, presence | ✅ | |
 | E2EE | ✅ | ECDH key relay; client-side cipher |
 | Voice messages | ✅ | Recorder + inline player |
-| Video notes | ❌ | Gap: recorder UI |
+| Video notes | ✅ | video-note messages via uploaded media_id (017); recorder UI in clients |
 | Message requests (non-friends) | ✅ | Shipped: request inbox, accept/decline before chat opens |
 | Nicknames per chat | ✅ | chat_nicknames table, PUT /api/conversations/{id}/nicknames/{userId} |
 | Chat themes/colors | ✅ | conversations.theme + 🎨 gradient picker in chat header |
 | Polls in chat | ✅ | Post polls exist; gap: attach to chat message |
-| Location sharing (live) | ❌ | Gap: location message type |
+| Location sharing (live) | ✅ | live_locations start/stop/view with haversine fallback (017) |
 | Payments in chat | 🚧 | Full finance plane shipped (deposits/withdrawals/P2P/convert — see below); gap: pay-in-chat UI hook |
 
 ## Calls
@@ -95,8 +97,8 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | 1:1 audio/video | ✅ | WebRTC mesh |
 | Group calls | ✅ | Self-built SFU (services/sfu) powers group calls/meetings/live |
 | Messenger Rooms (drop-in video rooms) | 🚧 | Call rooms + join tickets shipped; persistent drop-in links partial |
-| Screen sharing | ❌ | Gap: getDisplayMedia in client |
-| Call recording | ❌ | Gap: needs SFU/compositor |
+| Screen sharing | ✅ | getDisplayMedia + /api/calls/rooms/{id}/screenshare signaling (017) |
+| Call recording | ✅ | MediaRecorder webm upload + call_recordings list/delete (017) |
 | AR effects/filters | ❌ | Gap: low priority |
 
 ## Monetization
@@ -115,7 +117,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Report content/users | ✅ | reports table + admin queue |
 | Block users | ✅ | Shipped: blocks table + feed/chat filtering |
 | Comment filters / hidden words | ✅ | Shipped: per-user word filters |
-| Community Notes equivalent | ❌ | Gap: low priority |
+| Community Notes equivalent | ✅ | GET/POST /api/posts/{id}/notes + vote + delete, wired on all clients |
 | AI moderation queue | 🚧 | Rust security service has heuristic scorer; gap: media moderation |
 
 ## Notifications
@@ -124,7 +126,7 @@ The canonical ranked gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | In-app notifications | ✅ | |
 | Push (FCM/APNs/Web Push) | ✅ | Shipped: self-built Web Push (VAPID) + FCM/APNs gateway hooks |
-| Email notifications | ❌ | Gap: digest worker (SMTP exists) |
+| Email notifications | ✅ | startDigestWorker sends periodic digests over SMTP |
 
 ## Implementation priority for ChatApp
 
