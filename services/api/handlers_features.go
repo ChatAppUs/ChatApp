@@ -105,7 +105,10 @@ func (a *App) handleReactMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Emoji string `json:"emoji"`
 	}
-	if !decodeJSON(w, r, &req) || !emojiRe.MatchString(req.Emoji) {
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !emojiRe.MatchString(req.Emoji) && !a.customEmojiExists(r.Context(), req.Emoji) {
 		writeErr(w, http.StatusBadRequest, "valid emoji required")
 		return
 	}
@@ -595,7 +598,9 @@ func (a *App) isBlockedEither(ctx context.Context, aID, bID string) bool {
 // configured RPM (revenue per 1000 views), minus approved/paid payouts.
 func (a *App) creatorBalance(ctx context.Context, creatorID string) (earned, paidOut, available float64, err error) {
 	err = a.db.QueryRow(ctx,
-		`SELECT COALESCE(sum(view_count),0) * $2 / 1000.0 FROM posts WHERE author_id=$1 AND type IN ('post','reel')`,
+		`SELECT COUNT(*)::numeric * $2 / 1000.0 FROM reel_watch_events
+		 WHERE (completed OR rewatched)
+		   AND post_id IN (SELECT id FROM posts WHERE author_id=$1 AND type IN ('post','reel'))`,
 		creatorID, a.cfg.CreatorRPM).Scan(&earned)
 	if err != nil {
 		return

@@ -55,6 +55,21 @@ func (a *App) handleEditPost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "body required")
 		return
 	}
+	// Edit time window (X Premium 1h / Telegram 48h — POST_EDIT_WINDOW_MINUTES,
+	// default 48h). Past the window the post is immutable; 0 disables the limit.
+	if a.cfg.PostEditWindowMinutes > 0 {
+		var createdAt time.Time
+		if err := a.db.QueryRow(r.Context(),
+			`SELECT created_at FROM posts WHERE id=$1 AND author_id=$2 AND deleted_at IS NULL`,
+			postID, uid).Scan(&createdAt); err != nil {
+			writeErr(w, http.StatusNotFound, "post not found or not yours")
+			return
+		}
+		if time.Since(createdAt) > time.Duration(a.cfg.PostEditWindowMinutes)*time.Minute {
+			writeErr(w, http.StatusForbidden, "edit window expired")
+			return
+		}
+	}
 	// Archive the previous body before overwriting it (full edit history).
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {

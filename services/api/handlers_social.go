@@ -23,36 +23,38 @@ type mediaIn struct {
 }
 
 type postOut struct {
-	ID             string      `json:"id"`
-	AuthorID       string      `json:"author_id"`
-	AuthorName     string      `json:"author_name"`
-	AuthorUser     string      `json:"author_username"`
-	AuthorAvatar   string      `json:"author_avatar"`
-	Type           string      `json:"type"`
-	Body           string      `json:"body"`
-	Visibility     string      `json:"visibility"`
-	LikeCount      int         `json:"like_count"`
-	CommentCount   int         `json:"comment_count"`
-	ShareCount     int         `json:"share_count"`
-	ViewCount      int64       `json:"view_count"`
-	LikedByMe      bool        `json:"liked_by_me"`
-	MyReaction     string      `json:"my_reaction"`
-	Feeling        string      `json:"feeling"`
-	Location       string      `json:"location"`
-	StoryBG        string      `json:"story_background,omitempty"`
-	StoryStickers  string      `json:"story_stickers,omitempty"`
-	StoryMusic     string      `json:"story_music,omitempty"`
-	Tagged         []string    `json:"tagged_usernames"`
-	Media          []mediaIn   `json:"media"`
-	CreatedAt      time.Time   `json:"created_at"`
-	PublishAt      *time.Time  `json:"publish_at"`
-	RepostOf       string      `json:"repost_of"`
-	ThreadParent   string      `json:"thread_parent_id"`
-	EditedAt       *time.Time  `json:"edited_at"`
-	Quoted         *quotedPost `json:"quoted,omitempty"`
-	ContentWarning string      `json:"content_warning,omitempty"`
-	Sensitive      bool        `json:"sensitive,omitempty"`
-	ReplyPolicy    string      `json:"reply_policy"`
+	ID             string          `json:"id"`
+	AuthorID       string          `json:"author_id"`
+	AuthorName     string          `json:"author_name"`
+	AuthorUser     string          `json:"author_username"`
+	AuthorAvatar   string          `json:"author_avatar"`
+	Type           string          `json:"type"`
+	Body           string          `json:"body"`
+	Visibility     string          `json:"visibility"`
+	LikeCount      int             `json:"like_count"`
+	CommentCount   int             `json:"comment_count"`
+	ShareCount     int             `json:"share_count"`
+	ViewCount      int64           `json:"view_count"`
+	LikedByMe      bool            `json:"liked_by_me"`
+	MyReaction     string          `json:"my_reaction"`
+	Feeling        string          `json:"feeling"`
+	Location       string          `json:"location"`
+	StoryBG        string          `json:"story_background,omitempty"`
+	StoryStickers  string          `json:"story_stickers,omitempty"`
+	StoryMusic     string          `json:"story_music,omitempty"`
+	Tagged         []string        `json:"tagged_usernames"`
+	Media          []mediaIn       `json:"media"`
+	CreatedAt      time.Time       `json:"created_at"`
+	PublishAt      *time.Time      `json:"publish_at"`
+	RepostOf       string          `json:"repost_of"`
+	ThreadParent   string          `json:"thread_parent_id"`
+	EditedAt       *time.Time      `json:"edited_at"`
+	Quoted         *quotedPost     `json:"quoted,omitempty"`
+	ContentWarning string          `json:"content_warning,omitempty"`
+	Sensitive      bool            `json:"sensitive,omitempty"`
+	ReplyPolicy    string          `json:"reply_policy"`
+	Article        json.RawMessage `json:"article,omitempty"`
+	AudienceListID string          `json:"audience_list_id,omitempty"`
 }
 
 type quotedPost struct {
@@ -76,24 +78,26 @@ func pageParams(r *http.Request) (limit, offset int) {
 
 func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type           string    `json:"type"` // post | reel | story
-		Body           string    `json:"body"`
-		Visibility     string    `json:"visibility"`
-		Media          []mediaIn `json:"media"`
-		PollOptions    []string  `json:"poll_options"` // 2-4 options turns the post into a poll
-		RepostOf       string    `json:"repost_of"`
-		ThreadParent   string    `json:"thread_parent_id"`
-		Feeling        string    `json:"feeling"`  // feeling/activity metadata
-		Location       string    `json:"location"` // check-in
-		TaggedUsers    []string  `json:"tagged_user_ids"`
-		PublishAt      string    `json:"publish_at"`       // RFC3339; future = scheduled post
-		RemixOf        string    `json:"remix_of"`         // reel remix/duet source post id
-		StoryBG        string    `json:"story_background"` // gradient key for text stories
-		StoryStickers  string    `json:"story_stickers"`   // JSON array of sticker overlays
-		StoryMusic     string    `json:"story_music"`      // JSON {track, offset_s}
-		ReplyPolicy    string    `json:"reply_policy"`     // everyone|following|mentioned|nobody
-		ContentWarning string    `json:"content_warning"`  // shown behind a click-through
-		Sensitive      bool      `json:"sensitive"`        // blur media until tapped
+		Type           string          `json:"type"` // post | reel | story
+		Body           string          `json:"body"`
+		Visibility     string          `json:"visibility"`
+		Media          []mediaIn       `json:"media"`
+		PollOptions    []string        `json:"poll_options"` // 2-4 options turns the post into a poll
+		RepostOf       string          `json:"repost_of"`
+		ThreadParent   string          `json:"thread_parent_id"`
+		Feeling        string          `json:"feeling"`  // feeling/activity metadata
+		Location       string          `json:"location"` // check-in
+		TaggedUsers    []string        `json:"tagged_user_ids"`
+		PublishAt      string          `json:"publish_at"`       // RFC3339; future = scheduled post
+		RemixOf        string          `json:"remix_of"`         // reel remix/duet source post id
+		StoryBG        string          `json:"story_background"` // gradient key for text stories
+		StoryStickers  string          `json:"story_stickers"`   // JSON array of sticker overlays
+		StoryMusic     string          `json:"story_music"`      // JSON {track, offset_s}
+		ReplyPolicy    string          `json:"reply_policy"`     // everyone|following|mentioned|nobody
+		ContentWarning string          `json:"content_warning"`  // shown behind a click-through
+		Sensitive      bool            `json:"sensitive"`        // blur media until tapped
+		Article        json.RawMessage `json:"article"`          // long-form article {title,subtitle,body,cover_url}
+		AudienceListID string          `json:"audience_list_id"` // required when visibility='list'
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -108,11 +112,16 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	if req.Visibility == "" {
 		req.Visibility = "public"
 	}
-	if req.Visibility != "public" && req.Visibility != "followers" && req.Visibility != "private" && req.Visibility != "close_friends" {
+	if req.Visibility != "public" && req.Visibility != "followers" && req.Visibility != "private" && req.Visibility != "close_friends" && req.Visibility != "list" {
 		writeErr(w, http.StatusBadRequest, "invalid visibility")
 		return
 	}
-	if strings.TrimSpace(req.Body) == "" && len(req.Media) == 0 && len(req.PollOptions) == 0 {
+	articleJSON, articleErr := validateArticle(req.Article)
+	if articleErr != "" {
+		writeErr(w, http.StatusBadRequest, articleErr)
+		return
+	}
+	if strings.TrimSpace(req.Body) == "" && len(req.Media) == 0 && len(req.PollOptions) == 0 && articleJSON == nil {
 		writeErr(w, http.StatusBadRequest, "post must have text, media or a poll")
 		return
 	}
@@ -197,6 +206,20 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		publishAt = &t
 	}
 	uid := userIDFrom(r)
+	if req.Visibility == "list" {
+		// Facebook-style custom audience: the author must own the target list.
+		var owns bool
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM user_lists WHERE id=$1 AND owner_id=$2)`,
+			req.AudienceListID, uid).Scan(&owns)
+		if !owns {
+			writeErr(w, http.StatusBadRequest, "audience_list_id must be one of your lists")
+			return
+		}
+	} else if req.AudienceListID != "" {
+		writeErr(w, http.StatusBadRequest, "audience_list_id requires visibility='list'")
+		return
+	}
 	// ML moderation gate: the ML service owns the policy decision. Transport
 	// failures are fail-open so moderation downtime never blocks posting.
 	if decision, _ := a.mlModerate(req.Body); decision == "block" {
@@ -243,13 +266,14 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id,
 		                    feeling, location, publish_at, remix_of, story_background, story_stickers, story_music,
-		                    reply_policy, content_warning, sensitive)
+		                    reply_policy, content_warning, sensitive, article, audience_list_id)
                  VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid,$8,$9,$10,
-                         NULLIF($11,'')::uuid,$12,$13,$14,$15,$16,$17) RETURNING id`,
+NULLIF($11,'')::uuid,$12,$13,$14,$15,$16,$17,$18,NULLIF($19,'')::uuid) RETURNING id`,
 		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent,
 		strings.TrimSpace(req.Feeling), strings.TrimSpace(req.Location), publishAt,
 		req.RemixOf, req.StoryBG, stickers, music,
-		req.ReplyPolicy, strings.TrimSpace(req.ContentWarning), req.Sensitive).Scan(&postID)
+		req.ReplyPolicy, strings.TrimSpace(req.ContentWarning), req.Sensitive,
+		articleJSON, req.AudienceListID).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
@@ -336,7 +360,8 @@ SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url, p.type, p.bo
        COALESCE((SELECT pr.reaction FROM post_reactions pr WHERE pr.post_id = p.id AND pr.user_id = $1), ''),
        p.feeling, p.location, p.publish_at,
        COALESCE(p.story_background,''), COALESCE(p.story_stickers::text,''), COALESCE(p.story_music::text,''),
-       p.content_warning, p.sensitive, p.reply_policy
+       p.content_warning, p.sensitive, p.reply_policy,
+       COALESCE(p.article::text,''), COALESCE(p.audience_list_id::text,'')
 FROM posts p JOIN users u ON u.id = p.author_id`
 
 func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postOut, error) {
@@ -349,13 +374,18 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 	var ids []any
 	for rows.Next() {
 		var p postOut
+		var article string
 		if err := rows.Scan(&p.ID, &p.AuthorID, &p.AuthorName, &p.AuthorUser, &p.AuthorAvatar,
 			&p.Type, &p.Body, &p.Visibility, &p.LikeCount, &p.CommentCount, &p.ShareCount,
 			&p.ViewCount, &p.CreatedAt, &p.RepostOf, &p.ThreadParent, &p.EditedAt, &p.LikedByMe,
 			&p.MyReaction, &p.Feeling, &p.Location, &p.PublishAt,
 			&p.StoryBG, &p.StoryStickers, &p.StoryMusic,
-			&p.ContentWarning, &p.Sensitive, &p.ReplyPolicy); err != nil {
+			&p.ContentWarning, &p.Sensitive, &p.ReplyPolicy,
+			&article, &p.AudienceListID); err != nil {
 			return nil, err
+		}
+		if article != "" {
+			p.Article = json.RawMessage(article)
 		}
 		p.Media = []mediaIn{}
 		p.Tagged = []string{}
@@ -441,7 +471,9 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
                        OR (p.visibility = 'followers' AND EXISTS(
                              SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id))
                        OR (p.visibility = 'close_friends' AND EXISTS(
-                             SELECT 1 FROM close_friends cf WHERE cf.user_id = p.author_id AND cf.friend_id = $1)))
+                             SELECT 1 FROM close_friends cf WHERE cf.user_id = p.author_id AND cf.friend_id = $1))
+                       OR (p.visibility = 'list' AND EXISTS(
+                             SELECT 1 FROM user_list_members lm WHERE lm.list_id = p.audience_list_id AND lm.user_id = $1)))
                   AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id = $1 AND m.muted_id = p.author_id)
                   AND NOT EXISTS(SELECT 1 FROM restricted_list rl WHERE rl.user_id = p.author_id AND rl.restricted_id = $1)
                   AND NOT EXISTS(SELECT 1 FROM word_filters wf WHERE wf.user_id = $1 AND p.body ILIKE '%'||wf.phrase||'%')
@@ -453,12 +485,40 @@ func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"posts": posts})
 }
 
+// GET /api/posts/{id} — single post (permalink), same visibility rules as the feed.
+func (a *App) handleGetPost(w http.ResponseWriter, r *http.Request) {
+	uid := userIDFrom(r)
+	posts, err := a.scanPosts(r.Context(), postSelect+`
+		WHERE p.id = $2 AND p.deleted_at IS NULL
+		  AND (p.publish_at IS NULL OR p.publish_at <= now() OR p.author_id = $1)
+		  AND (p.visibility = 'public'
+		       OR p.author_id = $1
+		       OR (p.visibility = 'followers' AND EXISTS(
+		             SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id))
+		       OR (p.visibility = 'close_friends' AND EXISTS(
+		             SELECT 1 FROM close_friends cf WHERE cf.user_id = p.author_id AND cf.friend_id = $1))
+		       OR (p.visibility = 'list' AND EXISTS(
+		             SELECT 1 FROM user_list_members lm WHERE lm.list_id = p.audience_list_id AND lm.user_id = $1)))
+		  AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id = $1 AND b.blocked_id = p.author_id)
+		                 OR (b.blocker_id = p.author_id AND b.blocked_id = $1))`, uid, r.PathValue("id"))
+	if err != nil || len(posts) == 0 {
+		writeErr(w, http.StatusNotFound, "post not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"post": posts[0]})
+}
+
 func (a *App) handleReels(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	limit, offset := pageParams(r)
+	followingClause := ""
+	if r.URL.Query().Get("filter") == "following" {
+		// TikTok-style Following feed: reels from accounts the viewer follows.
+		followingClause = " AND EXISTS(SELECT 1 FROM follows ff WHERE ff.follower_id = $1 AND ff.followee_id = p.author_id)"
+	}
 	posts, err := a.scanPosts(r.Context(), postSelect+`
                 WHERE p.deleted_at IS NULL AND p.type = 'reel' AND p.visibility = 'public'
-                  AND (p.publish_at IS NULL OR p.publish_at <= now())
+                  AND (p.publish_at IS NULL OR p.publish_at <= now())`+followingClause+`
                   AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id = $1 AND m.muted_id = p.author_id)
                   AND NOT EXISTS(SELECT 1 FROM restricted_list rl WHERE rl.user_id = p.author_id AND rl.restricted_id = $1)
                   AND NOT EXISTS(SELECT 1 FROM word_filters wf WHERE wf.user_id = $1 AND p.body ILIKE '%'||wf.phrase||'%')
@@ -811,20 +871,26 @@ func (a *App) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		DisplayName string `json:"display_name"`
-		Bio         string `json:"bio"`
-		AvatarURL   string `json:"avatar_url"`
-		Locale      string `json:"locale"`
+		DisplayName string          `json:"display_name"`
+		Bio         string          `json:"bio"`
+		AvatarURL   string          `json:"avatar_url"`
+		Locale      string          `json:"locale"`
+		BioLinks    json.RawMessage `json:"bio_links"`
 	}
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	bioLinks, linkErr := sanitizeBioLinks(req.BioLinks)
+	if linkErr != "" {
+		writeErr(w, http.StatusBadRequest, linkErr)
 		return
 	}
 	_, err := a.db.Exec(r.Context(),
 		`UPDATE users SET display_name = COALESCE(NULLIF($1,''), display_name),
                  bio = COALESCE(NULLIF($2,''), bio), avatar_url = COALESCE(NULLIF($3,''), avatar_url),
-                 locale = COALESCE(NULLIF($4,''), locale), updated_at = now()
-                 WHERE id = $5`,
-		req.DisplayName, req.Bio, req.AvatarURL, req.Locale, userIDFrom(r))
+                 locale = COALESCE(NULLIF($4,''), locale), bio_links = COALESCE($5::jsonb, bio_links), updated_at = now()
+                 WHERE id = $6`,
+		req.DisplayName, req.Bio, req.AvatarURL, req.Locale, bioLinks, userIDFrom(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "update failed")
 		return

@@ -8,48 +8,49 @@ import (
 )
 
 type Config struct {
-	Port            string
-	DatabaseURL     string
-	JWTSecret       []byte
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
-	AppEnv          string
-	AllowedOrigins  string // comma-separated CORS origins; empty = dev wildcard
-	MediaServiceURL string
-	MLServiceURL    string
-	RedisURL        string
-	SecuritySvcURL  string
-	SMTPHost        string
-	SMTPPort        string
-	SMTPUser        string
-	SMTPPass        string
-	CreatorRPM      float64 // creator revenue per 1000 views, USD
-	BTCRPCURL       string  // own bitcoind JSON-RPC (watch-only wallet)
-	EVMRPCURL       string  // own geth/erigon JSON-RPC
-	TronRPCURL      string  // own tron full-node HTTP
-	SolanaRPCURL    string  // own solana JSON-RPC
-	GoogleClientID  string
-	WebAuthnRPID    string
-	WebAuthnRPName  string
-	WebAuthnOrigins string // comma-separated allowed origins
-	ClusterNodeID   string
-	ClusterRegion   string
-	ClusterAPIURL   string
-	ClusterMediaURL string
-	ClusterSecret   string
-	RelayURL        string // C++ realtime relay control plane
-	SFUInternalURL  string
-	SFUPublicURL    string
-	SFUHost         string
-	SFUSecret       string
-	TURNSecret      string
-	VAPIDSubject    string // mailto: or https: contact for push services
-	VAPIDPrivateKey string // base64url P-256 scalar
-	FCMServerKey    string
-	APNsKeyID       string
-	APNsTeamID      string
-	APNsTopic       string
-	APNsPrivateKey  string // base64url P-256 scalar
+        Port                  string
+        DatabaseURL           string
+        JWTSecret             []byte
+        AccessTokenTTL        time.Duration
+        RefreshTokenTTL       time.Duration
+        AppEnv                string
+        AllowedOrigins        string // comma-separated CORS origins; empty = dev wildcard
+        MediaServiceURL       string
+        MLServiceURL          string
+        RedisURL              string
+        SecuritySvcURL        string
+        SMTPHost              string
+        SMTPPort              string
+        SMTPUser              string
+        SMTPPass              string
+        CreatorRPM            float64 // creator revenue per 1000 views, USD
+        PostEditWindowMinutes int     // post edit time window (X/Telegram parity); 0 = unlimited
+        BTCRPCURL             string  // own bitcoind JSON-RPC (watch-only wallet)
+        EVMRPCURL             string  // own geth/erigon JSON-RPC
+        TronRPCURL            string  // own tron full-node HTTP
+        SolanaRPCURL          string  // own solana JSON-RPC
+        GoogleClientID        string
+        WebAuthnRPID          string
+        WebAuthnRPName        string
+        WebAuthnOrigins       string // comma-separated allowed origins
+        ClusterNodeID         string
+        ClusterRegion         string
+        ClusterAPIURL         string
+        ClusterMediaURL       string
+        ClusterSecret         string
+        RelayURL              string // C++ realtime relay control plane
+        SFUInternalURL        string
+        SFUPublicURL          string
+        SFUHost               string
+        SFUSecret             string
+        TURNSecret            string
+        VAPIDSubject          string // mailto: or https: contact for push services
+        VAPIDPrivateKey       string // base64url P-256 scalar
+        FCMServerKey          string
+        APNsKeyID             string
+        APNsTeamID            string
+        APNsTopic             string
+        APNsPrivateKey        string // base64url P-256 scalar
 
 	// Finance plane. WalletMasterSeed derives self-custody deposit addresses;
 	// WithdrawSigningKey is the superadmin authority key that signs every
@@ -134,10 +135,12 @@ func loadConfig() Config {
 		APNsTopic:       os.Getenv("APNS_TOPIC"),
 		APNsPrivateKey:  os.Getenv("APNS_PRIVATE_KEY"),
 		CreatorRPM:      atof(getenv("CREATOR_RPM", "0.50")),
-		GoogleClientID:  os.Getenv("GOOGLE_CLIENT_ID"),
-		WebAuthnRPID:    getenv("WEBAUTHN_RP_ID", "localhost"),
-		WebAuthnRPName:  getenv("WEBAUTHN_RP_NAME", "ChatApp"),
-		WebAuthnOrigins: getenv("WEBAUTHN_ORIGINS", "http://localhost:3000"),
+		// 48h default matches Telegram's edit window; X Premium is 1h.
+		PostEditWindowMinutes: atoi(getenv("POST_EDIT_WINDOW_MINUTES", "2880")),
+		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
+		WebAuthnRPID:          getenv("WEBAUTHN_RP_ID", "localhost"),
+		WebAuthnRPName:        getenv("WEBAUTHN_RP_NAME", "ChatApp"),
+		WebAuthnOrigins:       getenv("WEBAUTHN_ORIGINS", "http://localhost:3000"),
 
 		WalletMasterSeed:      masterSeed,
 		WithdrawSigningKey:    signingKey,

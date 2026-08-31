@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -337,20 +338,21 @@ func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type publicUser struct {
-	ID           string `json:"id"`
-	Username     string `json:"username"`
-	DisplayName  string `json:"display_name"`
-	Bio          string `json:"bio"`
-	AvatarURL    string `json:"avatar_url"`
-	Locale       string `json:"locale"`
-	IsCreator    bool   `json:"is_creator"`
-	IsVerified   bool   `json:"is_verified"`
-	IsMerchant   bool   `json:"is_merchant"`
-	MerchantTier int    `json:"merchant_tier"`
-	IsPremium    bool   `json:"is_premium"`
-	PinnedPostID string `json:"pinned_post_id"`
-	KYCStatus    string `json:"kyc_status,omitempty"`
-	CreatedAt    string `json:"created_at"`
+	ID           string          `json:"id"`
+	Username     string          `json:"username"`
+	DisplayName  string          `json:"display_name"`
+	Bio          string          `json:"bio"`
+	BioLinks     json.RawMessage `json:"bio_links"`
+	AvatarURL    string          `json:"avatar_url"`
+	Locale       string          `json:"locale"`
+	IsCreator    bool            `json:"is_creator"`
+	IsVerified   bool            `json:"is_verified"`
+	IsMerchant   bool            `json:"is_merchant"`
+	MerchantTier int             `json:"merchant_tier"`
+	IsPremium    bool            `json:"is_premium"`
+	PinnedPostID string          `json:"pinned_post_id"`
+	KYCStatus    string          `json:"kyc_status,omitempty"`
+	CreatedAt    string          `json:"created_at"`
 }
 
 func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {
@@ -359,10 +361,10 @@ func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {
 	var pinned *string
 	err := a.db.QueryRow(ctx,
 		`SELECT id, username, display_name, bio, avatar_url, locale, is_creator, is_verified, kyc_status, created_at,
-		        pinned_post_id, COALESCE(is_premium, false)
+		        pinned_post_id, COALESCE(is_premium, false), COALESCE(bio_links::text,'[]')
 		 FROM users WHERE id = $1 AND status = 'active'`, id).
 		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.AvatarURL, &u.Locale,
-			&u.IsCreator, &u.IsVerified, &u.KYCStatus, &createdAt, &pinned, &u.IsPremium)
+			&u.IsCreator, &u.IsVerified, &u.KYCStatus, &createdAt, &pinned, &u.IsPremium, &u.BioLinks)
 	if err != nil {
 		return nil, err
 	}

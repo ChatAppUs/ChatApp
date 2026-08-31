@@ -272,3 +272,38 @@
   integration 153/153, features 72/72, finance 44/44, gaps 92/92,
   gaps2 70/70, gaps3 82/82, gaps4 96/96, gaps5 39/39, go test OK,
   web next build OK, admin tsc OK.
+
+## Contracts discovered while testing (2026-08-31, session 8 — gap pack 6)
+- Migration 021_gap_pack6.sql: posts.article (jsonb {title,subtitle,body<=100k,cover_url}),
+  users.bio_links (jsonb, max 5, https-only via handleUpdateProfile), messages.waveform
+  (jsonb peaks, client-computed, server-clamped 0..100), custom_emoji (admin-managed:
+  POST/DELETE /api/admin/custom-emoji, GET /api/custom-emoji; reactions accept :shortcode:
+  via customEmojiExists in WS react), message_translations (cache; built-in lexicon
+  translateLocal -> 'local-dict-v1', cache hits tagged provider='cache'), live_rooms +
+  live_room_viewers (discoverable live rooms: create/list/get/join/leave/like/end,
+  one live room per host, peak_viewers tracked),
+  visibility CHECK extended with 'list' (audience_list_id -> user_lists).
+- GET /api/posts/{id} single-post permalink added (same visibility matrix as feed,
+  blocks both directions); response is {"post": {...}}.
+- Post edit window: PATCH /api/posts/{id} rejects after POST_EDIT_WINDOW_MINUTES
+  (default 48h, 0 = unlimited). Tested by back-dating created_at in psql.
+- Typing actions: WS typing accepts action typing|recording_voice|recording_video|
+  uploading_photo|uploading_video|uploading_voice|uploading_document|choosing_sticker
+  (invalid -> 400 echo {ok:false}).
+- Safety mode auto-blocks stranger DM senders when: account <7d old OR 3+ reports —
+  user_reports counts BOTH user-targeted AND post-targeted reports whose post author
+  is the target (posts.author_id subquery).
+  FYP); creator share = 25% impression ($0.005 CPM floor), 2% click ($0.05 floor) paid
+  from treasury (all-zeros uuid) to context author, skipped when author == advertiser.
+- Ads rev share: adopted the session-7 implementation (ad_events.placement_post_id,
+  55% of impression cost from treasury, single-tx). Do NOT re-add context_post_id.
+- Creator earnings: GET /api/creator/earnings counts qualified reel_watch_events only
+  (completed OR rewatched) x CreatorRPM/1000. pgx GOTCHA: `COUNT(*) * $float / 1000.0`
+  infers pgtype wrongly and silently returns 0 — must cast: `COUNT(*)::numeric * $2 / 1000.0`.
+- FYP: viewer's reports (user/post) exclude reported reels (viewer-scoped), then one
+  'explore' slot (explore=true flag) injected every ~10th position.
+- tests/gaps6_test.py (ads block dropped; covered by gaps5). Full sweep 2026-08-31:
+  integration 153/153 (needs `pip install cryptography` for passkey flow), gaps4 96/96,
+  gaps3/gaps2/gaps/features/finance all green (SFU on :8095).
+- Reaction route is POST /api/messages/{id}/reactions (NOT /react); profile update is
+  PATCH /api/me (NOT PUT); post edit is PATCH /api/posts/{id}.

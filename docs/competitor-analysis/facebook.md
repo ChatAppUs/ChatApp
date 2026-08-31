@@ -2,7 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
+Status refreshed 2026-08-31: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
+
+Earlier: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
 
 Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
@@ -24,7 +26,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | Text/image/video posts | ✅ | |
-| Post audience selector (public/friends/only me/custom) | ✅ | public/followers/only-me enforced in feed queries; gap: custom lists |
+| Post audience selector (public/friends/only me/custom) | ✅ | public/followers/only-me/close-friends + custom audience lists (visibility='list', 020) |
 | Feeling/activity stickers on posts | ✅ | posts.feeling (free text ≤60 chars), composer UI |
 | Location check-in on posts | ✅ | posts.location place name, composer UI |
 | Tag people in posts (not just @mention text) | ✅ | post_tags table + composer @tag UI |
@@ -69,7 +71,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Reel comments/likes/shares | ✅ | reels are posts.type='reel'; comments/likes/share-to-chat all apply |
 | Remix/duet | 🚧 | posts.remix_of attribution + reel analytics (017); visual editor is client work |
 | Sounds/music library | ✅ | self-hosted sounds catalog (019); licensing stays a legal process |
-| Creator monetization on reels | ✅ | RPM-based earnings + per-reel analytics (reel_watch aggregates, /api/reels/analytics) |
+| Creator monetization on reels | ✅ | RPM earnings count qualified views only (completion/rewatch, 021) + per-reel analytics (reel_watch aggregates, /api/reels/analytics) |
 
 ## Messaging (Messenger parity)
 
@@ -94,7 +96,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | 1:1 audio/video | ✅ | WebRTC mesh |
 | Group calls | ✅ | Self-built SFU (services/sfu) powers group calls/meetings/live |
-| Messenger Rooms (drop-in video rooms) | ✅ | Persistent drop-in links: POST/GET /api/rooms, /{slug}/join (SFU tickets), /{slug}/end; web /room/[slug] + create/share on web/Android/iOS |
+| Messenger Rooms (drop-in video rooms) | ✅ | Persistent drop-in links: POST/GET /api/rooms, /{slug}/join (SFU tickets), /{slug}/end; web /room/[slug] + create/share on web/Android/iOS (020). Discoverable live rooms with viewer/peak/likes: /api/live-rooms (021) |
 | Screen sharing | ✅ | getDisplayMedia + /api/calls/rooms/{id}/screenshare signaling (017) |
 | Call recording | ✅ | MediaRecorder webm upload + call_recordings list/delete (017) |
 | AR effects/filters | ✅ | Canvas VideoFilter publishes filtered outgoing track (warm/cool/bw/vivid/soft) on web call/meeting/room pages |
@@ -103,7 +105,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| In-stream ads revenue share | ✅ | Ads campaigns (create/creatives/review/fund) + impression-level 55% creator rev-share ledgered from platform treasury |
+| In-stream ads revenue share | ✅ | Ads campaigns (create/creatives/review/fund) + impression-level 55% creator rev-share ledgered from platform treasury (020) |
 | Stars (virtual gifts) | ✅ | gift catalog in handlers_monetization.go |
 | Fan subscriptions | ✅ | Shipped: creator subscription tiers + tips + revenue dashboard |
 | Professional dashboard (analytics) | ✅ | GET /api/me/analytics rollup (019) |

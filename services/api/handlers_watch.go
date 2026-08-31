@@ -96,6 +96,7 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 		   AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$1 AND b.blocked_id=p.author_id)
 		                                               OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
 		   AND NOT EXISTS(SELECT 1 FROM reel_watch_events w WHERE w.user_id=$1 AND w.post_id=p.id AND w.not_interested)
+		   AND NOT EXISTS(SELECT 1 FROM reports rp WHERE rp.reporter_id=$1 AND rp.target_type='post' AND rp.target_id=p.id)
 		   AND NOT EXISTS(SELECT 1 FROM word_filters f WHERE f.user_id=$1 AND p.body ILIKE '%'||f.phrase||'%')
 		 ORDER BY (
 		   (p.like_count*3 + p.comment_count*5 + p.share_count*4 + LEAST(p.view_count,100000))
@@ -131,6 +132,7 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 			"rewatch_rate": math.Round(rewatch*100) / 100, "media_url": deref(mediaURL),
 		})
 	}
+	posts = a.injectFYPExploration(r, uid, posts)
 	a.mlRerankFYP(uid, posts)
 	body, err := json.Marshal(map[string]any{"posts": posts})
 	if err != nil {
@@ -141,6 +143,64 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+// injectFYPExploration splices never-watched reels into every 10th slot so
+// the recommender keeps discovering new content outside the viewer's filter
+// bubble. Exploration candidates are excluded from the ranked set and tagged
+// with explore=true.
+func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[string]any) []map[string]any {
+	if len(posts) < 9 {
+		return posts
+	}
+	seen := make(map[string]bool, len(posts))
+	for _, p := range posts {
+		if id, ok := p["id"].(string); ok {
+			seen[id] = true
+		}
+	}
+	rows, err := a.db.Query(r.Context(),
+		`SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url,
+		        p.body, p.like_count, p.comment_count, p.view_count, p.created_at,
+		        (SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1)
+		 FROM posts p JOIN users u ON u.id = p.author_id
+		 WHERE p.type='reel' AND p.deleted_at IS NULL AND p.visibility='public'
+		   AND p.author_id <> $1
+		   AND NOT EXISTS(SELECT 1 FROM reel_watch_events w WHERE w.user_id=$1 AND w.post_id=p.id)
+		   AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id=$1 AND m.muted_id=p.author_id)
+		   AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$1 AND b.blocked_id=p.author_id)
+		                                               OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+		   AND NOT EXISTS(SELECT 1 FROM reports rp WHERE rp.reporter_id=$1 AND rp.target_type='post' AND rp.target_id=p.id)
+		 ORDER BY random() LIMIT $2`, uid, (len(posts)+9)/10)
+	if err != nil {
+		return posts
+	}
+	defer rows.Close()
+	slot := 9
+	for rows.Next() {
+		var id, authorID, name, username, avatar, body string
+		var mediaURL *string
+		var likes, comments int
+		var views int64
+		var createdAt time.Time
+		if err := rows.Scan(&id, &authorID, &name, &username, &avatar, &body,
+			&likes, &comments, &views, &createdAt, &mediaURL); err != nil || seen[id] {
+			continue
+		}
+		post := map[string]any{
+			"id": id, "author_id": authorID, "display_name": name, "username": username,
+			"avatar_url": avatar, "body": body, "like_count": likes, "comment_count": comments,
+			"view_count": views, "created_at": createdAt, "media_url": deref(mediaURL),
+			"explore": true,
+		}
+		if slot >= len(posts) {
+			posts = append(posts, post)
+		} else {
+			posts = append(posts[:slot], append([]map[string]any{post}, posts[slot:]...)...)
+		}
+		slot += 10
+	}
+	return posts
 }
 
 // mlRerankFYP re-orders FYP candidates using the ML service's watch-signal

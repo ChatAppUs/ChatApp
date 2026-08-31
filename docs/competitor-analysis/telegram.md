@@ -2,7 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
+Status refreshed 2026-08-31: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
+
+Earlier: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
 
 Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
@@ -15,7 +17,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Self-destruct timer (secret chats) | ✅ | Per-conversation TTL (1m/1h/24h/7d) + 30s sweeper with live WS removal |
 | Message edit (with "edited" mark) | ✅ | |
 | Delete for everyone / for me | 🚧 | delete-for-everyone exists; gap: per-user deletion |
-| Reactions (custom emoji sets) | 🚧 | Basic reactions; gap: custom emoji |
+| Reactions (custom emoji sets) | ✅ | Admin-managed custom_emoji catalog (021); react by :shortcode: or unicode emoji |
 | Replies with quote | ✅ | reply_to_id persisted, quote rendered in chat |
 | Forward with attribution | ✅ | POST /api/messages/{id}/forward; encrypted messages cannot be forwarded |
 | Pin messages (multiple, in chats/groups) | ✅ | pin/unpin/list + WS fanout + pinned banner |
@@ -27,10 +29,10 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Mentions @username in groups | ✅ | |
 | Spoilers (hidden text) | ✅ | spoiler entity type on messages (019) |
 | Text formatting (bold/italic/mono/links) | ✅ | messages.entities jsonb (bold/italic/mono/spoiler/link), WS+REST sanitized (019) |
-| Message translation | ❌ | Gap: translation API hook |
+| Message translation | ✅ | Built-in lexicon translator + per-message cache (021); pluggable provider hook |
 | Read receipts in small groups | ✅ | |
 | "Last seen" privacy granularity | 🚧 | Presence exists; gap: privacy rules |
-| Typing + "recording voice" indicators | 🚧 | Typing exists; gap: action types |
+| Typing + "recording voice" indicators | ✅ | WS typing actions: typing, recording_voice/video, uploading_*, choosing_sticker (021) |
 
 ## Media & files
 
@@ -38,7 +40,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | Photo/video messages | ✅ | media_urls |
 | Files up to 2GB (4GB Premium) | 🚧 | 2 GiB cap at media edge; gap: chunked resumable upload |
-| Voice messages with waveform | 🚧 | Voice messages shipped (recorder + inline player); gap: waveform data |
+| Voice messages with waveform | ✅ | messages.waveform peak buckets, client-computed + server-clamped 0..100 (021) |
 | Video messages (round) | ✅ | video-note messages (017); round-mask render in clients |
 | Stickers (static/animated/video) | ✅ | sticker_packs + stickers + sticker message send (018) |
 | GIF search | ✅ | self-hosted gif_catalog + GET /api/gifs?q= (019) |
