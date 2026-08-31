@@ -320,32 +320,36 @@ func (a *App) messageConvID(ctx context.Context, msgID string) (string, bool) {
 // ---------- live rooms (Facebook Live / TikTok LIVE parity) ----------
 
 type liveRoomOut struct {
-	ID          string     `json:"id"`
-	HostID      string     `json:"host_id"`
-	HostName    string     `json:"host_display_name"`
-	HostUser    string     `json:"host_username"`
-	HostAvatar  string     `json:"host_avatar_url"`
-	Title       string     `json:"title"`
-	Category    string     `json:"category"`
-	Status      string     `json:"status"`
-	LikeCount   int64      `json:"like_count"`
-	ViewerCount int        `json:"viewer_count"`
-	PeakViewers int        `json:"peak_viewers"`
-	CreatedAt   time.Time  `json:"created_at"`
-	EndedAt     *time.Time `json:"ended_at"`
+	ID            string     `json:"id"`
+	HostID        string     `json:"host_id"`
+	HostName      string     `json:"host_display_name"`
+	HostUser      string     `json:"host_username"`
+	HostAvatar    string     `json:"host_avatar_url"`
+	Title         string     `json:"title"`
+	Category      string     `json:"category"`
+	Status        string     `json:"status"`
+	LikeCount     int64      `json:"like_count"`
+	ViewerCount   int        `json:"viewer_count"`
+	PeakViewers   int        `json:"peak_viewers"`
+	CreatedAt     time.Time  `json:"created_at"`
+	EndedAt       *time.Time `json:"ended_at"`
+	ReplayMediaID string     `json:"replay_media_id"`
 }
 
 const liveRoomSelect = `SELECT lr.id::text, lr.host_id::text, u.display_name, u.username, u.avatar_url,
        lr.title, lr.category, lr.status, lr.like_count,
        (SELECT COUNT(*) FROM live_room_viewers v WHERE v.room_id = lr.id),
-       lr.peak_viewers, lr.created_at, lr.ended_at
+       lr.peak_viewers, lr.created_at, lr.ended_at, COALESCE(lr.replay_media_id,'')
 FROM live_rooms lr JOIN users u ON u.id = lr.host_id`
 
 func scanLiveRoom(row interface{ Scan(...any) error }) (liveRoomOut, error) {
 	var rmo liveRoomOut
 	err := row.Scan(&rmo.ID, &rmo.HostID, &rmo.HostName, &rmo.HostUser, &rmo.HostAvatar,
 		&rmo.Title, &rmo.Category, &rmo.Status, &rmo.LikeCount, &rmo.ViewerCount,
-		&rmo.PeakViewers, &rmo.CreatedAt, &rmo.EndedAt)
+		&rmo.PeakViewers, &rmo.CreatedAt, &rmo.EndedAt, &rmo.ReplayMediaID)
+	if rmo.ReplayMediaID != "" {
+		rmo.ReplayMediaID = "/media/" + rmo.ReplayMediaID
+	}
 	return rmo, err
 }
 

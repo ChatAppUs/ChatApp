@@ -13,11 +13,20 @@ function Reel({ post }: { post: Post }) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewed = useRef(false);
+  const SPEEDS = [0.5, 1, 1.5, 2];
   const [liked, setLiked] = useState(post.liked_by_me);
   const [likes, setLikes] = useState(post.like_count);
   const [remixOpen, setRemixOpen] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showRemixes, setShowRemixes] = useState(false);
+  const [speedIdx, setSpeedIdx] = useState(1);
+
+  const cycleSpeed = () => {
+    const next = (speedIdx + 1) % SPEEDS.length;
+    setSpeedIdx(next);
+    const el = videoRef.current;
+    if (el) el.playbackRate = SPEEDS[next];
+  };
 
   useEffect(() => {
     const el = videoRef.current;
@@ -61,7 +70,7 @@ function Reel({ post }: { post: Post }) {
         <video ref={videoRef} src={video.url} loop playsInline controls={false} onClick={() => {
           const el = videoRef.current;
           if (el) el.paused ? el.play() : el.pause();
-        }} />
+        }} preload="auto" />
       ) : post.media[0] ? (
         <img src={post.media[0].url} alt="" style={{ width: "100%" }} />
       ) : (
@@ -80,6 +89,10 @@ function Reel({ post }: { post: Post }) {
           </button>
           <button className="secondary small" title="Remix" onClick={() => setRemixOpen(true)}>🎬</button>
           <button className="secondary small" title="Remixes" onClick={() => setShowRemixes((v) => !v)}>⑂</button>
+          {video && (
+            <button className="secondary small" title="Playback speed"
+              onClick={cycleSpeed}>{SPEEDS[speedIdx]}x</button>
+          )}
           {post.author_id === getUserId() && (
             <button className="secondary small" title="Analytics"
               onClick={() => setShowAnalytics((v) => !v)}>📊</button>
@@ -114,6 +127,22 @@ export default function ReelsPage() {
     }
     load();
   }, [load, router]);
+
+  // Prefetch the next few video payloads so swiping feels instant.
+  useEffect(() => {
+    const links: HTMLLinkElement[] = [];
+    reels.slice(0, 3).forEach((r) => {
+      const video = r.media.find((m) => m.kind === "video");
+      if (!video) return;
+      const link = document.createElement("link");
+      link.rel = "preload";
+      link.as = "video";
+      link.href = video.url;
+      document.head.appendChild(link);
+      links.push(link);
+    });
+    return () => links.forEach((l) => document.head.removeChild(l));
+  }, [reels]);
 
   return (
     <>

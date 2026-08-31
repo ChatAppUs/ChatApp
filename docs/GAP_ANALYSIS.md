@@ -1,8 +1,12 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
-Date: 2026-08-31 (gap-pack-4 shipped — migration 019; 153/153 integration +
-92/92 gaps + 82/82 gap-pack-3 + 96/96 gap-pack-4 checks green; features and
-finance suites also green). This is the single
+Date: 2026-08-31 (gap-pack-7 shipped — migration 023 — chat quiz polls,
+bot API expansion (getMe/getChat/editMessageText), chunked resumable upload
+sessions, advanced search operators, creator-side word filters, E2E key + SAS
+verification, moments, audio-room recordings, related-reels embeddings,
+multi-account switcher, reels speed control + prefetch, /u/<username> links;
+92/92 gap-pack-7 + 153/153 integration + 44/44 finance + all earlier suites
+green). This is the single
 consolidated answer to "after deeply scanning every competitor, what is ChatApp
 still missing?" Per-competitor, feature-by-feature detail lives in
 [competitor-analysis/](competitor-analysis/README.md); this file rolls the

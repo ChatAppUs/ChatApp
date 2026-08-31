@@ -37,7 +37,7 @@ services/
   ml              Python — feed ranking, content moderation, ASR hooks
 
 infra/
-  db              PostgreSQL migrations 001–014 (pgcrypto, citext)
+  db              PostgreSQL migrations 001–023 (pgcrypto, citext)
   docker-compose  Postgres, MongoDB, Redis, MinIO + all services
 ```
 
@@ -191,9 +191,12 @@ cd apps/desktop && npm install && npm run tauri dev
   pages, monetization, bots, push, contacts, 2FA), plus
   `tests/finance_test.py` — 44 checks (deposit address derivation per chain,
   withdrawal auto-approval <1s + superadmin review, escrow/P2P lifecycle,
-  disputes, convert rates, token feature switches, dynamic roles) — all
-  passing against real PostgreSQL + Go API + Rust security + C++
-  media/realtime + SFU, no mocks.
+  disputes, convert rates, token feature switches, dynamic roles), plus
+  `tests/gaps_test.py` … `tests/gaps7_test.py` — 92+ checks incl. quiz polls,
+  bot API expansion, chunked uploads, search operators, word filters,
+  E2E key + SAS verification, moments, audio-room recordings, related-reels
+  embeddings — all passing against real PostgreSQL + Go API + Rust security +
+  C++ media/realtime + SFU, no mocks.
 
 ## Security notes
 

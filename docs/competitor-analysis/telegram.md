@@ -2,7 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
+Status refreshed 2026-08-31 (gap pack 8): gap-pack-7 (migration 023) shipped — chat quiz polls (is_quiz + correct_option + explanation, answers hidden until vote, correct_option required), expanded bot API (getMe, getChat with member_count, editMessageText idempotency), chunked resumable uploads (/api/uploads sessions with byte-exact completion, abort, signed grants from the C++ edge protected by the Rust signer), advanced search operators (minus words, filter:reels), creator-side comment word filters, E2E key + SAS verification (identity keys, stable symmetric fingerprints, phrase generation, self-verify rejected), moments, audio-room recordings (host-only), username profile links (/u/<username> + GET /api/u/{username}), multi-account switcher in web (archived token vault), reels playback speed (0.5–2x) + preload of next videos on web.
+
+Earlier: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
 
 Earlier: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
 
@@ -39,14 +41,14 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | Photo/video messages | ✅ | media_urls |
-| Files up to 2GB (4GB Premium) | 🚧 | 2 GiB cap at media edge; gap: chunked resumable upload |
+| Files up to 2GB (4GB Premium) | ✅ | Chunked resumable upload sessions (/api/uploads, byte-exact completion, abort) over the C++ edge with Rust-signed grants (023) |
 | Voice messages with waveform | ✅ | messages.waveform peak buckets, client-computed + server-clamped 0..100 (021) |
 | Video messages (round) | ✅ | video-note messages (017); round-mask render in clients |
 | Stickers (static/animated/video) | ✅ | sticker_packs + stickers + sticker message send (018) |
 | GIF search | ✅ | self-hosted gif_catalog + GET /api/gifs?q= (019) |
 | Animated emoji | ❌ | Gap: low priority |
 | Media compression options (photo vs file) | ❌ | Gap: upload pipeline choice |
-| Polls & quizzes in chat | 🚧 | Post polls exist; gap: chat-embedded |
+| Polls & quizzes in chat | ✅ | Multi-polls + quizzes with is_quiz/correct_option/explanation; answers hidden pre-vote (023) |
 | Location & live location | ✅ | live_locations start/stop/view (017) |
 | Contacts sharing | ✅ | kind='contact' messages via POST /api/conversations/{id}/contact (019) |
 
@@ -69,7 +71,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| 1:1 E2E calls | 🚧 | WebRTC; gap: E2E key verification UI (emoji) |
+| 1:1 E2E calls | ✅ | WebRTC + E2E SAS verification (stable symmetric fingerprints + phrase, identity keys) (023) |
 | Group voice chats (live, thousands) | ✅ | Shipped: self-built SFU audio rooms |
 | Video in group voice chats | ✅ | Shipped: SFU group calls with video |
 | Live streams with unlimited viewers | ❌ | Gap: RTMP/HLS pipeline |
@@ -81,17 +83,17 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| Bot API (full) | 🚧 | Core shipped (bot accounts, getUpdates long-poll, webhooks, sendMessage); inline bots phase 2 |
+| Bot API (full) | ✅ | getMe/getChat (member_count)/sendMessage/editMessageText (idempotent)/getUpdates long-poll/webhooks/inline + mini-app (023) |
 | Inline bots (@bot query) | ✅ | GET /api/bots/inline?bot=&q= (019) |
 | Mini Apps (web apps in chat) | ❌ | Gap: embedded webview SDK |
 | Bot payments | ✅ | bot_invoices: token-authed createInvoice + wallet pay (019) |
 | QR login | ✅ | Scan-to-approve |
-| Active sessions management | 🚧 | Sessions stored; gap: UI to list/revoke |
+| Active sessions management | ✅ | GET/DELETE /api/me/sessions{,/{id}} list/revoke (018) |
 | Proxy support (MTProto/SOCKS5) | ❌ | Gap: not applicable to our transport |
 | Folders for chats | ✅ | chat_folders + chat_folder_conversations (018) |
 | Archive chats | ✅ | conversation_members.archived_at + archive/unarchive endpoints (018) |
-| Multi-account in one app | ❌ | Gap: account switcher |
-| Usernames & public links (t.me/u) | 🚧 | Usernames exist; gap: public URL routing |
+| Multi-account in one app | ✅ | Local account vault + switcher in Nav, /u profile links resolve per account (023) |
+| Usernames & public links (t.me/u) | ✅ | GET /api/u/{username} + web /u/<username> route (023) |
 | People nearby / local groups | ✅ | GET /api/nearby + /api/discover/groups (019) |
 | Premium subscription (gated features) | ✅ | premium_plans + subscriptions (019) |
 

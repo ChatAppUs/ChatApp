@@ -76,14 +76,15 @@ type uploadTicket struct {
 	Signature string `json:"signature"`
 }
 
-// signUpload asks the Rust security service for an HMAC-signed upload grant.
-func (a *App) signUpload(ctx context.Context) (*uploadTicket, error) {
+// signPayload asks the Rust security service for an HMAC-signed grant over
+// an arbitrary payload (media path, chunk-upload session, ...).
+func (a *App) signPayload(ctx context.Context, payload string, expiresIn int64) (*uploadTicket, error) {
 	if a.cfg.SecuritySvcURL == "" {
 		return nil, errors.New("security service not configured")
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST",
 		a.cfg.SecuritySvcURL+"/sign",
-		strings.NewReader(`{"payload":"/upload","expires_in":300}`))
+		strings.NewReader(fmt.Sprintf(`{"payload":%q,"expires_in":%d}`, payload, expiresIn)))
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func (a *App) signUpload(ctx context.Context) (*uploadTicket, error) {
 // append exp+sig to the media-edge /upload URL; the C++ edge verifies them
 // against the security service before accepting bytes.
 func (a *App) handleMediaUploadToken(w http.ResponseWriter, r *http.Request) {
-	t, err := a.signUpload(r.Context())
+	t, err := a.signPayload(r.Context(), "/upload", 300)
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "upload signing unavailable")
 		return

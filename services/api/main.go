@@ -123,6 +123,9 @@ func main() {
 	mux.HandleFunc("GET /api/me", app.requireAuth(app.handleMe))
 	mux.HandleFunc("PATCH /api/me", app.requireAuth(app.handleUpdateProfile))
 	mux.HandleFunc("GET /api/users/search", app.requireAuth(app.handleSearchUsers))
+	// GET /api/u/{username} — public profile by @username (web /u/<name> page).
+	mux.HandleFunc("GET /api/u/{username}", app.requireAuth(app.handleGetUserByUsername))
+	mux.HandleFunc("GET /api/search/posts", app.requireAuth(app.handleSearchPosts))
 	mux.HandleFunc("GET /api/users/{id}", app.requireAuth(app.handleGetUser))
 	mux.HandleFunc("GET /api/users/{id}/posts", app.requireAuth(app.handleUserPosts))
 	mux.HandleFunc("POST /api/users/{id}/follow", app.requireAuth(app.handleFollow))
@@ -182,6 +185,8 @@ func main() {
 	// polls, hashtags, bookmarks, reposts
 	mux.HandleFunc("POST /api/posts/{id}/vote", app.requireAuth(app.handleVotePoll))
 	mux.HandleFunc("GET /api/posts/{id}/poll", app.requireAuth(app.handleGetPoll))
+	mux.HandleFunc("GET /api/moments", app.requireAuth(app.handleListMoments))
+	mux.HandleFunc("GET /api/moments/{id}", app.requireAuth(app.handleGetMoment))
 	mux.HandleFunc("GET /api/hashtags/trending", app.requireAuth(app.handleTrending))
 	mux.HandleFunc("DELETE /api/posts/{id}/repost", app.requireAuth(app.handleUnrepost))
 	mux.HandleFunc("PATCH /api/posts/{id}", app.requireAuth(app.handleEditPost))
@@ -216,6 +221,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/qr/{token}/reject", app.requireAuth(app.handleQRLoginReject))
 	mux.HandleFunc("PUT /api/e2e/key", app.requireAuth(app.handleE2EPublishKey))
 	mux.HandleFunc("GET /api/e2e/keys", app.requireAuth(app.handleE2EGetKeys))
+	mux.HandleFunc("GET /api/e2e/verify/{userId}", app.requireAuth(app.handleE2EVerify))
 
 	// creator monetization
 	mux.HandleFunc("GET /api/creator/earnings", app.requireAuth(app.handleCreatorEarnings))
@@ -328,6 +334,7 @@ func main() {
 	mux.HandleFunc("POST /api/conversations/{id}/pay", app.requireAuth(app.handlePayInChat))
 
 	// reels + notes
+	mux.HandleFunc("GET /api/reels/{id}/related", app.requireAuth(app.handleRelatedReels))
 	mux.HandleFunc("GET /api/reels/{id}/analytics", app.requireAuth(app.handleReelAnalytics))
 	mux.HandleFunc("GET /api/reels/{id}/remixes", app.requireAuth(app.handleReelRemixes))
 	mux.HandleFunc("POST /api/posts/{id}/notes", app.requireAuth(app.handleCreateNote))
@@ -370,6 +377,10 @@ func main() {
 
 	// media upload grant (signed by the Rust security service)
 	mux.HandleFunc("POST /api/media/upload-token", app.requireAuth(app.handleMediaUploadToken))
+	mux.HandleFunc("POST /api/uploads", app.requireAuth(app.handleCreateUploadSession))
+	mux.HandleFunc("GET /api/uploads/{id}", app.requireAuth(app.handleGetUploadSession))
+	mux.HandleFunc("POST /api/uploads/{id}/complete", app.requireAuth(app.handleCompleteUploadSession))
+	mux.HandleFunc("POST /api/uploads/{id}/abort", app.requireAuth(app.handleAbortUploadSession))
 
 	// push notifications
 	mux.HandleFunc("GET /api/push/public-key", app.handlePushPublicKey)
@@ -423,6 +434,10 @@ func main() {
 	mux.HandleFunc("POST /api/bots/{id}/mini-app", app.requireAuth(app.handleSetMiniApp))
 	mux.HandleFunc("GET /api/bot/{token}/getUpdates", app.handleBotGetUpdates)
 	mux.HandleFunc("POST /api/bot/{token}/sendMessage", app.handleBotSendMessage)
+	mux.HandleFunc("POST /api/bot/{token}/editMessageText", app.handleBotEditMessage)
+	mux.HandleFunc("POST /api/bot/{token}/deleteMessage", app.handleBotDeleteMessage)
+	mux.HandleFunc("POST /api/bot/{token}/sendPhoto", app.handleBotSendPhoto)
+	mux.HandleFunc("GET /api/bot/{token}/getChat", app.handleBotGetChat)
 	mux.HandleFunc("GET /api/bot/{token}/getMe", app.handleBotGetMe)
 
 	// stories extras: highlights + close friends
@@ -506,6 +521,9 @@ func main() {
 	mux.HandleFunc("POST /api/audio-rooms/{id}/start", app.requireAuth(app.handleStartAudioRoom))
 	mux.HandleFunc("POST /api/audio-rooms/{id}/end", app.requireAuth(app.handleEndAudioRoom))
 	mux.HandleFunc("POST /api/audio-rooms/{id}/join", app.requireAuth(app.handleJoinAudioRoom))
+	mux.HandleFunc("POST /api/audio-rooms/{id}/recordings", app.requireAuth(app.handleSaveAudioRoomRecording))
+	mux.HandleFunc("GET /api/audio-rooms/{id}/recordings", app.requireAuth(app.handleListAudioRoomRecordings))
+	mux.HandleFunc("DELETE /api/audio-room-recordings/{id}", app.requireAuth(app.handleDeleteAudioRoomRecording))
 	mux.HandleFunc("POST /api/audio-rooms/{id}/hand", app.requireAuth(app.handleRoomHand))
 	mux.HandleFunc("PUT /api/audio-rooms/{id}/speakers/{uid}", app.requireAuth(app.handleRoomSpeaker))
 	mux.HandleFunc("DELETE /api/audio-rooms/{id}/speakers/{uid}", app.requireAuth(app.handleRoomSpeaker))
@@ -565,6 +583,7 @@ func main() {
 	mux.HandleFunc("GET /api/live-rooms", app.requireAuth(app.handleListLiveRooms))
 	mux.HandleFunc("GET /api/live-rooms/{id}", app.requireAuth(app.handleGetLiveRoom))
 	mux.HandleFunc("POST /api/live-rooms/{id}/end", app.requireAuth(app.handleEndLiveRoom))
+	mux.HandleFunc("PUT /api/live-rooms/{id}/replay", app.requireAuth(app.handleSetLiveRoomReplay))
 	mux.HandleFunc("POST /api/live-rooms/{id}/join", app.requireAuth(app.handleLiveRoomJoin))
 	mux.HandleFunc("POST /api/live-rooms/{id}/leave", app.requireAuth(app.handleLiveRoomLeave))
 	mux.HandleFunc("POST /api/live-rooms/{id}/like", app.requireAuth(app.handleLiveRoomLike))
@@ -631,6 +650,12 @@ func main() {
 	mux.HandleFunc("GET /api/admin/kyc", app.requireAdmin("superadmin", "finance", "support")(app.handleAdminListKYC))
 	mux.HandleFunc("POST /api/admin/kyc/{id}/review", app.requireAdmin("superadmin", "finance")(app.handleAdminReviewKYC))
 	mux.HandleFunc("GET /api/admin/ads", app.requireAdmin("superadmin", "ads_reviewer")(app.handleAdminListAds))
+	mux.HandleFunc("GET /api/admin/moments", app.requireAdmin("superadmin", "moderator")(app.handleAdminListMoments))
+mux.HandleFunc("POST /api/admin/moments", app.requireAdmin("superadmin", "moderator")(app.handleAdminCreateMoment))
+	mux.HandleFunc("POST /api/admin/moments/{id}/items", app.requireAdmin("superadmin", "moderator")(app.handleAdminMomentAddItem))
+	mux.HandleFunc("DELETE /api/admin/moments/{id}/items/{postId}", app.requireAdmin("superadmin", "moderator")(app.handleAdminMomentRemoveItem))
+	mux.HandleFunc("POST /api/admin/moments/{id}/publish", app.requireAdmin("superadmin", "moderator")(app.handleAdminMomentPublish))
+	mux.HandleFunc("DELETE /api/admin/moments/{id}", app.requireAdmin("superadmin")(app.handleAdminDeleteMoment))
 	mux.HandleFunc("POST /api/admin/ads/{id}/review", app.requireAdmin("superadmin", "ads_reviewer")(app.handleAdminReviewAd))
 	mux.HandleFunc("POST /api/admin/roles", app.requireAdmin("superadmin")(app.handleAdminGrantRole))
 	mux.HandleFunc("DELETE /api/admin/roles", app.requireAdmin("superadmin")(app.handleAdminRevokeRole))

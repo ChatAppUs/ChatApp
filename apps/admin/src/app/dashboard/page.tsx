@@ -71,7 +71,7 @@ interface PlatformToken {
   created_at: string;
 }
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -133,7 +133,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -306,7 +306,127 @@ export default function DashboardPage() {
       {tab === "prices" && <PricesTab act={act} />}
       {tab === "safety" && <SafetyTab />}
       {tab === "derived-rates" && <DerivedRatesTab />}
+      {tab === "moments" && <MomentsTab act={act} />}
     </>
+  );
+}
+
+// X Moments curation: moderators assemble curated collections of posts and
+// publish them to the /moments discovery surface.
+interface AdminMoment {
+  id: string;
+  title: string;
+  summary: string;
+  cover_url: string;
+  published_at: string | null;
+  created_at: string;
+  item_count: number;
+}
+
+function MomentsTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [moments, setMoments] = useState<AdminMoment[]>([]);
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [cover, setCover] = useState("");
+  const [postId, setPostId] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState("");
+
+  const load = useCallback(
+    () =>
+      adminApi<{ moments: AdminMoment[] }>("/api/admin/moments")
+        .then((d) => setMoments(d.moments))
+        .catch(() => {}),
+    []
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    act(async () => {
+      await adminApi("/api/admin/moments", {
+        method: "POST",
+        body: JSON.stringify({ title, summary, cover_url: cover }),
+      });
+      setTitle("");
+      setSummary("");
+      setCover("");
+      load();
+    });
+  };
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>Moments</h3>
+      <form onSubmit={create} className="row" style={{ flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+        <input placeholder="Title" value={title} maxLength={200}
+          onChange={(e) => setTitle(e.target.value)} style={{ minWidth: 220 }} />
+        <input placeholder="Summary (optional)" value={summary} maxLength={2000}
+          onChange={(e) => setSummary(e.target.value)} style={{ minWidth: 220 }} />
+        <input placeholder="Cover URL (optional)" value={cover}
+          onChange={(e) => setCover(e.target.value)} style={{ minWidth: 220 }} />
+        <button type="submit">Create draft</button>
+      </form>
+      {formError && <div className="error-text">{formError}</div>}
+      <table className="table">
+        <thead>
+          <tr><th>title</th><th>items</th><th>status</th><th>add post</th><th></th></tr>
+        </thead>
+        <tbody>
+          {moments.map((m) => (
+            <tr key={m.id}>
+              <td>{m.title}</td>
+              <td>{m.item_count}</td>
+              <td>{m.published_at ? "published" : "draft"}</td>
+              <td>
+                <div className="row" style={{ gap: 4 }}>
+                  <input placeholder="post id" value={postId[m.id] ?? ""} style={{ width: 260 }}
+                    onChange={(e) => setPostId({ ...postId, [m.id]: e.target.value })} />
+                  <button className="small" onClick={() =>
+                    act(async () => {
+                      await adminApi(`/api/admin/moments/${m.id}/items`, {
+                        method: "POST",
+                        body: JSON.stringify({ post_id: (postId[m.id] ?? "").trim() }),
+                      });
+                      load();
+                    })
+                  }>Add</button>
+                </div>
+              </td>
+              <td>
+                <div className="row">
+                  {!m.published_at ? (
+                    <button className="success small" onClick={() =>
+                      act(async () => {
+                        await adminApi(`/api/admin/moments/${m.id}/publish`, { method: "POST", body: "{}" });
+                        load();
+                      })
+                    }>Publish</button>
+                  ) : (
+                    <button className="secondary small" onClick={() =>
+                      act(async () => {
+                        await adminApi(`/api/admin/moments/${m.id}/publish`, { method: "POST", body: JSON.stringify({ publish: false }) });
+                        load();
+                      })
+                    }>Unpublish</button>
+                  )}
+                  <button className="danger small" onClick={() =>
+                    act(async () => {
+                      await adminApi(`/api/admin/moments/${m.id}`, { method: "DELETE" });
+                      load();
+                    })
+                  }>Delete</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {moments.length === 0 && <tr><td colSpan={5} className="muted">No moments yet</td></tr>}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

@@ -301,6 +301,146 @@ func (a *App) handleBotGetMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleBotEditMessageText edits one of the bot's own messages (Telegram
+// editMessageText parity).
+func (a *App) handleBotEditMessage(w http.ResponseWriter, r *http.Request) {
+	_, botUserID, ok := a.botFromToken(r.Context(), r.PathValue("token"))
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "invalid bot token")
+		return
+	}
+	var req struct {
+		MessageID string `json:"message_id"`
+		Body      string `json:"body"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Body) == "" || len(req.Body) > 4096 {
+		writeErr(w, http.StatusBadRequest, "body required (4096 chars max)")
+		return
+	}
+	var convID string
+	err := a.db.QueryRow(r.Context(),
+		`SELECT conversation_id FROM messages WHERE id=$1 AND sender_id=$2 AND deleted_at IS NULL`,
+		req.MessageID, botUserID).Scan(&convID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "message not found or not sent by this bot")
+		return
+	}
+	if _, err := a.db.Exec(r.Context(),
+		`UPDATE messages SET body=$2, edited_at=now() WHERE id=$1`, req.MessageID, req.Body); err != nil {
+		writeErr(w, http.StatusInternalServerError, "edit failed")
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"type": "message_edited", "id": req.MessageID, "conversation_id": convID,
+		"body": req.Body, "edited_at": time.Now(),
+	})
+	a.fanoutConv(r.Context(), convID, payload)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleBotDeleteMessage deletes one of the bot's own messages.
+func (a *App) handleBotDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	_, botUserID, ok := a.botFromToken(r.Context(), r.PathValue("token"))
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "invalid bot token")
+		return
+	}
+	var req struct {
+		MessageID string `json:"message_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	var convID string
+	err := a.db.QueryRow(r.Context(),
+		`SELECT conversation_id FROM messages WHERE id=$1 AND sender_id=$2 AND deleted_at IS NULL`,
+		req.MessageID, botUserID).Scan(&convID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "message not found or not sent by this bot")
+		return
+	}
+	if _, err := a.db.Exec(r.Context(),
+		`UPDATE messages SET deleted_at=now() WHERE id=$1`, req.MessageID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"type": "message_deleted", "id": req.MessageID, "conversation_id": convID,
+	})
+	a.fanoutConv(r.Context(), convID, payload)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleBotSendPhoto sends a photo/document message with an optional caption
+// (Telegram sendPhoto parity; the media is uploaded via the media edge first).
+func (a *App) handleBotSendPhoto(w http.ResponseWriter, r *http.Request) {
+	_, botUserID, ok := a.botFromToken(r.Context(), r.PathValue("token"))
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "invalid bot token")
+		return
+	}
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+		MediaURL       string `json:"media_url"`
+		Caption        string `json:"caption"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.MediaURL = strings.TrimSpace(req.MediaURL)
+	if !strings.HasPrefix(req.MediaURL, "/media/") || len(req.MediaURL) > 300 {
+		writeErr(w, http.StatusBadRequest, "media_url must be an uploaded /media/ URL")
+		return
+	}
+	if len(req.Caption) > 1024 {
+		writeErr(w, http.StatusBadRequest, "caption too long")
+		return
+	}
+	if !a.isMember(r.Context(), req.ConversationID, botUserID) {
+		writeErr(w, http.StatusForbidden, "bot is not a member of this conversation")
+		return
+	}
+	a.persistAndFanout(r.Context(), botUserID, req.ConversationID, req.Caption, req.MediaURL, false, "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleBotGetChat returns conversation metadata for a conversation the bot
+// belongs to (Telegram getChat parity).
+func (a *App) handleBotGetChat(w http.ResponseWriter, r *http.Request) {
+	_, botUserID, ok := a.botFromToken(r.Context(), r.PathValue("token"))
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "invalid bot token")
+		return
+	}
+	convID := r.URL.Query().Get("conversation_id")
+	if !a.isMember(r.Context(), convID, botUserID) {
+		writeErr(w, http.StatusForbidden, "bot is not a member of this conversation")
+		return
+	}
+	var title string
+	var isGroup, isChannel bool
+	var members int
+	if err := a.db.QueryRow(r.Context(),
+		`SELECT COALESCE(c.title,''), c.is_group, c.is_channel,
+			(SELECT COUNT(*) FROM conversation_members cm WHERE cm.conversation_id=c.id)
+		 FROM conversations c WHERE c.id=$1`, convID).Scan(&title, &isGroup, &isChannel, &members); err != nil {
+		writeErr(w, http.StatusNotFound, "conversation not found")
+		return
+	}
+	kind := "private"
+	if isChannel {
+		kind = "channel"
+	} else if isGroup {
+		kind = "group"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": map[string]any{
+		"id": convID, "title": title, "type": kind, "member_count": members,
+	}})
+}
+
 // ---- update enqueue + webhook delivery ----
 
 // enqueueBotUpdates records an update for every bot in the conversation.

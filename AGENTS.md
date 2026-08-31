@@ -346,3 +346,41 @@
   checks fail-open to manual review. All ten suites green: integration 153,
   features 72, finance 44, gaps 92, gaps2 70, gaps3 82, gaps4 96, gaps5 39,
   gaps6 91, staking 48.
+## Contracts discovered while testing (2026-08-31, session 9b — gap pack 7)
+- Migration 023_gap_pack7.sql (renamed: remote main took 022 for staking):
+  upload_sessions (chunked resumable uploads),
+  chat_polls.is_quiz + correct_option_id + explanation (quizzes), moments
+  (publish/re-publish/unpublish/admin review), audio_room_recordings
+  (host-only), e2e_keys + sas_verifications, related-reel embeddings
+  (posts.embedding 256-dim jsonb), word_filters (creator-side comment auto-
+  hide), comments.hidden_at usage + GET /api/u/{username}.
+- FYP pipeline order is rerank → diversify → inject exploration slots (the
+  deterministic slots survive only in this order; previously diversify moved
+  the explore card). Explore candidate query must exclude
+  already-seen ids (p.id <> ALL($seenIDs)) or empty for watchers-with-history.
+- diversified2 reranker: spread = max 2 consecutive per author, remix-chain
+  dedup on remix_of. Related reels: cosine rerank over embeddings via ML
+  svc POST /embed (256-dim), similarity threshold clamps out unrelated;
+  poll for async embedding indexing in tests (retry helpers).
+- Chat quiz polls: votes reply {poll_results} includes correct_option_id
+  only when is_quiz AND my vote exists; quizzes can't run without
+  correct_option (400). Bots: /api/bot/{token}/getMe {ok:true,result:{id,
+  username}}; getChat {id,title,type,member_count}; editMessageText idempotent.
+- Upload sessions: POST /api/uploads {filename,size,mime} → signed chunk
+  grants via Rust /sign (SECURITY_SERVICE_URL); completion requires exact
+  byte count (400), abort deletes; C++ edge also rejects non-/uploads-URL
+  uploads and URL-injected byte mismatches.
+- E2E keys: POST /api/me/e2e/keys {identity_key base64}; SAS: GET
+  /api/conversations/{id}/sas {fingerprint, phrase}; fingerprint is
+  symmetric under user ordering AND stable across re-publishes; self-
+  verify is rejected (400).
+- Web multi-account: archive tokens to localStorage chatapp.accounts on
+  saveTokens(tokens,username); switchAccount swaps active keys; Nav renders
+  a switcher when >1 archived. Reels speed chip cycles 0.5/1/1.5/2x;
+  prefetch = <link rel=preload as=video> for next 3 video urls.
+- tests/gaps7_test.py = 92 checks. Full sweep 2026-08-31 (session 9):
+  integration 153/153, features OK, finance 44/44, gaps, gaps2-gaps7 all
+  green, go test OK,   web next build OK (SFU :8095, ML svc + Pillow for
+  KYC image checks).
+
+

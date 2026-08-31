@@ -16,10 +16,14 @@ import (
 // POST /api/conversations/{id}/polls — create a poll message in the chat.
 func (a *App) handleCreateChatPoll(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Question string   `json:"question"`
-		Options  []string `json:"options"`
-		Multi    bool     `json:"multi"`
-		ClosesIn int      `json:"closes_in_minutes"`
+		Question      string   `json:"question"`
+		Options       []string `json:"options"`
+		Multi         bool     `json:"multi"`
+		ClosesIn      int      `json:"closes_in_minutes"`
+		IsQuiz        bool     `json:"is_quiz"`
+		CorrectOption *int     `json:"correct_option"` // index into options (quiz mode)
+		Explanation   string   `json:"explanation"`
+		Anonymous     bool     `json:"anonymous"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -65,18 +69,39 @@ func (a *App) handleCreateChatPoll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to create poll")
 		return
 	}
+	if req.IsQuiz && (req.CorrectOption == nil || *req.CorrectOption < 0 || *req.CorrectOption >= len(opts)) {
+		writeErr(w, http.StatusBadRequest, "quiz polls need a valid correct_option index")
+		return
+	}
+	if len(req.Explanation) > 300 {
+		writeErr(w, http.StatusBadRequest, "explanation too long (300 chars max)")
+		return
+	}
+	if req.IsQuiz {
+		req.Multi = false // quizzes are single-answer
+	}
 	var pollID string
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO message_polls (message_id, question, multi, closes_at)
-                 VALUES ($1,$2,$3,$4) RETURNING id`, msgID, req.Question, req.Multi, closesAt).Scan(&pollID)
+		`INSERT INTO message_polls (message_id, question, multi, closes_at, is_quiz, explanation, anonymous)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+		msgID, req.Question, req.Multi, closesAt, req.IsQuiz, strings.TrimSpace(req.Explanation), req.Anonymous).Scan(&pollID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create poll")
 		return
 	}
+	optIDs := make([]string, len(opts))
 	for i, o := range opts {
+		if err := tx.QueryRow(r.Context(),
+			`INSERT INTO message_poll_options (poll_id, label, position) VALUES ($1,$2,$3) RETURNING id`,
+			pollID, o, i).Scan(&optIDs[i]); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to create poll")
+			return
+		}
+	}
+	if req.IsQuiz {
 		if _, err := tx.Exec(r.Context(),
-			`INSERT INTO message_poll_options (poll_id, label, position) VALUES ($1,$2,$3)`,
-			pollID, o, i); err != nil {
+			`UPDATE message_polls SET correct_option_id=$2 WHERE id=$1`,
+			pollID, optIDs[*req.CorrectOption]); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to create poll")
 			return
 		}
@@ -106,12 +131,13 @@ func (a *App) handleChatPollVote(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	pollID := r.PathValue("id")
 	var convID string
-	var multi bool
+	var multi, isQuiz bool
 	var closesAt *time.Time
+	var correctOptionID, explanation *string
 	err := a.db.QueryRow(r.Context(),
-		`SELECT m.conversation_id, p.multi, p.closes_at
+		`SELECT m.conversation_id, p.multi, p.closes_at, p.is_quiz, p.correct_option_id::text, p.explanation
                  FROM message_polls p JOIN messages m ON m.id = p.message_id
-                 WHERE p.id=$1`, pollID).Scan(&convID, &multi, &closesAt)
+                 WHERE p.id=$1`, pollID).Scan(&convID, &multi, &closesAt, &isQuiz, &correctOptionID, &explanation)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "poll not found")
 		return
@@ -131,6 +157,17 @@ func (a *App) handleChatPollVote(w http.ResponseWriter, r *http.Request) {
 	if !validOption {
 		writeErr(w, http.StatusBadRequest, "invalid option")
 		return
+	}
+	if isQuiz {
+		// Quiz votes are final: no retract/re-vote, like Telegram quizzes.
+		var already bool
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM message_poll_votes WHERE poll_id=$1 AND user_id=$2)`,
+			pollID, uid).Scan(&already)
+		if already {
+			writeErr(w, http.StatusConflict, "quiz answers are final")
+			return
+		}
 	}
 	tag, err := a.db.Exec(r.Context(),
 		`DELETE FROM message_poll_votes WHERE poll_id=$1 AND option_id=$2 AND user_id=$3`,
@@ -152,7 +189,20 @@ func (a *App) handleChatPollVote(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.chatPollFanout(r, pollID, convID)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "voted"})
+	resp := map[string]any{"status": "voted"}
+	if isQuiz {
+		// Quiz mode reveals the answer immediately, Telegram-style.
+		correct := correctOptionID != nil && *correctOptionID == req.OptionID
+		resp["is_quiz"] = true
+		resp["correct"] = correct
+		if correctOptionID != nil {
+			resp["correct_option_id"] = *correctOptionID
+		}
+		if explanation != nil && *explanation != "" {
+			resp["explanation"] = *explanation
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GET /api/chat-polls/{id} — options with counts and the caller's votes.
@@ -160,13 +210,15 @@ func (a *App) handleGetChatPoll(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	pollID := r.PathValue("id")
 	var question string
-	var multi bool
+	var multi, isQuiz, anonymous bool
 	var convID string
 	var closesAt *time.Time
+	var correctOptionID, explanation *string
 	err := a.db.QueryRow(r.Context(),
-		`SELECT p.question, p.multi, m.conversation_id, p.closes_at
+		`SELECT p.question, p.multi, m.conversation_id, p.closes_at, p.is_quiz, p.correct_option_id::text, p.explanation, p.anonymous
                  FROM message_polls p JOIN messages m ON m.id = p.message_id
-                 WHERE p.id=$1`, pollID).Scan(&question, &multi, &convID, &closesAt)
+                 WHERE p.id=$1`, pollID).
+		Scan(&question, &multi, &convID, &closesAt, &isQuiz, &correctOptionID, &explanation, &anonymous)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "poll not found")
 		return
@@ -175,7 +227,27 @@ func (a *App) handleGetChatPoll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "not a member")
 		return
 	}
-	writeJSON(w, http.StatusOK, a.chatPollState(r, pollID, uid, question, multi, closesAt))
+	state := a.chatPollState(r, pollID, uid, question, multi, closesAt)
+	state["is_quiz"] = isQuiz
+	state["anonymous"] = anonymous
+	if isQuiz {
+		// The correct option is revealed once the caller has voted or the
+		// poll has closed; before that it stays server-side only.
+		var voted bool
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM message_poll_votes WHERE poll_id=$1 AND user_id=$2)`,
+			pollID, uid).Scan(&voted)
+		closed := closesAt != nil && closesAt.Before(time.Now())
+		if voted || closed {
+			if correctOptionID != nil {
+				state["correct_option_id"] = *correctOptionID
+			}
+			if explanation != nil && *explanation != "" {
+				state["explanation"] = *explanation
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, state)
 }
 
 func (a *App) chatPollState(r *http.Request, pollID, uid, question string, multi bool, closesAt *time.Time) map[string]any {
@@ -212,12 +284,13 @@ func (a *App) chatPollState(r *http.Request, pollID, uid, question string, multi
 
 func (a *App) chatPollFanout(r *http.Request, pollID, convID string) {
 	var question string
-	var multi bool
+	var multi, isQuiz bool
 	var closesAt *time.Time
 	_ = a.db.QueryRow(r.Context(),
-		`SELECT question, multi, closes_at FROM message_polls WHERE id=$1`,
-		pollID).Scan(&question, &multi, &closesAt)
+		`SELECT question, multi, closes_at, is_quiz FROM message_polls WHERE id=$1`,
+		pollID).Scan(&question, &multi, &closesAt, &isQuiz)
 	state := a.chatPollState(r, pollID, "", question, multi, closesAt)
+	state["is_quiz"] = isQuiz
 	state["type"] = "chat_poll_update"
 	state["conversation_id"] = convID
 	payload, _ := json.Marshal(state)

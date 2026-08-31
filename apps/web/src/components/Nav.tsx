@@ -4,21 +4,40 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useI18n, LOCALES, LocaleCode } from "@/lib/i18n";
-import { clearTokens, getAccessToken } from "@/lib/api";
+import {
+  clearTokens,
+  getAccessToken,
+  getUserId,
+  listAccounts,
+  switchAccount,
+  type Account,
+} from "@/lib/api";
 
 export default function Nav() {
   const { t, locale, setLocale } = useI18n();
   const router = useRouter();
   const [authed, setAuthed] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   useEffect(() => {
     setAuthed(!!getAccessToken());
+    setAccounts(listAccounts());
   }, []);
 
   const logout = () => {
     clearTokens();
+    const rest = listAccounts();
     setAuthed(false);
-    router.push("/login");
+    setAccounts(rest);
+    if (rest.length > 0 && switchAccount(rest[0].userId)) {
+      router.refresh();
+    } else {
+      router.push("/login");
+    }
+  };
+
+  const switchAcc = (userId: string) => {
+    if (switchAccount(userId)) router.refresh();
   };
 
   return (
@@ -34,6 +53,7 @@ export default function Nav() {
           <Link className="navlink" href="/channels">📢</Link>
           <Link className="navlink" href="/groups">{t("groups")}</Link>
           <Link className="navlink" href="/pages">{t("pages")}</Link>
+          <Link className="navlink" href="/search">🔍</Link>
           <Link className="navlink" href="/trending">#</Link>
           <Link className="navlink" href="/bookmarks">★</Link>
           <Link className="navlink" href="/creator">{t("creator")}</Link>
@@ -72,6 +92,20 @@ export default function Nav() {
           <option key={l.code} value={l.code}>{l.name}</option>
         ))}
       </select>
+      {accounts.length > 1 && (
+        <select
+          aria-label="switch account"
+          value={getUserId() ?? ""}
+          onChange={(e) => switchAcc(e.target.value)}
+          style={{ width: "auto", padding: "5px 8px" }}
+        >
+          {accounts.map((a) => (
+            <option key={a.userId} value={a.userId}>
+              @{a.username ?? a.userId.slice(0, 8)}
+            </option>
+          ))}
+        </select>
+      )}
       {authed ? (
         <button className="secondary small" onClick={logout}>{t("logout")}</button>
       ) : (

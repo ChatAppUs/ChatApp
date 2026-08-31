@@ -133,8 +133,11 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 			"rewatch_rate": math.Round(rewatch*100) / 100, "media_url": deref(mediaURL),
 		})
 	}
-	posts = a.injectFYPExploration(r, uid, posts)
+	// Rank the candidates first, then splice exploration slots into the
+	// final ranked order so they land on deterministic positions.
 	a.mlRerankFYP(uid, posts)
+	posts = diversifyFYP(posts)
+	posts = a.injectFYPExploration(r, uid, posts)
 	body, err := json.Marshal(map[string]any{"posts": posts})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "feed failed")
@@ -155,25 +158,28 @@ func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[stri
 		return posts
 	}
 	seen := make(map[string]bool, len(posts))
+	seenIDs := make([]string, 0, len(posts))
 	for _, p := range posts {
 		if id, ok := p["id"].(string); ok {
 			seen[id] = true
+			seenIDs = append(seenIDs, id)
 		}
 	}
 	rows, err := a.db.Query(r.Context(),
 		`SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url,
-		        p.body, p.like_count, p.comment_count, p.view_count, p.created_at,
-		        (SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1)
+			p.body, p.like_count, p.comment_count, p.view_count, p.created_at,
+			(SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1)
 		 FROM posts p JOIN users u ON u.id = p.author_id
 		 WHERE p.type='reel' AND p.deleted_at IS NULL AND p.visibility='public'
+		   AND p.id <> ALL($3)
 		   AND p.author_id <> $1
-		   AND NOT EXISTS(SELECT 1 FROM reel_watch_events w WHERE w.user_id=$1 AND w.post_id=p.id)
-		   AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id=$1 AND m.muted_id=p.author_id)
-		   AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$1 AND b.blocked_id=p.author_id)
-		                                               OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
-		   AND NOT EXISTS(SELECT 1 FROM reports rp WHERE rp.reporter_id=$1 AND rp.target_type='post' AND rp.target_id=p.id)
-		                  ORDER BY md5(p.id::text || $3) LIMIT $2`,
-		uid, (len(posts)+9)/10, uid+time.Now().UTC().Format("2006-01-02"))
+		 AND NOT EXISTS(SELECT 1 FROM reel_watch_events w WHERE w.user_id=$1 AND w.post_id=p.id)
+		 AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id=$1 AND m.muted_id=p.author_id)
+		 AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$1 AND b.blocked_id=p.author_id)
+		                                            OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
+		 AND NOT EXISTS(SELECT 1 FROM reports rp WHERE rp.reporter_id=$1 AND rp.target_type='post' AND rp.target_id=p.id)
+							ORDER BY md5(p.id::text || $4) LIMIT $2`,
+		uid, (len(posts)+9)/10, seenIDs, uid+time.Now().UTC().Format("2006-01-02"))
 	if err != nil {
 		log.Printf("fyp exploration query: %v", err)
 		return posts
@@ -204,6 +210,63 @@ func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[stri
 		slot += 10
 	}
 	return posts
+}
+
+// diversifyFYP is the diversity/dedup reranker (TikTok parity): no more
+// than two consecutive reels from the same author, and only the
+// highest-ranked member of a remix chain (same remix root) survives.
+func diversifyFYP(posts []map[string]any) []map[string]any {
+	seenRoot := map[string]bool{}
+	deduped := posts[:0]
+	for _, p := range posts {
+		root, _ := p["remix_of"].(string)
+		if root == "" {
+			if id, ok := p["id"].(string); ok {
+				root = id // originals are their own remix root
+			}
+		}
+		if root != "" && seenRoot[root] {
+			continue
+		}
+		seenRoot[root] = true
+		deduped = append(deduped, p)
+	}
+	// Spread consecutive same-author runs: surplus entries are held back and
+	// re-inserted once a different author has broken the run.
+	out := make([]map[string]any, 0, len(deduped))
+	var held []map[string]any
+	trailingRun := func(author string) int {
+		run := 0
+		for i := len(out) - 1; i >= 0; i-- {
+			a, _ := out[i]["author_id"].(string)
+			if a != author {
+				break
+			}
+			run++
+		}
+		return run
+	}
+	drain := func() {
+		for i, h := range held {
+			ha, _ := h["author_id"].(string)
+			if trailingRun(ha) < 2 {
+				out = append(out, h)
+				held = append(held[:i], held[i+1:]...)
+				return
+			}
+		}
+	}
+	for _, p := range deduped {
+		author, _ := p["author_id"].(string)
+		if trailingRun(author) >= 2 {
+			held = append(held, p)
+			continue
+		}
+		out = append(out, p)
+		drain()
+	}
+	out = append(out, held...)
+	return out
 }
 
 // mlRerankFYP re-orders FYP candidates using the ML service's watch-signal

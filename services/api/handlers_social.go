@@ -745,6 +745,11 @@ func (a *App) handleListComments(w http.ResponseWriter, r *http.Request) {
                  WHERE c.post_id = $1 AND c.deleted_at IS NULL
                  AND (c.hidden_at IS NULL OR c.author_id = $4
                       OR EXISTS(SELECT 1 FROM posts p WHERE p.id = c.post_id AND p.author_id = $4))
+                 AND (c.author_id = $4
+                      OR EXISTS(SELECT 1 FROM posts p WHERE p.id = c.post_id AND p.author_id = $4)
+                      OR NOT EXISTS(SELECT 1 FROM word_filters wf
+                                    JOIN posts p ON p.id = c.post_id AND p.author_id = wf.user_id
+                                    WHERE c.body ILIKE '%'||wf.phrase||'%'))
                  ORDER BY `+orderBy+` LIMIT $2 OFFSET $3`,
 		r.PathValue("id"), limit, offset, userIDFrom(r))
 	if err != nil {

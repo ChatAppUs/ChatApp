@@ -10,6 +10,10 @@ export function PollModal({ convId, onClose }: { convId: string; onClose: () => 
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [multi, setMulti] = useState(false);
+  const [isQuiz, setIsQuiz] = useState(false);
+  const [correctOption, setCorrectOption] = useState(0);
+  const [explanation, setExplanation] = useState("");
+  const [anonymous, setAnonymous] = useState(false);
   const [error, setError] = useState("");
 
   const submit = async () => {
@@ -17,7 +21,15 @@ export function PollModal({ convId, onClose }: { convId: string; onClose: () => 
     try {
       await api(`/api/conversations/${convId}/polls`, {
         method: "POST",
-        body: JSON.stringify({ question, options: options.filter((o) => o.trim()), multi }),
+        body: JSON.stringify({
+          question,
+          options: options.filter((o) => o.trim()),
+          multi: isQuiz ? false : multi,
+          is_quiz: isQuiz,
+          correct_option: correctOption,
+          explanation,
+          anonymous,
+        }),
       });
       onClose();
     } catch (e) {
@@ -43,8 +55,34 @@ export function PollModal({ convId, onClose }: { convId: string; onClose: () => 
         <button className="secondary small" onClick={() => setOptions([...options, ""])}>Add option</button>
       )}
       <label className="row" style={{ gap: 6 }}>
-        <input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} style={{ width: "auto" }} />
-        <span className="muted">Allow multiple answers</span>
+        <input type="checkbox" checked={isQuiz}
+          onChange={(e) => { setIsQuiz(e.target.checked); if (e.target.checked) setMulti(false); }}
+          style={{ width: "auto" }} />
+        <span className="muted">🎯 Quiz mode (one correct answer)</span>
+      </label>
+      {isQuiz && (
+        <>
+          <label className="row" style={{ gap: 6 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Correct answer:</span>
+            <select value={correctOption} onChange={(e) => setCorrectOption(Number(e.target.value))}>
+              {options.map((o, i) => (
+                <option key={i} value={i}>{o.trim() || `Option ${i + 1}`}</option>
+              ))}
+            </select>
+          </label>
+          <input placeholder="Explanation shown after answering (optional)" value={explanation}
+            maxLength={300} onChange={(e) => setExplanation(e.target.value)} />
+        </>
+      )}
+      {!isQuiz && (
+        <label className="row" style={{ gap: 6 }}>
+          <input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} style={{ width: "auto" }} />
+          <span className="muted">Allow multiple answers</span>
+        </label>
+      )}
+      <label className="row" style={{ gap: 6 }}>
+        <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} style={{ width: "auto" }} />
+        <span className="muted">Anonymous voting</span>
       </label>
       {error && <div className="error">{error}</div>}
       <div className="row" style={{ gap: 6 }}>

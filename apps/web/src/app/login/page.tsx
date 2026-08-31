@@ -50,7 +50,8 @@ export default function LoginPage() {
         { method: "POST", body: JSON.stringify({ identifier, password, totp_code: totpCode }) },
         false
       );
-      saveTokens(tokens);
+      const username = identifier.includes("@") ? undefined : identifier;
+      saveTokens(tokens, username);
       router.push("/");
       router.refresh();
     } catch (err) {

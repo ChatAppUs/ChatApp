@@ -133,6 +133,29 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>, custody_seed: Arc<Option<
             );
         }
 
+        // E2E verification fingerprint (Telegram-style key verification for
+        // secret chats/calls): both clients compute the same fingerprint over
+        // the two identity keys; keeping the derivation here puts it behind
+        // the same audited, constant-time boundary as the other crypto.
+        // {"key_a":"base64...","key_b":"base64..."} -> hex + 60-digit SAS.
+        ("POST", "/e2e/fingerprint") => {
+            let (Some(key_a), Some(key_b)) = (
+                json_string_field(body, "key_a"),
+                json_string_field(body, "key_b"),
+            ) else {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"key_a and key_b required\"}");
+            };
+            if key_a.len() > 2048 || key_b.len() > 2048 {
+                return respond(&mut stream, "400 Bad Request", "{\"error\":\"keys too large\"}");
+            }
+            let (fingerprint, sas) = e2e_fingerprint(&key_a, &key_b);
+            respond(
+                &mut stream,
+                "200 OK",
+                &format!("{{\"fingerprint\":\"{}\",\"sas\":\"{}\"}}", fingerprint, sas),
+            );
+        }
+
         // {"data":"..."} -> sha256 hex
         ("POST", "/hash") => {
             let data = json_string_field(body, "data").unwrap_or_default();
@@ -247,6 +270,25 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>, custody_seed: Arc<Option<
 
         _ => respond(&mut stream, "404 Not Found", "{\"error\":\"not found\"}"),
     }
+}
+
+/// E2E verification fingerprint over two identity keys: order-independent
+/// (keys are sorted), domain-separated, and rendered as both hex and a
+/// Signal-style 60-digit numeric SAS (12 groups of 5 digits).
+fn e2e_fingerprint(key_a: &str, key_b: &str) -> (String, String) {
+    let (lo, hi) = if key_a <= key_b { (key_a, key_b) } else { (key_b, key_a) };
+    let msg = format!("ChatApp-SAS-v1|{}|{}", lo, hi);
+    let d1 = sha256(msg.as_bytes());
+    let d2 = sha256(&d1);
+    let mut bytes = Vec::with_capacity(48);
+    bytes.extend_from_slice(&d1);
+    bytes.extend_from_slice(&d2[..16]);
+    let mut sas = String::with_capacity(60);
+    for chunk in bytes.chunks(4) {
+        let v = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) % 100_000;
+        sas.push_str(&format!("{:05}", v));
+    }
+    (to_hex(&d1), sas)
 }
 
 fn random_base32(n: usize) -> Option<String> {

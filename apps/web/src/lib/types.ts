@@ -181,6 +181,10 @@ export interface ChatPollState {
   closes_at: string | null;
   options: PollOption[];
   total_votes: number;
+  is_quiz?: boolean;
+  anonymous?: boolean;
+  correct_option_id?: string;
+  explanation?: string;
 }
 
 export interface LiveLocation {

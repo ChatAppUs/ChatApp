@@ -48,7 +48,7 @@ export default function RegisterPage() {
         },
         false
       );
-      saveTokens(tokens);
+      saveTokens(tokens, form.username);
       router.push("/");
       router.refresh();
     } catch (err) {

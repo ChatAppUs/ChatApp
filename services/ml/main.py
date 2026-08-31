@@ -231,6 +231,43 @@ def captions(req: CaptionRequest) -> dict[str, Any]:
     return {"available": True, "text": result.get("text", ""), "segments": segments}
 
 
+# ---------- Text embeddings (related-content similarity) ----------
+# Deterministic 256-dim hashing vectors: token unigrams+bigrams are FNV-1a
+# hashed into buckets (signed by a second hash bit) and L2-normalized. No
+# model download, stable across restarts, good enough for "related reels"
+# cosine similarity; a transformer encoder can replace it behind the same
+# contract via EMBEDDING_MODEL.
+
+EMBED_DIM = 256
+
+_TOKEN_RE = re.compile(r"[\w#@]+", re.UNICODE)
+
+
+def _fnv1a(data: bytes, seed: int = 0x811C9DC5) -> int:
+    h = seed & 0xFFFFFFFF
+    for b in data:
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+class EmbedRequest(BaseModel):
+    text: str
+
+
+@app.post("/embed")
+def embed(req: EmbedRequest) -> dict[str, Any]:
+    tokens = _TOKEN_RE.findall((req.text or "").lower())[:512]
+    vec = [0.0] * EMBED_DIM
+    terms = list(tokens) + [f"{a} {b}" for a, b in zip(tokens, tokens[1:])]
+    for term in terms:
+        h = _fnv1a(term.encode("utf-8"))
+        sign = 1.0 if _fnv1a(term.encode("utf-8"), seed=0x9E3779B9) & 1 else -1.0
+        vec[h % EMBED_DIM] += sign
+    norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+    return {"dim": EMBED_DIM, "vector": [round(v / norm, 6) for v in vec]}
+
+
 # ---------- Media moderation (known-bad hash matching) ----------
 
 from media_moderation import register_media_moderation

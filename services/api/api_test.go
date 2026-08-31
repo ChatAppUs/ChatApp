@@ -333,3 +333,72 @@ func TestParseAuthData(t *testing.T) {
 		t.Fatal("wrong rp accepted")
 	}
 }
+
+// diversifyFYP (handlers_watch.go) holds back any run of 3+ consecutive
+// posts by the same author and collapses remix chains to one entry,
+// mirroring TikTok's feed-diversity guardrails.
+func TestDiversifyFYPCapsAuthorRuns(t *testing.T) {
+	rows := []map[string]any{
+		{"id": "1", "author_id": "alice"},
+		{"id": "2", "author_id": "alice"},
+		{"id": "3", "author_id": "alice"},
+		{"id": "4", "author_id": "alice"},
+		{"id": "5", "author_id": "alice"},
+		{"id": "6", "author_id": "alice"},
+		{"id": "7", "author_id": "bob"},
+		{"id": "8", "author_id": "carol"},
+		{"id": "9", "author_id": "bob"},
+		{"id": "10", "author_id": "dave"},
+	}
+	out := diversifyFYP(rows)
+	if len(out) != len(rows) {
+		t.Fatalf("rows lost: %d in, %d out", len(rows), len(out))
+	}
+	// No 3+ consecutive posts by the same author anywhere in the output.
+	run := 1
+	for i := 1; i < len(out); i++ {
+		if out[i]["author_id"] == out[i-1]["author_id"] {
+			run++
+			if run > 2 {
+				t.Fatalf("author run of %d at output position %d", run, i)
+			}
+		} else {
+			run = 1
+		}
+	}
+	// Relative order within each author is preserved.
+	got := []string{}
+	for _, row := range out {
+		if row["author_id"] == "alice" {
+			got = append(got, row["id"].(string))
+		}
+	}
+	for i, want := range []string{"1", "2", "3", "4", "5", "6"} {
+		if got[i] != want {
+			t.Fatalf("alice order changed: got %v", got)
+		}
+	}
+}
+
+func TestDiversifyFYPCollapsesRemixChains(t *testing.T) {
+	rows := []map[string]any{
+		{"id": "orig"},
+		{"id": "remix1", "author_id": "a", "remix_of": "orig"},
+		{"id": "remix2", "author_id": "b", "remix_of": "orig"},
+		{"id": "remix3", "author_id": "c", "remix_of": "orig"},
+		{"id": "unrelated", "author_id": "d"},
+	}
+	out := diversifyFYP(rows)
+	chain := 0
+	for _, row := range out {
+		if row["id"] == "orig" || row["remix_of"] == "orig" {
+			chain++
+		}
+	}
+	if chain != 1 {
+		t.Fatalf("remix chain should collapse to 1 entry, got %d", chain)
+	}
+	if len(out) != 2 {
+		t.Fatalf("collapsed rows must be dropped: %d rows", len(out))
+	}
+}

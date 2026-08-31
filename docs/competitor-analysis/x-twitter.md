@@ -2,7 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
+Status refreshed 2026-08-31 (gap pack 8): gap-pack-7 (migration 023) shipped — moments (publish/draft/re-publish/unpublish with admin oversight), advanced search operators (minus words, filter:reels) in /api/search/posts, audio/Space recordings (host-only record/delete via the media edge), username profile links (/u/<username>), expanded bot surface, E2E key + SAS verification.
+
+Earlier: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
 
 Earlier: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
 
@@ -17,7 +19,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Threads (connected posts) | ✅ | thread_parent_id + GET /api/posts/{id}/thread |
 | Reply / quote / repost | ✅ | Comment replies, quote posts, repost toggle with counts |
 | Post reactions (like) | ✅ | |
-| Bookmarks (+ folders) | 🚧 | Bookmarks exist; gap: folders |
+| Bookmarks (+ folders) | ✅ | bookmark_folders + bookmarks.folder_id (018) |
 | Polls | ✅ | 2–4 options, upsert votes |
 | Community Notes | ✅ | notes + helpful-votes + delete (017), web/Android/iOS |
 | Post scheduling | ✅ | posts.publish_at + /api/me/scheduled-posts (016) |
@@ -36,8 +38,8 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Following feed (chronological) | ✅ | /api/feed |
 | Lists (curated user groups) | ✅ | lists + list_members + /api/lists/{id}/feed (018) |
 | Topics / interests following | ✅ | interest_topics + follows + per-user interest vector (019) |
-| Advanced search (operators: from:, since:, filter:) | 🚧 | Basic search; gap: operator parser |
-| Moments / curated news | ❌ | Gap: editorial product, low priority |
+| Advanced search (operators: from:, since:, filter:) | ✅ | Operator parser with minus-words + filter:reels/videos (023) |
+| Moments / curated news | ✅ | Moments + admin review queue (023) |
 
 ## Communities & social graph
 
@@ -54,7 +56,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | Live audio rooms with speakers/listeners | ✅ | audio_rooms + participants (host/cohost/speaker/listener) + hand raise (019) |
-| Space recording & replay | ❌ | Gap: SFU recording |
+| Space recording & replay | ✅ | Host-only record/delete on audio rooms (023) |
 | Scheduled spaces | ✅ | audio_rooms.scheduled_at (019) |
 | Ticketed spaces | ✅ | audio_rooms.ticket_price debits wallet on join (019) |
 
@@ -93,7 +95,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| Block / mute (accounts, words) | 🚧 | Blocks shipped; gap: mutes + word filters |
+| Block / mute (accounts, words) | ✅ | Blocks + mutes + creator-side word filters on comments (023) |
 | Report flows | ✅ | |
 | Reply limiting (who can reply) | ✅ | posts.reply_policy everyone|following|mentioned|nobody, enforced in comment path (018) |
 | Hidden replies | ✅ | comments.hidden_at + hide/unhide endpoints (018) |

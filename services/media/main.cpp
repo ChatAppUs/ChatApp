@@ -219,6 +219,129 @@ static void handleClient(int fd) {
                 }
             }
         }
+    } else if (method == "POST" && path == "/upload/init") {
+        // Chunked resumable upload (Telegram-style 2 GiB files): the Go API
+        // creates the upload session and the Rust security service signs a
+        // grant bound to "/upload/<id>"; the edge keeps only .part state.
+        std::string id = queryParam(target, "id");
+        std::string filename = queryParam(target, "filename");
+        std::string totalStr = queryParam(target, "total");
+        std::string sig = queryParam(target, "sig");
+        std::string exp = queryParam(target, "exp");
+        uint64_t total = totalStr.empty() ? 0 : std::stoull(totalStr);
+        bool idOk = id.size() == 36; // uuid v4 from the API (CSPRNG)
+        for (char c : id) idOk = idOk && (std::isxdigit(c) || c == '-');
+        if (!idOk || !safeName(filename) || total == 0 || total > (2ull << 30)) {
+            respond(fd, 400, "Bad Request", "{\"error\":\"invalid init params\"}");
+        } else if (!g_securityURL.empty() && !verifySignature("/upload/" + id, exp, sig)) {
+            respond(fd, 403, "Forbidden", "{\"error\":\"invalid or expired upload grant\"}");
+        } else {
+            std::string part = g_uploadDir + "/" + id + ".part";
+            std::ofstream meta(g_uploadDir + "/" + id + ".meta", std::ios::trunc);
+            meta << filename << "\n" << total << "\n";
+            meta.close();
+            std::ofstream trunc(part, std::ios::binary | std::ios::trunc);
+            trunc.close();
+            respond(fd, 201, "Created", "{\"upload_id\":\"" + id + "\",\"received\":0}");
+        }
+    } else if (method == "GET" && path.rfind("/upload/", 0) == 0 && path.size() > 8 &&
+               path.rfind("/status") == path.size() - 7) {
+        // Resume probe: how many bytes the edge already holds. The session id
+        // is an unguessable CSPRNG uuid, so this leaks nothing to strangers.
+        std::string id = path.substr(8, path.size() - 8 - 7);
+        struct stat st{};
+        uint64_t received = 0, total = 0;
+        if (::stat((g_uploadDir + "/" + id + ".part").c_str(), &st) == 0) received = st.st_size;
+        std::ifstream meta(g_uploadDir + "/" + id + ".meta");
+        std::string fn, tl;
+        std::getline(meta, fn);
+        std::getline(meta, tl);
+        if (!tl.empty()) total = std::stoull(tl);
+        respond(fd, 200, "OK", "{\"upload_id\":\"" + id + "\",\"received\":" +
+                std::to_string(received) + ",\"total\":" + std::to_string(total) + "}");
+    } else if (method == "PUT" && path.rfind("/upload/", 0) == 0 && path.size() > 8 + 6 &&
+               path.rfind("/chunk") == path.size() - 6) {
+        std::string id = path.substr(8, path.size() - 8 - 6);
+        std::string sig = queryParam(target, "sig");
+        std::string exp = queryParam(target, "exp");
+        if (!g_securityURL.empty() && !verifySignature("/upload/" + id, exp, sig)) {
+            respond(fd, 403, "Forbidden", "{\"error\":\"invalid or expired upload grant\"}");
+        } else {
+            std::ifstream meta(g_uploadDir + "/" + id + ".meta");
+            std::string fn, tl;
+            std::getline(meta, fn);
+            std::getline(meta, tl);
+            if (fn.empty() || tl.empty()) {
+                respond(fd, 404, "Not Found", "{\"error\":\"unknown upload session\"}");
+            } else {
+                uint64_t total = std::stoull(tl);
+                std::string part = g_uploadDir + "/" + id + ".part";
+                struct stat st{};
+                uint64_t received = 0;
+                if (::stat(part.c_str(), &st) == 0) received = st.st_size;
+                size_t contentLength = 0;
+                if (hdr.count("content-length")) contentLength = std::stoull(hdr["content-length"]);
+                if (contentLength == 0 || received + contentLength > total) {
+                    respond(fd, 400, "Bad Request", "{\"error\":\"chunk exceeds declared total\"}");
+                } else {
+                    std::ofstream out(part, std::ios::binary | std::ios::app);
+                    out.write(body.data(), static_cast<std::streamsize>(body.size()));
+                    uint64_t written = body.size();
+                    while (written < contentLength) {
+                        n = ::recv(fd, buf, std::min(sizeof(buf), contentLength - written), 0);
+                        if (n <= 0) break;
+                        out.write(buf, n);
+                        written += n;
+                    }
+                    out.close();
+                    if (written != contentLength) {
+                        // Truncate back so a torn chunk never corrupts the file;
+                        // the client re-sends the whole chunk.
+                        ::truncate(part.c_str(), received);
+                        respond(fd, 400, "Bad Request", "{\"error\":\"incomplete chunk\"}");
+                    } else {
+                        respond(fd, 200, "OK", "{\"upload_id\":\"" + id + "\",\"received\":" +
+                                std::to_string(received + written) + "}");
+                    }
+                }
+            }
+        }
+    } else if (method == "POST" && path.rfind("/upload/", 0) == 0 && path.size() > 8 + 9 &&
+               path.rfind("/complete") == path.size() - 9) {
+        std::string id = path.substr(8, path.size() - 8 - 9);
+        std::string sig = queryParam(target, "sig");
+        std::string exp = queryParam(target, "exp");
+        if (!g_securityURL.empty() && !verifySignature("/upload/" + id, exp, sig)) {
+            respond(fd, 403, "Forbidden", "{\"error\":\"invalid or expired upload grant\"}");
+        } else {
+            std::ifstream meta(g_uploadDir + "/" + id + ".meta");
+            std::string fn, tl;
+            std::getline(meta, fn);
+            std::getline(meta, tl);
+            struct stat st{};
+            uint64_t received = 0;
+            std::string part = g_uploadDir + "/" + id + ".part";
+            if (::stat(part.c_str(), &st) == 0) received = st.st_size;
+            if (fn.empty() || tl.empty()) {
+                respond(fd, 404, "Not Found", "{\"error\":\"unknown upload session\"}");
+            } else if (received != std::stoull(tl)) {
+                respond(fd, 400, "Bad Request", "{\"error\":\"upload incomplete\",\"received\":" +
+                        std::to_string(received) + ",\"total\":" + tl + "}");
+            } else {
+                std::string ext;
+                auto dot = fn.find_last_of('.');
+                if (dot != std::string::npos) ext = fn.substr(dot);
+                std::string stored = id + ext;
+                // Strip any query-decoding artifacts from the extension.
+                if (::rename(part.c_str(), (g_uploadDir + "/" + stored).c_str()) != 0) {
+                    respond(fd, 500, "Internal Server Error", "{\"error\":\"finalize failed\"}");
+                } else {
+                    std::remove((g_uploadDir + "/" + id + ".meta").c_str());
+                    respond(fd, 201, "Created", "{\"url\":\"/media/" + stored +
+                            "\",\"bytes\":" + std::to_string(received) + "}");
+                }
+            }
+        }
     } else if (method == "GET" && path.rfind("/media/", 0) == 0) {
         std::string name = path.substr(7);
         if (!safeName(name)) {

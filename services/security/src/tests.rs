@@ -1,6 +1,7 @@
 //! Unit tests for the security service crypto. RFC-standard vectors:
 //! SHA-1: FIPS 180-1; TOTP: RFC 6238 Appendix B (SHA-1, 6-digit truncation).
 
+use crate::e2e_fingerprint;
 use crate::jwt;
 use crate::sha1;
 use crate::sha256::{hmac_sha256, sha256, to_hex};
@@ -122,4 +123,19 @@ fn jwt_roundtrip() {
     assert!(jwt::verify_hs256(&token, b"wrong", 1_700_000_000).is_none());
     // Expired rejects.
     assert!(jwt::verify_hs256(&token, b"secret", 3_000_000_000).is_none());
+}
+
+#[test]
+fn e2e_fingerprint_symmetric_and_stable() {
+    // The SAS derivation is order-independent and deterministic: both parties
+    // must compute the same fingerprint regardless of argument order.
+    let (a, b) = ("key-alice", "key-bob");
+    let fp1 = e2e_fingerprint(a, b);
+    let fp2 = e2e_fingerprint(b, a);
+    assert_eq!(fp1, fp2);
+    let fp3 = e2e_fingerprint(a, "key-carol");
+    assert_ne!(fp1, fp3);
+    let (_, ref sas) = fp1;
+    assert_eq!(sas.len(), 60);
+    assert!(sas.chars().all(|c| c.is_ascii_digit()));
 }
