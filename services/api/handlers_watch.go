@@ -171,7 +171,8 @@ func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[stri
 		   AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$1 AND b.blocked_id=p.author_id)
 		                                               OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
 		   AND NOT EXISTS(SELECT 1 FROM reports rp WHERE rp.reporter_id=$1 AND rp.target_type='post' AND rp.target_id=p.id)
-		 ORDER BY random() LIMIT $2`, uid, (len(posts)+9)/10)
+		                  ORDER BY md5(p.id::text || $3) LIMIT $2`,
+		uid, (len(posts)+9)/10, uid+time.Now().UTC().Format("2006-01-02"))
 	if err != nil {
 		return posts
 	}
