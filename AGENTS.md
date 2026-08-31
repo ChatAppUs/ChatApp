@@ -384,3 +384,29 @@
   KYC image checks).
 
 
+
+## Contracts discovered while testing (2026-08-31, session 10 — gap pack 8)
+- Migration 024_gap_pack8.sql: posts.remix_mode (""|duet|stitch). createPost
+  accepts remix_mode only with remix_of and type='reel'; postSelect/postOut/
+  scanPosts expose remix_of + remix_mode; handleReelRemixes rows include
+  remix_mode; FYP main + exploration projections carry both fields.
+- FYP response shape is a CUSTOM projection (not postOut): id/username/body/
+  media_url/like_count/watch metrics — native clients (Android FypScreen,
+  iOS FypView) decode this shape, not the feed shape.
+- Web reels: ReelExtras.RemixModal has a layout picker (Remix/Duet/Stitch);
+  RemixPlayer renders duet (side-by-side muted source + response) and stitch
+  (source once → response loops); reels/page.tsx routes layout remixes to
+  RemixPlayer. React ref gotcha: prop type React.RefObject<HTMLVideoElement>
+  (not | null) to satisfy <video ref>.
+- Android: FypScreen RemixDialog (layout FilterChips + video picker via
+  GetContent) and RemixVideo (two VideoViews for duet, completion-handover
+  for stitch; source fetched via /api/posts/{id}); ApiClient.uploadMedia
+  (signed grant → media edge POST, BuildConfig.MEDIA_BASE_URL :8100).
+- iOS: FeatureViews FypView + RemixSheet (segmented layout Picker +
+  PhotosPicker) + RemixPlayerView (HStack VideoPlayers for duet,
+  AVQueuePlayer for stitch); APIClient.uploadMedia + mediaBaseURL
+  (CHATAPP_MEDIA_BASE env/Info.plist, default :8100).
+- Docs corrected: GAP_ANALYSIS rows 6/9/10, facebook.md Remix + Polls rows.
+- Test env: ML svc (uvicorn :8200, needs Pillow) for gaps5/gaps7; no Rust
+  toolchain in sandbox → security svc unsigned dev mode (SECURITY_SERVICE_URL
+  unset); SFU /tmp/sfu on :8095.

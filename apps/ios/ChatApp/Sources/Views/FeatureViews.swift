@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import PhotosUI
 
 // Full parity with the web feature pages: For You, Groups (+events/RSVP),
 // Pages, Monetization, Bots, Privacy. All views drive FeatureClient with the
@@ -375,6 +376,149 @@ struct FypPost: Decodable, Identifiable {
     let username: String
     let media_url: String?
     let like_count: Int
+    let remix_mode: String?
+    let remix_of: String?
+}
+
+// Duet/stitch playback: duet renders source and response side-by-side;
+// stitch plays the source clip once, then hands over to the response. The
+// source reel is fetched through the permalink endpoint.
+struct RemixPlayerView: View {
+    let post: FypPost
+    let client: FeatureClient?
+    @State private var sourceURL: URL?
+    @State private var resolved = false
+    @State private var stitchPlayer: AVPlayer?
+
+    var body: some View {
+        Group {
+            if post.remix_mode == "duet" {
+                HStack(spacing: 2) {
+                    if let src = sourceURL {
+                        VideoPlayer(player: AVPlayer(url: src))
+                            .frame(height: 220)
+                    }
+                    if let own = post.media_url, let u = URL(string: own) {
+                        VideoPlayer(player: AVPlayer(url: u))
+                            .frame(height: 220)
+                    }
+                }
+            } else if resolved {
+                // stitch: source first, then loop the response
+                if let player = stitchPlayer {
+                    VideoPlayer(player: player)
+                        .frame(height: 220)
+                }
+            }
+        }
+        .task { await loadSource() }
+    }
+
+    private func loadSource() async {
+        defer { resolved = true }
+        guard let remixOf = post.remix_of, !remixOf.isEmpty,
+              let data = try? await client?.api.get("/api/posts/\(remixOf)"),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let p = root["post"] as? [String: Any],
+              let media = p["media"] as? [[String: Any]] else {
+            buildStitchPlayer(source: nil)
+            return
+        }
+        let src = media.first(where: { $0["kind"] as? String == "video" })
+            .flatMap { $0["url"] as? String }.flatMap(URL.init)
+        sourceURL = src
+        buildStitchPlayer(source: src)
+    }
+
+    private func buildStitchPlayer(source: URL?) {
+        guard post.remix_mode == "stitch" else { return }
+        let own = post.media_url.flatMap(URL.init)
+        if let source, let own {
+            // Play the source once; on completion swap to the looping response.
+            let sourceItem = AVPlayerItem(url: source)
+            let ownItem = AVPlayerItem(url: own)
+            let player = AVQueuePlayer(items: [sourceItem, ownItem])
+            stitchPlayer = player
+            player.play()
+        } else if let own {
+            let player = AVPlayer(url: own)
+            stitchPlayer = player
+        }
+    }
+}
+
+struct RemixSheet: View {
+    let reelId: String
+    let client: FeatureClient?
+    var onDone: () -> Void
+    @State private var bodyText = ""
+    @State private var mode = ""
+    @State private var pickedVideo: Data?
+    @State private var pickedName = "remix.mp4"
+    @State private var busy = false
+    @State private var error: String?
+    @State private var pickerItem: PhotosPickerItem?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Layout", selection: $mode) {
+                    Text("Remix").tag("")
+                    Text("Duet").tag("duet")
+                    Text("Stitch").tag("stitch")
+                }
+                .pickerStyle(.segmented)
+                TextField("Add your take…", text: $bodyText, axis: .vertical)
+                    .lineLimit(2...4)
+                PhotosPicker(selection: $pickerItem, matching: .videos) {
+                    Label(pickedVideo == nil ? "Pick video (optional)" : "Video selected ✓",
+                          systemImage: "video")
+                }
+                .onChange(of: pickerItem) { _, item in
+                    Task {
+                        if let data = try? await item?.loadTransferable(type: Data.self) {
+                            pickedVideo = data
+                        }
+                    }
+                }
+                if let error { Text(error).foregroundStyle(.red).font(.footnote) }
+            }
+            .navigationTitle("Remix this reel")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { if !busy { onDone() } }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(busy ? "Posting…" : "Post remix") { submit() }
+                        .disabled(busy || (bodyText.trimmingCharacters(in: .whitespaces).isEmpty && pickedVideo == nil))
+                }
+            }
+        }
+    }
+
+    private func submit() {
+        guard let client else { return }
+        busy = true
+        error = nil
+        Task {
+            do {
+                var media: [[String: Any]] = []
+                if let data = pickedVideo {
+                    let url = try await client.api.uploadMedia(filename: pickedName, data: data)
+                    media.append(["kind": "video", "url": url])
+                }
+                var payload: [String: Any] = [
+                    "type": "reel", "body": bodyText, "remix_of": reelId, "media": media,
+                ]
+                if !mode.isEmpty { payload["remix_mode"] = mode }
+                _ = try await client.api.post("/api/posts", body: payload)
+                onDone()
+            } catch {
+                self.error = errorMessage(error)
+                busy = false
+            }
+        }
+    }
 }
 
 struct FypView: View {
@@ -382,6 +526,7 @@ struct FypView: View {
     @State private var client: FeatureClient?
     @State private var posts: [FypPost] = []
     @State private var error: String?
+    @State private var remixTarget: FypPost?
 
     struct FypResponse: Decodable { let posts: [FypPost]? }
 
@@ -390,15 +535,35 @@ struct FypView: View {
             List(posts) { post in
                 VStack(alignment: .leading) {
                     Text("@\(post.username)").font(.headline)
+                    if let mode = post.remix_mode, !mode.isEmpty {
+                        Text("🎬 \(mode)").font(.caption).foregroundStyle(.secondary)
+                    }
                     Text(post.body)
-                    if let url = post.media_url, let u = URL(string: url) {
+                    if let mode = post.remix_mode, !mode.isEmpty,
+                       let remixOf = post.remix_of, !remixOf.isEmpty,
+                       post.media_url != nil {
+                        RemixPlayerView(post: post, client: client)
+                    } else if let url = post.media_url, let u = URL(string: url) {
                         VideoPlayer(player: AVPlayer(url: u))
                             .frame(height: 220)
                     }
-                    Text("\(post.like_count) likes").font(.caption)
+                    HStack {
+                        Text("\(post.like_count) likes").font(.caption)
+                        Spacer()
+                        Button { remixTarget = post } label: {
+                            Label("Remix", systemImage: "film")
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                    }
                 }
             }
             .navigationTitle("For You")
+            .sheet(item: $remixTarget) { target in
+                RemixSheet(reelId: target.id, client: client) {
+                    remixTarget = nil
+                }
+            }
             .onAppear {
                 client = FeatureClient(token: session.accessToken)
                 Task {

@@ -797,7 +797,7 @@ func (a *App) handleRelatedReels(w http.ResponseWriter, r *http.Request) {
 		cands = cands[:10]
 	}
 	for _, c := range cands {
-		if c.sim > 0.02 {
+		if c.sim > 0.35 { // hashing embeddings: related ~0.5+, noise near 0
 			ids = append(ids, c.id)
 		}
 	}

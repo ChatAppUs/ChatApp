@@ -55,6 +55,8 @@ type postOut struct {
 	ReplyPolicy    string          `json:"reply_policy"`
 	Article        json.RawMessage `json:"article,omitempty"`
 	AudienceListID string          `json:"audience_list_id,omitempty"`
+	RemixOf        string          `json:"remix_of,omitempty"`
+	RemixMode      string          `json:"remix_mode,omitempty"`
 }
 
 type quotedPost struct {
@@ -90,6 +92,7 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		TaggedUsers    []string        `json:"tagged_user_ids"`
 		PublishAt      string          `json:"publish_at"`       // RFC3339; future = scheduled post
 		RemixOf        string          `json:"remix_of"`         // reel remix/duet source post id
+		RemixMode      string          `json:"remix_mode"`       // duet | stitch (requires remix_of)
 		StoryBG        string          `json:"story_background"` // gradient key for text stories
 		StoryStickers  string          `json:"story_stickers"`   // JSON array of sticker overlays
 		StoryMusic     string          `json:"story_music"`      // JSON {track, offset_s}
@@ -159,6 +162,16 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	if req.RemixOf != "" && req.Type != "reel" {
 		writeErr(w, http.StatusBadRequest, "remix_of only applies to reels")
 		return
+	}
+	if req.RemixMode != "" {
+		if req.RemixMode != "duet" && req.RemixMode != "stitch" {
+			writeErr(w, http.StatusBadRequest, "remix_mode must be duet or stitch")
+			return
+		}
+		if req.RemixOf == "" {
+			writeErr(w, http.StatusBadRequest, "remix_mode requires remix_of")
+			return
+		}
 	}
 	if req.Type != "story" && (req.StoryBG != "" || req.StoryStickers != "" || req.StoryMusic != "") {
 		writeErr(w, http.StatusBadRequest, "story composer fields only apply to stories")
@@ -265,15 +278,15 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO posts (author_id, type, body, visibility, expires_at, repost_of, thread_parent_id,
-		                    feeling, location, publish_at, remix_of, story_background, story_stickers, story_music,
+		                    feeling, location, publish_at, remix_of, remix_mode, story_background, story_stickers, story_music,
 		                    reply_policy, content_warning, sensitive, article, audience_list_id)
                  VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,'')::uuid,$8,$9,$10,
-NULLIF($11,'')::uuid,$12,$13,$14,$15,$16,$17,$18,NULLIF($19,'')::uuid) RETURNING id`,
+NULLIF($11,'')::uuid,NULLIF($20,''),$12,$13,$14,$15,$16,$17,$18,NULLIF($19,'')::uuid) RETURNING id`,
 		uid, req.Type, req.Body, req.Visibility, expires, req.RepostOf, req.ThreadParent,
 		strings.TrimSpace(req.Feeling), strings.TrimSpace(req.Location), publishAt,
 		req.RemixOf, req.StoryBG, stickers, music,
 		req.ReplyPolicy, strings.TrimSpace(req.ContentWarning), req.Sensitive,
-		articleJSON, req.AudienceListID).Scan(&postID)
+		articleJSON, req.AudienceListID, req.RemixMode).Scan(&postID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create post")
 		return
@@ -361,7 +374,8 @@ SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url, p.type, p.bo
        p.feeling, p.location, p.publish_at,
        COALESCE(p.story_background,''), COALESCE(p.story_stickers::text,''), COALESCE(p.story_music::text,''),
        p.content_warning, p.sensitive, p.reply_policy,
-       COALESCE(p.article::text,''), COALESCE(p.audience_list_id::text,'')
+       COALESCE(p.article::text,''), COALESCE(p.audience_list_id::text,''),
+       COALESCE(p.remix_of::text,''), COALESCE(p.remix_mode,'')
 FROM posts p JOIN users u ON u.id = p.author_id`
 
 func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postOut, error) {
@@ -381,7 +395,7 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 			&p.MyReaction, &p.Feeling, &p.Location, &p.PublishAt,
 			&p.StoryBG, &p.StoryStickers, &p.StoryMusic,
 			&p.ContentWarning, &p.Sensitive, &p.ReplyPolicy,
-			&article, &p.AudienceListID); err != nil {
+			&article, &p.AudienceListID, &p.RemixOf, &p.RemixMode); err != nil {
 			return nil, err
 		}
 		if article != "" {

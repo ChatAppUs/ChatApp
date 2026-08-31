@@ -26,6 +26,23 @@ class ApiClient(private val baseUrl: String) {
     fun delete(path: String, body: String = "{}", token: String? = null): String =
         execute(newRequest(path, token).delete(body.toRequestBody(jsonMedia)).build())
 
+    // Signed-grant media upload matching the web flow: fetch a short-lived
+    // upload token from the Go API, then POST the raw bytes to the C++ media
+    // edge. Returns the absolute media URL.
+    fun uploadMedia(mediaBase: String, filename: String, bytes: ByteArray, token: String): String {
+        var grant = ""
+        try {
+            val t = org.json.JSONObject(post("/api/media/upload-token", "{}", token))
+            grant = "&exp=${t.getLong("expires")}&sig=${java.net.URLEncoder.encode(t.getString("signature"), "UTF-8")}"
+        } catch (_: Exception) { /* dev mode: unsigned upload accepted */ }
+        val url = "$mediaBase/upload?filename=${java.net.URLEncoder.encode(filename, "UTF-8")}$grant"
+        val req = Request.Builder().url(url)
+            .post(bytes.toRequestBody("application/octet-stream".toMediaType())).build()
+        val resp = execute(req)
+        val rel = org.json.JSONObject(resp).getString("url")
+        return "$mediaBase$rel"
+    }
+
     private fun newRequest(path: String, token: String?): Request.Builder {
         val builder = Request.Builder()
             .url("$baseUrl$path")

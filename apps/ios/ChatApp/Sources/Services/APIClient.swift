@@ -25,10 +25,41 @@ struct APIClient {
             ?? "ws://localhost:8080"
     }()
 
+    static let mediaBaseURL: String = {
+        Bundle.main.object(forInfoDictionaryKey: "CHATAPP_MEDIA_BASE") as? String
+            ?? ProcessInfo.processInfo.environment["CHATAPP_MEDIA_BASE"]
+            ?? "http://localhost:8100"
+    }()
+
     let token: String?
 
     init(token: String? = nil) {
         self.token = token
+    }
+
+    // Signed-grant media upload matching the web/Android flow: fetch a
+    // short-lived upload token from the Go API, then POST the raw bytes to
+    // the C++ media edge. Returns the absolute media URL.
+    func uploadMedia(filename: String, data: Data) async throws -> String {
+        var grant = ""
+        if let t = try? await post("/api/media/upload-token"),
+           let obj = try JSONSerialization.jsonObject(with: t) as? [String: Any],
+           let exp = obj["expires"] as? Int, let sig = obj["signature"] as? String {
+            let allowed = CharacterSet.urlQueryAllowed
+            grant = "&exp=\(exp)&sig=\(sig.addingPercentEncoding(withAllowedCharacters: allowed) ?? sig)"
+        }
+        let name = filename.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? filename
+        var req = URLRequest(url: URL(string: "\(Self.mediaBaseURL)/upload?filename=\(name)\(grant)")!)
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        let (respData, resp) = try await URLSession.shared.data(for: req)
+        guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? -1),
+              let obj = try JSONSerialization.jsonObject(with: respData) as? [String: Any],
+              let rel = obj["url"] as? String else {
+            throw APIError.http((resp as? HTTPURLResponse)?.statusCode ?? -1, "upload failed")
+        }
+        return Self.mediaBaseURL + rel
     }
 
     func get(_ path: String) async throws -> Data {

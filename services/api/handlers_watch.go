@@ -87,7 +87,8 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 		 SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url,
 		        p.body, p.like_count, p.comment_count, p.view_count, p.created_at,
 		        COALESCE(a.signals,0), COALESCE(a.avg_watch_pct,0), COALESCE(a.completion_rate,0), COALESCE(a.rewatch_rate,0),
-                     (SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1) AS media_url
+                     (SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1) AS media_url,
+                        COALESCE(p.remix_mode,''), COALESCE(p.remix_of::text,'')
 		 FROM posts p
 		 JOIN users u ON u.id = p.author_id
 		 LEFT JOIN agg a ON a.post_id = p.id
@@ -117,12 +118,14 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, authorID, name, username, avatar, body string
 		var mediaURL *string
+		var remixMode, remixOf string
 		var likes, comments int
 		var views, signals int64
 		var watchPct, completion, rewatch float64
 		var createdAt time.Time
 		if err := rows.Scan(&id, &authorID, &name, &username, &avatar, &body,
-			&likes, &comments, &views, &createdAt, &signals, &watchPct, &completion, &rewatch, &mediaURL); err != nil {
+			&likes, &comments, &views, &createdAt, &signals, &watchPct, &completion, &rewatch, &mediaURL,
+			&remixMode, &remixOf); err != nil {
 			continue
 		}
 		posts = append(posts, map[string]any{
@@ -131,6 +134,7 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 			"view_count": views, "created_at": createdAt,
 			"watch_pct": math.Round(watchPct*100) / 100, "completion_rate": math.Round(completion*100) / 100,
 			"rewatch_rate": math.Round(rewatch*100) / 100, "media_url": deref(mediaURL),
+			"remix_mode": remixMode, "remix_of": remixOf,
 		})
 	}
 	// Rank the candidates first, then splice exploration slots into the
@@ -168,7 +172,8 @@ func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[stri
 	rows, err := a.db.Query(r.Context(),
 		`SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url,
 			p.body, p.like_count, p.comment_count, p.view_count, p.created_at,
-			(SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1)
+			(SELECT pm.url FROM post_media pm WHERE pm.post_id=p.id ORDER BY pm.position LIMIT 1),
+                        COALESCE(p.remix_mode,''), COALESCE(p.remix_of::text,'')
 		 FROM posts p JOIN users u ON u.id = p.author_id
 		 WHERE p.type='reel' AND p.deleted_at IS NULL AND p.visibility='public'
 		   AND p.id <> ALL($3)
@@ -189,17 +194,19 @@ func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[stri
 	for rows.Next() {
 		var id, authorID, name, username, avatar, body string
 		var mediaURL *string
+		var remixMode, remixOf string
 		var likes, comments int
 		var views int64
 		var createdAt time.Time
 		if err := rows.Scan(&id, &authorID, &name, &username, &avatar, &body,
-			&likes, &comments, &views, &createdAt, &mediaURL); err != nil || seen[id] {
+			&likes, &comments, &views, &createdAt, &mediaURL, &remixMode, &remixOf); err != nil || seen[id] {
 			continue
 		}
 		post := map[string]any{
 			"id": id, "author_id": authorID, "display_name": name, "username": username,
 			"avatar_url": avatar, "body": body, "like_count": likes, "comment_count": comments,
 			"view_count": views, "created_at": createdAt, "media_url": deref(mediaURL),
+			"remix_mode": remixMode, "remix_of": remixOf,
 			"explore": true,
 		}
 		if slot >= len(posts) {

@@ -71,7 +71,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Short video feed | ✅ | |
 | Watch-time tracking | ✅ | Shipped: reel_watch_events ingestion feeds FYP ranking |
 | Reel comments/likes/shares | ✅ | reels are posts.type='reel'; comments/likes/share-to-chat all apply |
-| Remix/duet | 🚧 | posts.remix_of attribution + reel analytics (017); visual editor is client work |
+| Remix/duet | ✅ | posts.remix_of attribution + reel analytics (017); duet/stitch layouts (posts.remix_mode, 024) with layout picker + side-by-side/sequential playback on web, Android, iOS |
 | Sounds/music library | ✅ | self-hosted sounds catalog (019); licensing stays a legal process |
 | Creator monetization on reels | ✅ | RPM earnings count qualified views only (completion/rewatch, 021) + per-reel analytics (reel_watch aggregates, /api/reels/analytics) |
 
@@ -88,7 +88,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Message requests (non-friends) | ✅ | Shipped: request inbox, accept/decline before chat opens |
 | Nicknames per chat | ✅ | chat_nicknames table, PUT /api/conversations/{id}/nicknames/{userId} |
 | Chat themes/colors | ✅ | conversations.theme + 🎨 gradient picker in chat header |
-| Polls in chat | ✅ | Post polls exist; gap: attach to chat message |
+| Polls in chat | ✅ | chat_polls attached to chat messages (017) + quiz mode with correct answers/explanations (023) |
 | Location sharing (live) | ✅ | live_locations start/stop/view with haversine fallback (017) |
 | Payments in chat | ✅ | POST /api/conversations/{id}/pay (hold+transfer+payment message); pay-in-chat UI on web/Android/iOS |
 

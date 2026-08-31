@@ -35,6 +35,8 @@ export interface Post {
   story_stickers?: string;
   story_music?: string;
   quoted?: { id: string; author_name: string; author_username: string; body: string } | null;
+  remix_of?: string;
+  remix_mode?: "duet" | "stitch";
 }
 
 export const REACTIONS: Record<string, string> = {

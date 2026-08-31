@@ -6,7 +6,7 @@ import { api, getAccessToken, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Post } from "@/lib/types";
 import Composer from "@/components/Composer";
-import { RemixModal, ReelAnalytics, RemixList } from "@/components/ReelExtras";
+import { RemixModal, ReelAnalytics, RemixList, RemixPlayer } from "@/components/ReelExtras";
 import CommunityNotes from "@/components/CommunityNotes";
 
 function Reel({ post }: { post: Post }) {
@@ -64,9 +64,16 @@ function Reel({ post }: { post: Post }) {
   };
 
   const video = post.media.find((m) => m.kind === "video");
+  const isLayoutRemix = !!post.remix_mode && !!post.remix_of && !!video;
+  const tapToggle = () => {
+    const el = videoRef.current;
+    if (el) el.paused ? el.play() : el.pause();
+  };
   return (
     <div className="reel">
-      {video ? (
+      {isLayoutRemix ? (
+        <RemixPlayer post={post} videoRef={videoRef} onTap={tapToggle} />
+      ) : video ? (
         <video ref={videoRef} src={video.url} loop playsInline controls={false} onClick={() => {
           const el = videoRef.current;
           if (el) el.paused ? el.play() : el.pause();
@@ -81,6 +88,11 @@ function Reel({ post }: { post: Post }) {
           <div>
             <strong>{post.author_name}</strong>
             <div className="muted">@{post.author_username}</div>
+            {post.remix_mode && (
+              <div className="muted" style={{ fontSize: 11 }}>
+                🎬 {t(post.remix_mode)}
+              </div>
+            )}
             {post.body && video && <p style={{ margin: "6px 0 0" }}>{post.body}</p>}
           </div>
           <div className="spacer" />

@@ -58,7 +58,8 @@ func (a *App) handleReelAnalytics(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleReelRemixes(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
 	rows, err := a.db.Query(r.Context(),
-		`SELECT p.id, u.username, u.display_name, p.created_at, p.like_count, p.view_count
+		`SELECT p.id, u.username, u.display_name, p.created_at, p.like_count, p.view_count,
+		        COALESCE(p.remix_mode, '')
                  FROM posts p JOIN users u ON u.id = p.author_id
                  WHERE p.remix_of=$1 AND p.deleted_at IS NULL AND p.visibility='public'
                  ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
@@ -69,17 +70,18 @@ func (a *App) handleReelRemixes(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type remix struct {
-		ID       string    `json:"id"`
-		Username string    `json:"username"`
-		Author   string    `json:"author"`
-		Likes    int       `json:"likes"`
-		Views    int       `json:"views"`
-		Created  time.Time `json:"created_at"`
+		ID        string    `json:"id"`
+		Username  string    `json:"username"`
+		Author    string    `json:"author"`
+		Likes     int       `json:"likes"`
+		Views     int       `json:"views"`
+		Created   time.Time `json:"created_at"`
+		RemixMode string    `json:"remix_mode,omitempty"`
 	}
 	out := []remix{}
 	for rows.Next() {
 		var m remix
-		if err := rows.Scan(&m.ID, &m.Username, &m.Author, &m.Created, &m.Likes, &m.Views); err == nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Author, &m.Created, &m.Likes, &m.Views, &m.RemixMode); err == nil {
 			out = append(out, m)
 		}
 	}
