@@ -2,15 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped — privacy
-suite depth (presence/phone granularity, data saver, account self-destruct TTL,
-safety mode flag), sessions management, chat archive, sticker packs, chat
-folders, lists + list feed, bookmark folders, profile visitors, playlists,
-paid-verification request/review flow, reply policy enforcement, content
-warnings, alt text, hidden replies, creator comment pinning, public group
-handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
-(017) are also marked. Canonical ranked gap list:
-[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+Status refreshed 2026-08-31: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
+
+Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Core posting
 
@@ -26,7 +20,7 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Community Notes | ✅ | notes + helpful-votes + delete (017), web/Android/iOS |
 | Post scheduling | ✅ | posts.publish_at + /api/me/scheduled-posts (016) |
 | Edit post (time-limited) | 🚧 | Editing shipped (edited marker); gap: time-window enforcement |
-| Drafts | ❌ | Gap: server-side drafts |
+| Drafts | ✅ | post_drafts CRUD /api/me/drafts (019) |
 | Location on posts | ✅ | posts.location (016) |
 | Content warnings / sensitive media flag | ✅ | posts.content_warning + sensitive flag (018) |
 | Alt text on images | ✅ | post_media.alt_text end-to-end (018) |
@@ -39,7 +33,7 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | For You algorithmic feed | 🚧 | ML-ranked feed exists; gap: engagement signals depth |
 | Following feed (chronological) | ✅ | /api/feed |
 | Lists (curated user groups) | ✅ | lists + list_members + /api/lists/{id}/feed (018) |
-| Topics / interests following | ❌ | Gap: topics entity |
+| Topics / interests following | ✅ | interest_topics + follows + per-user interest vector (019) |
 | Advanced search (operators: from:, since:, filter:) | 🚧 | Basic search; gap: operator parser |
 | Moments / curated news | ❌ | Gap: editorial product, low priority |
 
@@ -50,17 +44,17 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Followers/following | ✅ | |
 | Communities (reddit-like groups) | ✅ | Shipped: content groups with roles + feeds |
 | Super Follows / subscriptions | ✅ | Shipped: creator subscription tiers |
-| Verified organizations / affiliations | ❌ | Gap: org badges |
-| Who-to-follow suggestions | ❌ | Gap: ML candidate generator |
+| Verified organizations / affiliations | ✅ | organizations + members + admin verify, affiliated_org_id badge (019) |
+| Who-to-follow suggestions | ✅ | followers-of-followers ranked by mutuals, /api/me/suggestions (019) |
 
 ## Spaces (live audio)
 
 | Feature | Status | Notes |
 |---|---|---|
-| Live audio rooms with speakers/listeners | ❌ | Gap: room entity + SFU audio; our group calls are mesh |
+| Live audio rooms with speakers/listeners | ✅ | audio_rooms + participants (host/cohost/speaker/listener) + hand raise (019) |
 | Space recording & replay | ❌ | Gap: SFU recording |
-| Scheduled spaces | ❌ | Gap: scheduling metadata |
-| Ticketed spaces | ❌ | Gap: payment gate on room join |
+| Scheduled spaces | ✅ | audio_rooms.scheduled_at (019) |
+| Ticketed spaces | ✅ | audio_rooms.ticket_price debits wallet on join (019) |
 
 ## DMs
 
@@ -81,7 +75,7 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Ad revenue share for creators | 🚧 | RPM earnings; gap: true ad-share |
 | Tips | ✅ | Shipped: wallet-backed tips |
 | Creator subscriptions | ✅ | Shipped: subscription tiers + revenue dashboard |
-| Premium tiers (feature gating) | ❌ | Gap: subscription plans entity |
+| Premium tiers (feature gating) | ✅ | premium_plans + subscriptions, is_premium flag + expiry worker (019) |
 
 ## Media
 
@@ -91,7 +85,7 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Multi-image posts (4-grid) | ✅ | media_urls array |
 | Video transcoding + adaptive bitrate | ✅ | C++ ffmpeg HLS worker, claim/complete control plane, post_media rewrite to HLS master |
 | Live video streaming | 🚧 | live broadcast over the self-built SFU; RTMP ingest pending |
-| GIF picker (GIPHY/Tenor) | ❌ | Gap: third-party API integration |
+| GIF picker (GIPHY/Tenor) | ✅ | self-hosted gif_catalog + search + gif messages (019) — no third-party dependency |
 
 ## Moderation & safety
 

@@ -2,15 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped — privacy
-suite depth (presence/phone granularity, data saver, account self-destruct TTL,
-safety mode flag), sessions management, chat archive, sticker packs, chat
-folders, lists + list feed, bookmark folders, profile visitors, playlists,
-paid-verification request/review flow, reply policy enforcement, content
-warnings, alt text, hidden replies, creator comment pinning, public group
-handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
-(017) are also marked. Canonical ranked gap list:
-[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+Status refreshed 2026-08-31: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
+
+Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Video consumption
 
@@ -35,13 +29,13 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | In-app camera recording | ❌ | Gap: client recorder (getUserMedia/native) |
 | Multi-clip stitching & trimming | ❌ | Gap: editor + ffmpeg pipeline |
 | Filters & AR effects | ❌ | Gap: effects SDK; large surface |
-| Sounds library (licensed music) | ❌ | Gap: licensing + audio fingerprinting |
+| Sounds library (licensed music) | ✅ | self-hosted sounds catalog + search + use_count (019); licensing remains a legal process |
 | Voiceover & sound mixing | ❌ | Gap: editor |
 | Text overlays with timing | ❌ | Gap: editor |
 | Duet / Stitch | ❌ | Gap: side-by-side compositor |
 | Green screen | ❌ | Gap: client effect |
 | Templates | ❌ | Gap: low priority |
-| Drafts (local + cloud) | ❌ | Gap: drafts storage |
+| Drafts (local + cloud) | ✅ | server-side post_drafts (019) |
 | Photo mode (carousel posts) | 🚧 | Multi-image posts exist; gap: swipe player in reels surface |
 
 ## Social graph & interaction
@@ -50,12 +44,12 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 |---|---|---|
 | Follow / followers | ✅ | |
 | Likes on videos | ✅ | |
-| Shares with counter | ❌ | Gap: shares entity |
+| Shares with counter | ✅ | share_ledger + posts.share_count on share-to-chat (019) |
 | Favorites/collections | 🚧 | Bookmarks exist; gap: collections |
 | Duets chains / remix attribution | ✅ | posts.remix_of + reel_watch analytics (017) |
 | Comment pinning by creator | ✅ | posts.pinned_comment_id + PUT /api/posts/{id}/pinned-comment (018) |
 | Q&A on profiles | ❌ | Gap: low priority |
-| Live gifts during streams | ❌ | Gap: wallet-backed gifts |
+| Live gifts during streams | ✅ | live_gifts wallet debits → creator (019) |
 | Co-hosting lives | ❌ | Gap: multi-publisher SFU |
 
 ## Live
@@ -64,20 +58,20 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 |---|---|---|
 | Live streaming (mobile) | 🚧 | SFU live broadcast shipped; RTMP ingest phase 2 |
 | Live chat | 🚧 | WS chat infra reusable; gap: live room entity |
-| Live gifts & leaderboard | ❌ | Gap: gifts ledger |
+| Live gifts & leaderboard | ✅ | GET /api/live/{room}/leaderboard (019) |
 | Live subscriptions | ✅ | Shipped: creator subscription tiers |
-| LIVE Events (scheduled) | ❌ | Gap: scheduling metadata |
+| LIVE Events (scheduled) | ✅ | audio_rooms.scheduled_at + start/end lifecycle (019) |
 
 ## Monetization
 
 | Feature | Status | Notes |
 |---|---|---|
 | Creator fund / rewards program | 🚧 | RPM earnings exist; gap: qualified-views accounting |
-| Creator marketplace (brand deals) | ❌ | Gap: brand-creator matching entity |
+| Creator marketplace (brand deals) | ✅ | brand_deals create/list/accept (019) |
 | Tips | ✅ | Shipped: wallet-backed tips |
 | Subscriptions | ✅ | Shipped: creator tiers with recurring support |
 | TikTok Shop / affiliate | ❌ | Gap: commerce surface, phase 2 |
-| Series (paywalled content) | ❌ | Gap: paid content gating |
+| Series (paywalled content) | ✅ | posts.price_usd + content_purchases wallet flow (019) |
 
 ## Recommendation system
 
@@ -87,7 +81,7 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Watch-time-weighted ranking | ✅ | Shipped: watch events ingestion + ranking |
 | Cold-start exploration | 🚧 | Recent+follow fallback; gap: exploration budget |
 | Content embeddings | ❌ | Gap: video/audio/text embedding workers |
-| User interest vector | ❌ | Gap: implicit interest profile |
+| User interest vector | ✅ | interest_vector upserted from authored hashtags (019) |
 | Diversity/dedup in feed | ❌ | Gap: reranker rules |
 | Report/feedback loop into ranking | ❌ | Gap: negative signals |
 
@@ -96,10 +90,10 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Feature | Status | Notes |
 |---|---|---|
 | Comment filters (keyword, auto) | ❌ | Gap: per-user filters |
-| Restricted mode | ❌ | Gap: account-level content filter |
+| Restricted mode | ✅ | users.restricted_mode toggle (019) |
 | Screen-time limits / reminders | ❌ | Gap: client feature |
-| Family pairing | ❌ | Gap: guardian linking |
-| Content levels (mature themes) | ❌ | Gap: content rating enum |
+| Family pairing | ✅ | family_links request/accept flow (019) |
+| Content levels (mature themes) | ✅ | posts.content_rating everyone|mature (019) |
 | Video moderation before publish | 🚧 | Rust scorer hook; gap: media pipeline integration |
 
 ## Profile

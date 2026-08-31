@@ -1,7 +1,8 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
-Date: 2026-08-31 (gap-pack-3 shipped — migration 018; 153/153 integration +
-92/92 gaps + 82/82 gap-pack-3 checks green). This is the single
+Date: 2026-08-31 (gap-pack-4 shipped — migration 019; 153/153 integration +
+92/92 gaps + 82/82 gap-pack-3 + 96/96 gap-pack-4 checks green; features and
+finance suites also green). This is the single
 consolidated answer to "after deeply scanning every competitor, what is ChatApp
 still missing?" Per-competitor, feature-by-feature detail lives in
 [competitor-analysis/](competitor-analysis/README.md); this file rolls the
@@ -59,13 +60,40 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 | 5 | **Watch-time signal ingestion → FYP ranking** | TikTok, FB reels | ✅ **Shipped** — `reel_watch_events` ingestion (completion %, rewatches, not-interested) feeding `/api/fyp` ranking; negative signals down-weight. |
 | 6 | **Reels creation tools** (trim, multi-clip, text overlay, captions, duet/stitch) | TikTok, FB, X | 🚧 Text overlays, ASR captions (ML service) and speed ramp shipped; duet/stitch and multi-clip editing remain phase 2 (unblocked by #1). |
 | 7 | **Monetization depth** (fan subscriptions, tips, gifts, ad-rev share) | X, TikTok, FB, TG | ✅ **Shipped** — wallet rails, platform tokens, creator subscription tiers, tips, revenue dashboard. Gift catalog shipped (handlers_monetization.go). |
-| 8 | **Bot API & mini-apps platform** | Telegram, Discord-class platforms | ✅ **Shipped** — bot accounts, long-poll `getUpdates`, webhooks, `sendMessage`. Mini-apps/inline bots remain phase 2. |
-| 9 | **Messaging polish** (silent send, spoiler/formatting entities, custom emoji, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | 🚧 Link previews, invite links, per-conversation drafts, public group @handles + join-by-handle, chat archive, chat folders and sticker packs shipped (018); silent send/spoilers/slow mode/topics remain phase 2. |
+| 8 | **Bot API & mini-apps platform** | Telegram, Discord-class platforms | ✅ **Shipped** — bot accounts, long-poll `getUpdates`, webhooks, `sendMessage`, token-authed payment invoices (`createInvoice` + wallet pay) and inline queries (019). Mini-apps remain phase 2. |
+| 9 | **Messaging polish** (silent send, spoiler/formatting entities, custom emoji, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | ✅ **Shipped** — link previews, invite links, per-conversation + server-side post drafts, public group @handles + join-by-handle, chat archive, chat folders, sticker packs (018); spoiler/bold/italic/mono/link message entities, GIF catalog + gif/contact messages, channel discussion groups + stats, anonymous admins, screenshot alerts, chat export (019). Slow mode/forum topics remain phase 2. |
 | 10 | **Stories extras** (highlights, close-friends audience, composer tools) | FB, IG, WA | 🚧 Close-friends audience + story reactions/replies shipped; story highlights shipped (story_highlights + /api/highlights). |
 | 11 | **Privacy suite depth** (custom audience lists, restricted list, profile lock, message-request inbox, mutes/word filters, presence/phone granularity, account self-destruct TTL) | FB, X, Telegram, imo | ✅ **Shipped** — blocks, audience selector, message-request inbox, follow requests, mutes, word filters, restricted list (014); presence/phone privacy matrix, data-saver, safety-mode flag and account TTL worker (018). |
 | 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade) | imo, WhatsApp | 🚧 8 locales + data-saver flag shipped (018); simulcast comes with the SFU scale-out (C++ RTP forwarder). |
 
-## 3. Gap-pack-3 (migration 018) — shipped 2026-08-31
+## 3. Gap-pack-4 (migration 019) — shipped 2026-08-31
+
+- **X parity**: server-side drafts, interest topics + follows + per-user
+  interest vector, verified organizations (owner affiliates + superadmin
+  verify, `affiliated_org_id` badge), who-to-follow (followers-of-followers
+  ranked by mutuals), audio rooms (scheduled/ticketed, host/cohost/speaker/
+  listener roles, hand raise, live directory), premium plans + subscriptions
+  (`is_premium` flag + expiry worker), self-hosted GIF catalog.
+- **Telegram parity**: message entities (spoiler/bold/italic/mono/link —
+  sanitized server-side on WS and REST), GIF search + gif/contact card
+  messages, channel discussion-group linking, channel stats (members/views/
+  shares), anonymous group admins, inline bots, bot payment invoices, people
+  nearby, premium subscriptions, chat export (JSON).
+- **TikTok parity**: sounds library (self-hosted catalog + use counts), share
+  ledger + `share_count` on share-to-chat, live gifts (wallet-debited) +
+  room leaderboard, creator marketplace (brand deals), paywalled posts
+  (Series), content ratings (everyone/mature), restricted mode, family
+  pairing (guardian request/accept), interest vector from authored hashtags.
+- **Facebook parity**: marketplace listings (CRUD + category browse),
+  fundraisers with wallet donations + raised tracking, professional dashboard
+  (`/api/me/analytics` rollup).
+- **imo parity**: XP/levels (level = √(xp/100)+1, XP on messages), people
+  nearby (opt-in discoverable + live location), group discovery by category,
+  audio-room directory, virtual gifts in rooms, screenshot alerts, chat
+  export.
+- Tests: tests/gaps4_test.py — 96 end-to-end checks against the live API.
+
+## 3a. Gap-pack-3 (migration 018) — shipped 2026-08-31
 
 - **X parity**: reply policy on posts (everyone/following/mentioned/nobody,
   enforced in the comment path), hidden replies (author-visible), creator
@@ -83,12 +111,14 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 
 ## 4. Explicit non-goals / notes
 
-- **Marketplace, TikTok Shop, fundraisers**: commerce surfaces — phase 2
-  after the ads platform matures.
-- **Licensed music library**: a legal/licensing dependency, not code.
-- **GIF search (GIPHY/Tenor)**: would be the *only* third-party content
-  dependency; per the platform's self-reliance rule this ships only as an
-  own sticker/GIF catalog.
+- **TikTok Shop / affiliate commerce**: the remaining commerce surface —
+  phase 2 after the ads platform matures. (Marketplace listings and
+  fundraisers shipped in 019.)
+- **Licensed music library**: a legal/licensing dependency, not code. The
+  self-hosted sounds catalog (019) carries original/user-owned audio.
+- **GIF search (GIPHY/Tenor)**: shipped in 019 as the self-hosted
+  `gif_catalog` — zero third-party content dependencies, per the platform's
+  self-reliance rule.
 - **External dependencies (by design, only two)**: the crypto-custody SDK
   (Fireblocks/BitGo/Coinbase WaaS) behind `CryptoProvider`, and the
   crypto-card provider API. Everything else — calls, meetings, SFU,

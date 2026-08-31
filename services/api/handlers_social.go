@@ -289,6 +289,12 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
 			return
 		}
+		// Implicit interest vector: authoring content about a hashtag is a
+		// strong interest signal (TikTok-style implicit profile).
+		_, _ = tx.Exec(r.Context(),
+			`INSERT INTO user_interests (user_id, hashtag, score, updated_at) VALUES ($1,$2,3,now())
+			 ON CONFLICT (user_id, hashtag) DO UPDATE SET score = user_interests.score + 3, updated_at = now()`,
+			uid, tag)
 	}
 	for i, m := range req.Media {
 		if m.Kind != "image" && m.Kind != "video" && m.Kind != "audio" {

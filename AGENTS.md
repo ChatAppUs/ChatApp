@@ -204,3 +204,35 @@
   integration 153/153, gaps 92/92, gaps2 70/70, features 72/72, finance
   44/44 (SFU on :8095, fresh Postgres 17 in sandbox, Go 1.23 toolchain
   under ~/tools/go, binaries built to /tmp).
+
+## Contracts discovered while testing (2026-08-31, session 6 — gap pack 4)
+- Migration 019_gap_pack4.sql: post_drafts, interest_topics + topic_follows +
+  interest_vector, organizations + organization_members (+users.affiliated_org_id),
+  audio_rooms + audio_room_participants (host|cohost|speaker|listener, hand_raised),
+  premium_plans (2 seeded) + premium_subscriptions (+users.is_premium),
+  gif_catalog, messages.kind/entities (jsonb), conversations.discussion_group_id/
+  anonymous_admin/category, sounds, share_ledger (+posts.share_count/price_usd/
+  content_rating), content_purchases, marketplace_listings, fundraisers,
+  users.restricted_mode/discoverable/xp, family_links, bot_invoices, live_gifts
+  (room-scoped, reuses 012 gift_catalog), brand_deals. Platform treasury user
+  = uuid all-zeros (username 'platform', status 'suspended') — premium revenue
+  accrues there; required because wallet_accounts.user_id FK references users.
+- pgx gotcha: `WHERE uuid_col = $1` with a string param errors (uuid=text);
+  use `col::text=$1` when the same param also matches a text column.
+- requireAdmin("superadmin") middleware; admin endpoints need POST
+  /api/admin/login {identifier(email), password} → admin-scoped token.
+- XP/levels: awardXP on WS message (+1) & post (+5); level=floor(sqrt(xp/100))+1.
+- Live gifts: POST /api/live/{room}/gifts {gift_id,to_user} debits wallet via
+  moveUSD; leaderboard = GET /api/live/{room}/leaderboard.
+- Bot payments: POST /api/bot/{token}/createInvoice {user_id,title,amount_usd}
+  (bot token auth), pay via POST /api/bots/invoices/{id}/pay (user JWT, 409 on
+  double pay). Inline: GET /api/bots/inline?bot=<username>&q=.
+- Message entities: WS send accepts `entities` ([{type,offset,length,url?}]),
+  sanitized server-side (bold/italic/mono/spoiler/link only, bounds-checked);
+  messages.entities jsonb returned in list. Contact cards: kind='contact'
+  with entities {user_id,username}; GIF: kind='gif'.
+- handlePurchasePost: check content_purchases BEFORE moveUSD (409 already
+  purchased) — moveUSD first would double-charge.
+- tests/gaps4_test.py = 96 checks (needs migration 019 + SFU not required).
+  Full sweep 2026-08-31 (session 6): gaps4 96/96, integration 153/153,
+  features 72/72, finance 44/44, gaps 92/92, gaps2 70/70.

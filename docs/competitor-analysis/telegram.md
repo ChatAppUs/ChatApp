@@ -2,15 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped — privacy
-suite depth (presence/phone granularity, data saver, account self-destruct TTL,
-safety mode flag), sessions management, chat archive, sticker packs, chat
-folders, lists + list feed, bookmark folders, profile visitors, playlists,
-paid-verification request/review flow, reply policy enforcement, content
-warnings, alt text, hidden replies, creator comment pinning, public group
-handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
-(017) are also marked. Canonical ranked gap list:
-[../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+Status refreshed 2026-08-31: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
+
+Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Core messaging
 
@@ -31,8 +25,8 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Drafts synced across devices | 🚧 | Per-conversation drafts persist on the client; gap: cross-device server sync |
 | Hashtags in chat search | 🚧 | Global hashtags exist; gap: per-chat filter |
 | Mentions @username in groups | ✅ | |
-| Spoilers (hidden text) | ❌ | Gap: formatting marker |
-| Text formatting (bold/italic/mono/links) | ❌ | Gap: entities array on messages |
+| Spoilers (hidden text) | ✅ | spoiler entity type on messages (019) |
+| Text formatting (bold/italic/mono/links) | ✅ | messages.entities jsonb (bold/italic/mono/spoiler/link), WS+REST sanitized (019) |
 | Message translation | ❌ | Gap: translation API hook |
 | Read receipts in small groups | ✅ | |
 | "Last seen" privacy granularity | 🚧 | Presence exists; gap: privacy rules |
@@ -47,12 +41,12 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Voice messages with waveform | 🚧 | Voice messages shipped (recorder + inline player); gap: waveform data |
 | Video messages (round) | ✅ | video-note messages (017); round-mask render in clients |
 | Stickers (static/animated/video) | ✅ | sticker_packs + stickers + sticker message send (018) |
-| GIF search | ❌ | Gap: Tenor/GIPHY integration |
+| GIF search | ✅ | self-hosted gif_catalog + GET /api/gifs?q= (019) |
 | Animated emoji | ❌ | Gap: low priority |
 | Media compression options (photo vs file) | ❌ | Gap: upload pipeline choice |
 | Polls & quizzes in chat | 🚧 | Post polls exist; gap: chat-embedded |
 | Location & live location | ✅ | live_locations start/stop/view (017) |
-| Contacts sharing | ❌ | Gap: contact card message type |
+| Contacts sharing | ✅ | kind='contact' messages via POST /api/conversations/{id}/contact (019) |
 
 ## Groups & channels
 
@@ -65,9 +59,9 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Slow mode | ❌ | Gap: per-group rate limit |
 | Topics (forum groups) | ❌ | Gap: topic threads in groups |
 | Broadcast channels | ✅ | kind=channel, owner posts |
-| Channel comments (discussion groups) | ❌ | Gap: link channel→discussion group |
-| Channel stats | ❌ | Gap: view/share analytics |
-| Anonymous group admins | ❌ | Gap: low priority |
+| Channel comments (discussion groups) | ✅ | conversations.discussion_group_id + PUT /api/channels/{id}/discussion (019) |
+| Channel stats | ✅ | GET /api/channels/{id}/stats (members/views/shares 7d) (019) |
+| Anonymous group admins | ✅ | conversations.anonymous_admin toggle (019) |
 
 ## Calls & live
 
@@ -86,9 +80,9 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Feature | Status | Notes |
 |---|---|---|
 | Bot API (full) | 🚧 | Core shipped (bot accounts, getUpdates long-poll, webhooks, sendMessage); inline bots phase 2 |
-| Inline bots (@bot query) | ❌ | Gap: bot platform |
+| Inline bots (@bot query) | ✅ | GET /api/bots/inline?bot=&q= (019) |
 | Mini Apps (web apps in chat) | ❌ | Gap: embedded webview SDK |
-| Bot payments | ❌ | Gap: wallet hook for bots |
+| Bot payments | ✅ | bot_invoices: token-authed createInvoice + wallet pay (019) |
 | QR login | ✅ | Scan-to-approve |
 | Active sessions management | 🚧 | Sessions stored; gap: UI to list/revoke |
 | Proxy support (MTProto/SOCKS5) | ❌ | Gap: not applicable to our transport |
@@ -96,8 +90,8 @@ handles and granular group-admin permissions. Earlier rows shipped in gap-pack-2
 | Archive chats | ✅ | conversation_members.archived_at + archive/unarchive endpoints (018) |
 | Multi-account in one app | ❌ | Gap: account switcher |
 | Usernames & public links (t.me/u) | 🚧 | Usernames exist; gap: public URL routing |
-| People nearby / local groups | ❌ | Gap: geo discovery |
-| Premium subscription (gated features) | ❌ | Gap: plans entity |
+| People nearby / local groups | ✅ | GET /api/nearby + /api/discover/groups (019) |
+| Premium subscription (gated features) | ✅ | premium_plans + subscriptions (019) |
 
 ## Privacy & security
 

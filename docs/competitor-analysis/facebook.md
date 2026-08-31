@@ -2,11 +2,9 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
-Status refreshed 2026-08-31: gap-pack-3 (migration 018) shipped; rows
-delivered by gap-pack-2 (017) — trusted contacts, legacy contact, multiple
-profiles, story composer fields, video notes, live location, screenshare, call
-recording, community notes — are now marked accordingly. The canonical ranked
-gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+Status refreshed 2026-08-31: gap-pack-4 (migration 019) shipped — server drafts, topics/interests, verified organizations, who-to-follow, audio rooms (scheduled/ticketed, speaker roles, hand raise), premium plans, self-hosted GIF catalog + GIF/contact messages, message entities (spoiler/bold/italic/mono/link), channel discussion groups + stats, anonymous admins, sounds library, share ledger + counter, paywalled posts, content ratings, marketplace, fundraisers, restricted mode, family pairing, XP/levels, people nearby + group discovery, chat export, screenshot alerts, bot invoices, inline bots, live gifts + leaderboard, creator marketplace, professional analytics. 
+
+Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 ## Accounts & identity
 
@@ -47,8 +45,8 @@ gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Public/private groups with posts | ✅ | Shipped: content groups with membership, roles, join requests, invite links, group feed |
 | Pages (business/creator) with followers | ✅ | Shipped: pages entity, followers, page posts (Events remain phase 2) |
 | Events (RSVP, reminders) | ✅ | events + RSVPs + reminder notifications (24h sweep) |
-| Marketplace | ❌ | Gap: listings entity — large surface, phase 2 |
-| Fundraisers | ❌ | Gap: low priority |
+| Marketplace | ✅ | marketplace_listings CRUD + category browse (019) |
+| Fundraisers | ✅ | fundraisers + wallet donations with raised tracking (019) |
 
 ## Stories
 
@@ -70,7 +68,7 @@ gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Watch-time tracking | ✅ | Shipped: reel_watch_events ingestion feeds FYP ranking |
 | Reel comments/likes/shares | ✅ | reels are posts.type='reel'; comments/likes/share-to-chat all apply |
 | Remix/duet | 🚧 | posts.remix_of attribution + reel analytics (017); visual editor is client work |
-| Sounds/music library | ❌ | Gap: licensed audio is a legal, not tech, problem |
+| Sounds/music library | ✅ | self-hosted sounds catalog (019); licensing stays a legal process |
 | Creator monetization on reels | 🚧 | RPM-based earnings exist; gap: per-reel analytics |
 
 ## Messaging (Messenger parity)
@@ -108,7 +106,7 @@ gap list is [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | In-stream ads revenue share | 🚧 | Flat RPM earnings exist; gap: true ad-share accounting |
 | Stars (virtual gifts) | ✅ | gift catalog in handlers_monetization.go |
 | Fan subscriptions | ✅ | Shipped: creator subscription tiers + tips + revenue dashboard |
-| Professional dashboard (analytics) | ❌ | Gap: per-content analytics rollup |
+| Professional dashboard (analytics) | ✅ | GET /api/me/analytics rollup (019) |
 
 ## Safety & moderation
 

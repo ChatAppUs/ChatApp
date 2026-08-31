@@ -131,5 +131,8 @@ func (a *App) handleSharePostToChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "share failed")
 		return
 	}
+	// Share ledger (TikTok-style shares with counter; feeds analytics).
+	_, _ = a.db.Exec(r.Context(),
+		`INSERT INTO shares (post_id, user_id, channel) VALUES ($1,$2,'dm')`, postID, uid)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

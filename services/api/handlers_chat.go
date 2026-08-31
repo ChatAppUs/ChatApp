@@ -123,14 +123,15 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 			Silent         bool            `json:"silent"`
 			TopicID        string          `json:"topic_id"`
 			ReplyTo        string          `json:"reply_to"`
-			Signal         json.RawMessage `json:"signal"` // WebRTC SDP/ICE payload
+			Entities       json.RawMessage `json:"entities"` // spoiler/bold/italic/mono/link spans
+			Signal         json.RawMessage `json:"signal"`   // WebRTC SDP/ICE payload
 		}
 		if err := conn.ReadJSON(&evt); err != nil {
 			return
 		}
 		switch evt.Type {
 		case "message":
-			a.persistMessage(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL, evt.IsEncrypted, evt.Silent, evt.TopicID, evt.ReplyTo)
+			a.persistMessage(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL, evt.IsEncrypted, evt.Silent, evt.TopicID, evt.ReplyTo, evt.Entities)
 		case "signal":
 			// WebRTC call signaling: forward SDP offers/answers and ICE
 			// candidates to conversation members. Peer connections are
@@ -179,14 +180,14 @@ func (a *App) fanoutSignal(ctx context.Context, senderID, convID string, signal 
 // persistAndFanout keeps the original 7-arg call shape used by older
 // callers (bots, story replies) and delegates to persistMessage.
 func (a *App) persistAndFanout(ctx context.Context, senderID, convID, body, mediaURL string, isEncrypted bool, replyTo string) {
-	a.persistMessage(ctx, senderID, convID, body, mediaURL, isEncrypted, false, "", replyTo)
+	a.persistMessage(ctx, senderID, convID, body, mediaURL, isEncrypted, false, "", replyTo, nil)
 }
 
 // persistMessage is the single message-write path: membership + channel +
 // slow-mode checks, insert with TTL/topic/silent, realtime fanout, bot
 // update enqueue, message-request creation for first-time DMs, and push
 // for offline members.
-func (a *App) persistMessage(ctx context.Context, senderID, convID, body, mediaURL string, isEncrypted, silent bool, topicID, replyTo string) {
+func (a *App) persistMessage(ctx context.Context, senderID, convID, body, mediaURL string, isEncrypted, silent bool, topicID, replyTo string, entities json.RawMessage) {
 	if strings.TrimSpace(body) == "" && mediaURL == "" {
 		return
 	}
@@ -226,12 +227,13 @@ func (a *App) persistMessage(ctx context.Context, senderID, convID, body, mediaU
 	var createdAt time.Time
 	var expiresAt *time.Time
 	err := a.db.QueryRow(ctx,
-		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id, expires_at, is_silent, topic_id)
+		`INSERT INTO messages (conversation_id, sender_id, body, media_url, is_encrypted, reply_to_id, expires_at, is_silent, topic_id, entities)
 		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,
 		         CASE WHEN $7 > 0 THEN now() + make_interval(secs => $7) END,
-		         $8, NULLIF($9,'')::uuid)
+		         $8, NULLIF($9,'')::uuid, $10)
 		 RETURNING id, created_at, expires_at`,
-		convID, senderID, body, mediaURL, isEncrypted, replyTo, ttl, silent, topicID).Scan(&msgID, &createdAt, &expiresAt)
+		convID, senderID, body, mediaURL, isEncrypted, replyTo, ttl, silent, topicID,
+		sanitizeEntities(entities)).Scan(&msgID, &createdAt, &expiresAt)
 	if err != nil {
 		return
 	}
@@ -246,12 +248,14 @@ func (a *App) persistMessage(ctx context.Context, senderID, convID, body, mediaU
 		"is_silent":       silent,
 		"topic_id":        topicID,
 		"reply_to":        replyTo,
+		"entities":        json.RawMessage(sanitizeEntities(entities)),
 		"created_at":      createdAt,
 		"expires_at":      expiresAt,
 	})
 	a.fanoutConv(ctx, convID, payload)
 	a.enqueueBotUpdates(ctx, convID, senderID, msgID, body, mediaURL)
 	a.afterMessageNotify(ctx, senderID, convID, body, silent)
+	a.awardXP(ctx, senderID, 1)
 	if previewURL := firstURL(body); previewURL != "" {
 		go a.attachLinkPreview(context.Background(), msgID, convID, previewURL)
 	}
@@ -507,7 +511,7 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		          SELECT emoji, count(*) AS cnt FROM message_reactions WHERE message_id = m.id GROUP BY emoji
 		        ) r), '{}'::json), m.expires_at, m.kind,
 		COALESCE((SELECT p.id::text FROM message_polls p WHERE p.message_id = m.id), ''),
-		COALESCE(m.payment_id::text, '')
+		COALESCE(m.payment_id::text, ''), m.entities
 		 FROM messages m JOIN users u ON u.id = m.sender_id
 		 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL
 		   AND (m.expires_at IS NULL OR m.expires_at > now())
@@ -536,6 +540,7 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		EditedAt      *time.Time       `json:"edited_at"`
 		ExpiresAt     *time.Time       `json:"expires_at"`
 		Reactions     map[string]int64 `json:"reactions"`
+		Entities      json.RawMessage  `json:"entities"`
 	}
 	out := []msg{}
 	for rows.Next() {
@@ -543,7 +548,7 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		var reactions []byte
 		if err := rows.Scan(&m.ID, &m.SenderID, &m.Sender, &m.Body, &m.MediaURL, &m.IsEncrypted,
 			&m.ReplyTo, &m.CreatedAt, &m.EditedAt, &m.ForwardedFrom, &m.StoryID, &m.Pinned,
-			&reactions, &m.ExpiresAt, &m.Kind, &m.PollID, &m.PaymentID); err == nil {
+			&reactions, &m.ExpiresAt, &m.Kind, &m.PollID, &m.PaymentID, &m.Entities); err == nil {
 			m.Reactions = map[string]int64{}
 			_ = json.Unmarshal(reactions, &m.Reactions)
 			out = append(out, m)
