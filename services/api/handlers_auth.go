@@ -353,6 +353,9 @@ type publicUser struct {
 	PinnedPostID string          `json:"pinned_post_id"`
 	KYCStatus    string          `json:"kyc_status,omitempty"`
 	CreatedAt    string          `json:"created_at"`
+	// Client-facing wellbeing/lock flags (Telegram app lock, screen time).
+	AppLock      bool            `json:"app_lock_enabled"`
+	ScreenLimit  int             `json:"screen_time_limit_minutes"`
 }
 
 func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {
@@ -361,10 +364,12 @@ func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {
 	var pinned *string
 	err := a.db.QueryRow(ctx,
 		`SELECT id, username, display_name, bio, avatar_url, locale, is_creator, is_verified, kyc_status, created_at,
-		        pinned_post_id, COALESCE(is_premium, false), COALESCE(bio_links::text,'[]')
+		        pinned_post_id, COALESCE(is_premium, false), COALESCE(bio_links::text,'[]'),
+		        COALESCE(app_lock_enabled, false), COALESCE(screen_time_limit_minutes, 0)
 		 FROM users WHERE id = $1 AND status = 'active'`, id).
 		Scan(&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.AvatarURL, &u.Locale,
-			&u.IsCreator, &u.IsVerified, &u.KYCStatus, &createdAt, &pinned, &u.IsPremium, &u.BioLinks)
+			&u.IsCreator, &u.IsVerified, &u.KYCStatus, &createdAt, &pinned, &u.IsPremium, &u.BioLinks,
+			&u.AppLock, &u.ScreenLimit)
 	if err != nil {
 		return nil, err
 	}

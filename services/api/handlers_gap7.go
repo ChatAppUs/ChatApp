@@ -499,8 +499,9 @@ func (a *App) handleSetLiveRoomReplay(w http.ResponseWriter, r *http.Request) {
 // authorized by a Rust-signed grant bound to this session id.
 func (a *App) handleCreateUploadSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Filename   string `json:"filename"`
-		TotalBytes int64  `json:"total_bytes"`
+		Filename    string `json:"filename"`
+		TotalBytes  int64  `json:"total_bytes"`
+		Compression string `json:"compression"` // original | compressed (Telegram photo-vs-file choice)
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -515,11 +516,18 @@ func (a *App) handleCreateUploadSession(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, "total_bytes must be 1..2GiB")
 		return
 	}
+	if req.Compression == "" {
+		req.Compression = "original"
+	}
+	if req.Compression != "original" && req.Compression != "compressed" {
+		writeErr(w, http.StatusBadRequest, "compression must be original or compressed")
+		return
+	}
 	uid := userIDFrom(r)
 	var id string
 	if err := a.db.QueryRow(r.Context(),
-		`INSERT INTO upload_sessions (user_id, filename, total_bytes) VALUES ($1,$2,$3) RETURNING id`,
-		uid, req.Filename, req.TotalBytes).Scan(&id); err != nil {
+		`INSERT INTO upload_sessions (user_id, filename, total_bytes, compression) VALUES ($1,$2,$3,$4) RETURNING id`,
+		uid, req.Filename, req.TotalBytes, req.Compression).Scan(&id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create upload session")
 		return
 	}
@@ -530,7 +538,7 @@ func (a *App) handleCreateUploadSession(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"upload_id": id, "expires": t.Expires, "signature": t.Signature,
-		"media_base": a.cfg.MediaServiceURL,
+		"media_base": a.cfg.MediaServiceURL, "compression": req.Compression,
 	})
 }
 

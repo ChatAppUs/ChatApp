@@ -13,13 +13,14 @@ import (
 )
 
 type mediaIn struct {
-	Kind      string `json:"kind"`
-	URL       string `json:"url"`
-	ThumbURL  string `json:"thumb_url"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	DurationS int    `json:"duration_s"`
-	AltText   string `json:"alt_text,omitempty"`
+	Kind        string `json:"kind"`
+	URL         string `json:"url"`
+	ThumbURL    string `json:"thumb_url"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	DurationS   int    `json:"duration_s"`
+	AltText     string `json:"alt_text,omitempty"`
+	Compression string `json:"compression,omitempty"` // original | compressed
 }
 
 type postOut struct {
@@ -338,10 +339,14 @@ NULLIF($11,'')::uuid,NULLIF($20,''),$12,$13,$14,$15,$16,$17,$18,NULLIF($19,'')::
 			writeErr(w, http.StatusBadRequest, "media kind must be image, video or audio")
 			return
 		}
+		if m.Compression != "" && m.Compression != "original" && m.Compression != "compressed" {
+			writeErr(w, http.StatusBadRequest, "compression must be original or compressed")
+			return
+		}
 		if _, err := tx.Exec(r.Context(),
-			`INSERT INTO post_media (post_id, kind, url, thumb_url, width, height, duration_s, position, alt_text)
-                         VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,0),$8,$9)`,
-			postID, m.Kind, m.URL, m.ThumbURL, m.Width, m.Height, m.DurationS, i, m.AltText); err != nil {
+			`INSERT INTO post_media (post_id, kind, url, thumb_url, width, height, duration_s, position, alt_text, compression)
+                         VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,0),$8,$9,COALESCE(NULLIF($10,''),'original'))`,
+			postID, m.Kind, m.URL, m.ThumbURL, m.Width, m.Height, m.DurationS, i, m.AltText, m.Compression); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to attach media")
 			return
 		}

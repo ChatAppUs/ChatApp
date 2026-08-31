@@ -383,6 +383,44 @@
   green, go test OK,   web next build OK (SFU :8095, ML svc + Pillow for
   KYC image checks).
 
+## Contracts discovered while testing (2026-08-31, session 10 — gap pack 8)
+- Migration 024_gap_pack8.sql: profile_questions (profile Q&A),
+  live-rooms ingest endpoints, screen_time_usage, app_lock flag, marketplace
+  orders, feature-vector rollup, group scale probe tables/columns.
+- Compositor queue (TikTok duet/stitch + trim/mix): POST
+  /api/reels/{id}/duet|stitch and /api/media/{id}/trim|/mix enqueue kind into
+  transcode_jobs via enqueueCompositorJob; C++ worker draws 720p HLS +
+  thumb + master playlist, ladder flagged master:true. handleDuet/Stitch
+  also creates the remix post (media_url clip, type=reel, remix_of).
+- Live ingest: POST /api/live-rooms/{id}/ingest mints a 128-bit stream key
+  and enqueues a `live` transcode job; worker runs ffmpeg `-listen 1` as
+  the RTMP endpoint itself (RTMP_LISTEN_PORT default 1935). End → 404
+  idempotent. GET .../stream returns {stream:{play_url,status,stream_id}}.
+- Live co-hosts: action invite|accept|remove via speaker join check;
+  host (owner|host role) only for invite/remove.
+- Screen time: PUT limit (1..1440), POST /ping {minutes<=30} accumulates
+  day row, returns exceeded; GET for Extras panel.
+- App lock: PUT /api/me/app-lock {enabled}; POST /api/auth/verify-password
+  {password} → {ok:true} (401 verifyPassword mismatch).
+- Marketplace checkout: POST /api/marketplace/{id}/buy — wallet hold,
+  seller notify, affiliate cut = 40% of 5% platform fee when purchased
+  via_post_id of a reel. handleListOrders GET /api/me/orders?as=seller.
+- FYP rollup: GET /api/me/feature-vector → {interest_vector, watch.events}.
+- Group scale: GET /api/admin/groups/scale (admin): largest groups +
+  fanout note (C++ realtime relay flood, falls back to Go hub shards).
+- Admin login response 401 for non-admin user tokens on requireAdmin routes
+  (NOT 403); GAP: GET /api/admin/groups/scale needs admin-scoped JWT.
+- getUser/publicUser now carries pinned_post_id/kyc_status/is_premium._
+  handlers_social/gap6/gap7 scans must keep column-count parity with their
+  publicUser scan lists or SQL scans fail (gotcha from session 4).
+- psql e2e compositor job gotcha: transcode_jobs.params.source_url is the
+  string the C++ worker reads (not the row source_url column) when kind is
+  a compositor kind; claim attempts <5 so avoid churning manual polls.
+- tests/gaps8_test.py = 54 checks; verified: gaps8 54/54, go test OK,
+  features exit 0, web next build OK, C++ worker build OK, full compositor
+  e2e proven with ffmpeg (claim→ffmpeg→ladder→master→complete→
+  post_media.url rewrite). ffmpeg installed via apt for the sandbox.
+
 
 
 ## Contracts discovered while testing (2026-08-31, session 10 — gap pack 8)
@@ -410,3 +448,13 @@
 - Test env: ML svc (uvicorn :8200, needs Pillow) for gaps5/gaps7; no Rust
   toolchain in sandbox → security svc unsigned dev mode (SECURITY_SERVICE_URL
   unset); SFU /tmp/sfu on :8095.
+
+## Gap-pack-8 merged with remote (2026-08-31, session 10)
+- Remote gap-8 (255ba8d) = remix_mode (duet/stitch) client render; my pack = server
+  compositor (C++ ffmpeg duet/stitch/trim/mix), RTMP live ingest, Q&A, app-lock,
+  screen-time, marketplace checkout, feature-vector rollup, group scale probe.
+  Migration 024 contains BOTH blocks; tests/gaps8_test.py merged 32/32 PASS.
+- Web reels page merges both: RemixModal (layout) + RemixPlayer (client render)
+  + DuetStitchModal (server compositor).
+- Gotcha: sandbox had a stale /tmp/chatapp-api PID from an earlier session
+  holding :8080 — always pkill by exact path AND check remaining PID holders.

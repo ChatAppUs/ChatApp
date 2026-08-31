@@ -36,6 +36,7 @@ func (a *App) handleTranscodeClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	var id, mediaID, sourceURL, kind string
+	var params []byte
 	err = tx.QueryRow(r.Context(),
 		`UPDATE transcode_jobs SET status='running', claimed_at=now(), attempts=attempts+1
 		 WHERE id = (
@@ -43,7 +44,7 @@ func (a *App) handleTranscodeClaim(w http.ResponseWriter, r *http.Request) {
 		   WHERE status='queued' AND attempts < 5
 		   ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED
 		 )
-		 RETURNING id, media_id, source_url, kind`).Scan(&id, &mediaID, &sourceURL, &kind)
+		 RETURNING id, media_id, source_url, kind, COALESCE(params,'{}'::jsonb)`).Scan(&id, &mediaID, &sourceURL, &kind, &params)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"job": nil})
 		return
@@ -52,8 +53,16 @@ func (a *App) handleTranscodeClaim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "claim failed")
 		return
 	}
+	if kind == "live" {
+		// The worker is now the armed RTMP endpoint for this stream key.
+		_, _ = a.db.Exec(r.Context(),
+			`UPDATE live_streams SET status='live'
+			 WHERE stream_key = (SELECT params->>'stream_key' FROM transcode_jobs WHERE id=$1)
+			   AND status='pending'`, id)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": map[string]any{
 		"id": id, "media_id": mediaID, "source_url": sourceURL, "kind": kind,
+		"params": json.RawMessage(params),
 	}})
 }
 
@@ -104,6 +113,11 @@ func (a *App) handleTranscodeComplete(w http.ResponseWriter, r *http.Request) {
 				 thumb_url = CASE WHEN $3 <> '' THEN $3 ELSE thumb_url END
 				 WHERE url LIKE '%'||$1||'%'`, req.MediaID, master, req.ThumbURL)
 		}
+		// Live ingest jobs end the stream when the publisher disconnects
+		// (a live job's media_id is the live room id).
+		_, _ = a.db.Exec(r.Context(),
+			`UPDATE live_streams SET status='ended', ended_at=now()
+			 WHERE room_id=$1 AND status='live'`, req.MediaID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }

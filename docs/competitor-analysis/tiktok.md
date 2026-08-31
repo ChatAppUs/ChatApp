@@ -2,6 +2,8 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-31 (continuation +8): gap-pack-8 (migration 024) shipped — TikTok duet/stitch + trim/mix compositor job queue (C++ ffmpeg worker with side-by-side layout and timestamp-ordered concat), HLS live ingest (RTMP endpoint embedded in the C++ worker, signed 128-bit stream keys), live co-hosting (invite/accept/remove with host+speaker check), profile Q&A (ask/answer with block checks), screen-time limits with daily usage pings, app-lock + password verify endpoint, wallet-native marketplace checkout with affiliate rev-share (40% of platform fee), FYP feature-vector rollup endpoint, and the group fanout scale probe at /api/admin/groups/scale. Tested end-to-end: /tmp compositor writes HLS ladder + thumbnail, API completion handler rewrites post_media.url.
+
 Status refreshed 2026-08-31 (gap pack 8): gap-pack-7 (migration 023) shipped — content embeddings (256-dim via ML svc) powering /api/reels/{id}/related semantic lookalikes, FYP diversity reranker (spread: max 2 consecutive per author + remix-chain dedup), advanced search operators (minus words, filter:reels), creator-side comment word filters, reels playback-speed control on web (0.5–2x) + prefetch of next videos, username profile links.
 
 Earlier: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
@@ -31,7 +33,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | In-app camera recording | ❌ | Gap: client recorder (getUserMedia/native) |
-| Multi-clip stitching & trimming | ❌ | Gap: editor + ffmpeg pipeline |
+| Multi-clip stitching & trimming | ✅ | Duet/stitch/trim/mix compositor jobs on the C++ ffmpeg worker (024) |
 | Filters & AR effects | ❌ | Gap: effects SDK; large surface |
 | Sounds library (licensed music) | ✅ | self-hosted sounds catalog + search + use_count (019); licensing remains a legal process |
 | Voiceover & sound mixing | ❌ | Gap: editor |
@@ -52,7 +54,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Favorites/collections | 🚧 | Bookmarks exist; gap: collections |
 | Duets chains / remix attribution | ✅ | posts.remix_of + reel_watch analytics (017) |
 | Comment pinning by creator | ✅ | posts.pinned_comment_id + PUT /api/posts/{id}/pinned-comment (018) |
-| Q&A on profiles | ❌ | Gap: low priority |
+| Q&A on profiles | ✅ | /api/users/{id}/questions ask/answer/delete, blocks respected, owner sees pending (024) |
 | Live gifts during streams | ✅ | live_gifts wallet debits → creator (019) |
 | Co-hosting lives | ❌ | Gap: multi-publisher SFU |
 
@@ -95,7 +97,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | Comment filters (keyword, auto) | ✅ | Creator-side word filters at /api/me/word-filters; hidden for viewers, visible to author only (023) |
 | Restricted mode | ✅ | users.restricted_mode toggle (019) |
-| Screen-time limits / reminders | ❌ | Gap: client feature |
+| Screen-time limits / reminders | ✅ | limit minutes + daily pings (024); exceeded flag drives client gate |
 | Family pairing | ✅ | family_links request/accept flow (019) |
 | Content levels (mature themes) | ✅ | posts.content_rating everyone|mature (019) |
 | Video moderation before publish | 🚧 | Rust scorer hook; gap: media pipeline integration |

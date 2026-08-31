@@ -2,6 +2,8 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-31 (continuation +8): gap-pack-8 (migration 024) shipped — TikTok duet/stitch + trim/mix compositor job queue (C++ ffmpeg worker with side-by-side layout and timestamp-ordered concat), HLS live ingest (RTMP endpoint embedded in the C++ worker, signed 128-bit stream keys), live co-hosting (invite/accept/remove with host+speaker check), profile Q&A (ask/answer with block checks), screen-time limits with daily usage pings, app-lock + password verify endpoint, wallet-native marketplace checkout with affiliate rev-share (40% of platform fee), FYP feature-vector rollup endpoint, and the group fanout scale probe at /api/admin/groups/scale. Tested end-to-end: /tmp compositor writes HLS ladder + thumbnail, API completion handler rewrites post_media.url.
+
 Status refreshed 2026-08-31 (gap pack 8): gap-pack-7 (migration 023) shipped — chat quiz polls in group chats (is_quiz/correct_option/explanation), audio-room recordings (host-only record/delete), chunked resumable video uploads of large files (upload sessions with abort + byte-exact completion over the C++ edge protected by Rust-signed grants), creator-side comment word filters, E2E key + SAS verification, expanded bot surface, username profile links (/u/<username>), multi-account switcher on web.
 
 Earlier: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
@@ -49,7 +51,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Public/private groups with posts | ✅ | Shipped: content groups with membership, roles, join requests, invite links, group feed |
 | Pages (business/creator) with followers | ✅ | Shipped: pages entity, followers, page posts |
 | Events (RSVP, reminders) | ✅ | events + RSVPs + reminder notifications (24h sweep) |
-| Marketplace | ✅ | marketplace_listings CRUD + category browse (019) |
+| Marketplace | ✅ | listings CRUD/browse (019) + wallet checkout with affiliate rev-share (024) |
 | Fundraisers | ✅ | fundraisers + wallet donations with raised tracking (019) |
 
 ## Stories

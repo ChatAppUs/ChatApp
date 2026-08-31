@@ -148,6 +148,65 @@ static std::string jsonString(const std::string& js, const std::string& key) {
     return val;
 }
 
+// ---- richer JSON extraction for job params ----
+
+// Extract a raw JSON object value for a top-level key (brace-aware).
+static std::string jsonObject(const std::string& js, const std::string& key) {
+    std::string pat = "\"" + key + "\"";
+    auto k = js.find(pat);
+    if (k == std::string::npos) return "";
+    auto colon = js.find(':', k + pat.size());
+    if (colon == std::string::npos) return "";
+    auto open = js.find('{', colon + 1);
+    if (open == std::string::npos) return "";
+    int depth = 0; bool inStr = false, esc = false;
+    for (size_t i = open; i < js.size(); i++) {
+        char c = js[i];
+        if (esc) { esc = false; continue; }
+        if (c == '\\') { esc = true; continue; }
+        if (c == '"') inStr = !inStr;
+        if (inStr) continue;
+        if (c == '{') depth++;
+        if (c == '}') { depth--; if (depth == 0) return js.substr(open, i - open + 1); }
+    }
+    return "";
+}
+
+// Extract string values of a string-array field from a JSON object.
+static std::vector<std::string> jsonStringArray(const std::string& js, const std::string& key) {
+    std::vector<std::string> out;
+    std::string pat = "\"" + key + "\"";
+    auto k = js.find(pat);
+    if (k == std::string::npos) return out;
+    auto open = js.find('[', k + pat.size());
+    if (open == std::string::npos) return out;
+    auto end = js.find(']', open + 1);
+    if (end == std::string::npos) return out;
+    std::string arr = js.substr(open + 1, end - open - 1);
+    size_t pos = 0;
+    for (;;) {
+        auto q1 = arr.find('"', pos);
+        if (q1 == std::string::npos) break;
+        auto q2 = arr.find('"', q1 + 1);
+        if (q2 == std::string::npos) break;
+        out.push_back(arr.substr(q1 + 1, q2 - q1 - 1));
+        pos = q2 + 1;
+    }
+    return out;
+}
+
+static double jsonNumber(const std::string& js, const std::string& key, double def) {
+    std::string pat = "\"" + key + "\"";
+    auto k = js.find(pat);
+    if (k == std::string::npos) return def;
+    auto colon = js.find(':', k + pat.size());
+    if (colon == std::string::npos) return def;
+    size_t i = colon + 1;
+    while (i < js.size() && js[i] == ' ') i++;
+    if (i >= js.size()) return def;
+    return atof(js.c_str() + i);
+}
+
 // ---- ffmpeg execution ----
 
 static int runCmd(const std::vector<std::string>& args) {
@@ -165,19 +224,6 @@ static int runCmd(const std::vector<std::string>& args) {
     return -1;
 }
 
-struct LadderEntry {
-    std::string name;
-    int width, height, vkbps, akbps;
-};
-
-// ABR ladder tuned for reels/stories: 1080p down to 360p.
-static const LadderEntry kLadder[] = {
-    {"1080p", 1920, 1080, 4500, 160},
-    {"720p",  1280, 720,  2500, 128},
-    {"480p",  854,  480,  1200, 96},
-    {"360p",  640,  360,  700,  64},
-};
-
 static std::string jsonEscape(const std::string& s) {
     std::string out;
     for (char c : s) {
@@ -192,6 +238,120 @@ static std::string jsonEscape(const std::string& s) {
     }
     return out;
 }
+
+struct LadderEntry {
+    std::string name;
+    int width, height, vkbps, akbps;
+};
+
+// ---- compositor jobs: duet (side-by-side), stitch (concat), trim, mix ----
+//
+// All produce a single 720p HLS rendition + master playlist + thumbnail,
+// matching the VOD layout the API reports back (master flagged entry).
+
+static bool runCompositor(const std::string& ffmpeg, const std::string& kind,
+                          const std::string& claimBody, const std::string& outDir,
+                          const std::string& mediaID, std::ostringstream& ladder,
+                          std::string& errMsg) {
+    std::string params = jsonObject(claimBody, "params");
+    std::vector<std::string> sources = jsonStringArray(params, "sources");
+    std::string source = jsonString(params, "source_url");
+    std::string out = outDir + "/720p.m3u8";
+    std::vector<std::string> args = {ffmpeg, "-y"};
+
+    if (kind == "duet") {
+        if (sources.size() < 2) { errMsg = "duet needs 2 sources"; return false; }
+        args.insert(args.end(), {"-i", sources[0], "-i", sources[1],
+            "-filter_complex",
+            "[0:v]scale=640:1280:force_original_aspect_ratio=increase,crop=640:1280[l];"
+            "[1:v]scale=640:1280:force_original_aspect_ratio=increase,crop=640:1280[r];"
+            "[l][r]hstack=inputs=2[v];[0:a][1:a]amerge=inputs=2[a]",
+            "-map", "[v]", "-map", "[a]"});
+    } else if (kind == "stitch") {
+        if (sources.size() < 2) { errMsg = "stitch needs 2+ sources"; return false; }
+        if (sources.size() > 4) sources.resize(4);
+        for (auto& s : sources) args.insert(args.end(), {"-i", s});
+        std::ostringstream fc;
+        for (size_t i = 0; i < sources.size(); i++) fc << "[" << i << ":v][" << i << ":a]";
+        fc << "concat=n=" << sources.size() << ":v=1:a=1[v][a]";
+        args.insert(args.end(), {"-filter_complex", fc.str(), "-map", "[v]", "-map", "[a]"});
+    } else if (kind == "trim") {
+        if (source.empty()) { errMsg = "trim needs source_url"; return false; }
+        double ss = jsonNumber(params, "start_s", 0);
+        double dur = jsonNumber(params, "duration_s", 0);
+        if (dur <= 0) { errMsg = "duration_s required"; return false; }
+        std::ostringstream secs;
+        args.insert(args.end(), {"-ss", std::to_string(ss), "-t", std::to_string(dur), "-i", source});
+    } else { // mix: sources[0]=video, sources[1]=voiceover/sound
+        if (sources.size() < 2) { errMsg = "mix needs video+audio sources"; return false; }
+        args.insert(args.end(), {"-i", sources[0], "-i", sources[1],
+            "-filter_complex", "[0:a]volume=1.0[a0];[1:a]volume=1.6[a1];[a0][a1]amix=inputs=2:duration=first[a]",
+            "-map", "0:v", "-map", "[a]"});
+    }
+    args.insert(args.end(), {"-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-maxrate", "2500k", "-bufsize", "5000k",
+        "-c:a", "aac", "-b:a", "128k",
+        "-hls_time", "4", "-hls_playlist_type", "vod",
+        "-hls_segment_filename", outDir + "/720p_%05d.ts", out});
+    if (runCmd(args) != 0) { errMsg = kind + " ffmpeg failed"; return false; }
+    const std::string thumbSrc = !source.empty() ? source : (!sources.empty() ? sources[0] : "");
+    if (!thumbSrc.empty()) {
+        runCmd({ffmpeg, "-y", "-ss", "1", "-i", thumbSrc,
+                "-frames:v", "1", "-q:v", "3", outDir + "/thumb.jpg"});
+    }
+    std::ofstream master(outDir + "/master.m3u8");
+    master << "#EXTM3U\n#EXT-X-VERSION:3\n"
+           << "#EXT-X-STREAM-INF:BANDWIDTH=2628000,RESOLUTION=1280x720\n720p.m3u8\n";
+    master.close();
+    ladder << "{\"name\":\"720p\",\"width\":1280,\"height\":720,\"url\":\""
+           << jsonEscape("/hls/" + mediaID + "/720p.m3u8") << "\"},"
+           << "{\"name\":\"master\",\"master\":true,\"url\":\""
+           << jsonEscape("/hls/" + mediaID + "/master.m3u8") << "\"}";
+    return true;
+}
+
+// ---- live ingest: the worker IS the RTMP endpoint (ffmpeg -listen) ----
+//
+// Publishers (OBS/mobile) push to rtmp://<worker-host>:$RTMP_LISTEN_PORT/live/<key>;
+// the stream key minted by the API gates ingest. Segments roll into a
+// persistent event playlist in the shared media volume, so viewership is
+// served by the C++ media edge/CDN — unlimited viewers off the WebRTC path.
+
+static bool runLiveIngest(const std::string& ffmpeg, const std::string& claimBody,
+                          const std::string& mediaID, const std::string& outDir,
+                          std::ostringstream& ladder, std::string& errMsg) {
+    std::string params = jsonObject(claimBody, "params");
+    std::string key = jsonString(params, "stream_key");
+    if (key.empty()) { errMsg = "live needs a stream_key"; return false; }
+    std::string port = getenvOr("RTMP_LISTEN_PORT", "1935");
+    std::string url = "rtmp://0.0.0.0:" + port + "/live/" + key;
+    std::string out = outDir + "/live.m3u8";
+    int rc = runCmd({ffmpeg, "-y", "-listen", "1", "-i", url,
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                     "-c:a", "aac", "-b:a", "128k",
+                     "-hls_time", "4", "-hls_playlist_type", "event",
+                     "-hls_segment_filename", outDir + "/live_%05d.ts", out});
+    if (rc != 0) { errMsg = "live ingest ended with error"; return false; }
+    // play_url from the API is master.m3u8 — emit it as a single-variant
+    // master pointing at the event playlist.
+    std::ofstream master(outDir + "/master.m3u8");
+    master << "#EXTM3U\n#EXT-X-VERSION:3\n"
+           << "#EXT-X-STREAM-INF:BANDWIDTH=2628000\nlive.m3u8\n";
+    master.close();
+    ladder << "{\"name\":\"live\",\"url\":\"" << jsonEscape("/hls/" + mediaID + "/live.m3u8")
+           << "\"},{\"name\":\"master\",\"master\":true,\"url\":\""
+           << jsonEscape("/hls/" + mediaID + "/master.m3u8") << "\"}";
+    return true;
+}
+
+// ABR ladder tuned for reels/stories: 1080p down to 360p.
+static const LadderEntry kLadder[] = {
+    {"1080p", 1920, 1080, 4500, 160},
+    {"720p",  1280, 720,  2500, 128},
+    {"480p",  854,  480,  1200, 96},
+    {"360p",  640,  360,  700,  64},
+};
+
 
 int main() {
     const std::string apiURL = getenvOr("API_INTERNAL_URL", "http://localhost:8080");
@@ -245,7 +405,11 @@ int main() {
         ladder << "[";
         bool first = true;
 
-        if (kind == "audio") {
+        if (kind == "duet" || kind == "stitch" || kind == "trim" || kind == "mix") {
+            ok = runCompositor(ffmpeg, kind, claim.body, outDir, mediaID, ladder, errMsg);
+        } else if (kind == "live") {
+            ok = runLiveIngest(ffmpeg, claim.body, mediaID, outDir, ladder, errMsg);
+        } else if (kind == "audio") {
             // Audio: normalize loudness, single 128k AAC HLS rendition.
             std::string out = outDir + "/audio.m3u8";
             if (runCmd({ffmpeg, "-y", "-i", sourceURL, "-vn",

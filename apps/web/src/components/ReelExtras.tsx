@@ -159,3 +159,55 @@ export function RemixList({ reelId }: { reelId: string }) {
     </div>
   );
 }
+
+export function DuetStitchModal({ reelId, mode, onClose }: { reelId: string; mode: "duet" | "stitch"; onClose: () => void }) {
+  const { t } = useI18n();
+  const [body, setBody] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      if (!file || !file.type.startsWith("video/")) {
+        throw new Error(t("videoClipRequired"));
+      }
+      const mediaURL = await uploadMedia(file);
+      await api(`/api/reels/${reelId}/${mode}`, {
+        method: "POST",
+        body: JSON.stringify({ media_url: mediaURL, body }),
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card col" style={{ gap: 8 }}>
+      <h4 style={{ margin: 0 }}>{mode === "duet" ? `🎭 ${t("duet")}` : `✂️ ${t("stitch")}`}</h4>
+      {done ? (
+        <>
+          <div className="muted">{t("compositingQueued")}</div>
+          <button className="secondary" onClick={onClose}>{t("close")}</button>
+        </>
+      ) : (
+        <>
+          <textarea placeholder={t("addYourTake")} value={body} maxLength={2000}
+            onChange={(e) => setBody(e.target.value)} rows={2} />
+          <input type="file" accept="video/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          {error && <div className="error">{error}</div>}
+          <div className="row" style={{ gap: 6 }}>
+            <button onClick={submit} disabled={busy || !file}>{busy ? t("posting") : t("post")}</button>
+            <button className="secondary" onClick={onClose}>{t("cancel")}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

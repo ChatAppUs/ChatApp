@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { passkeySupported, registerPasskey } from "@/lib/passkey";
 import AccountSafety from "@/components/AccountSafety";
+import ScreenTimePanel from "@/components/ScreenTime";
 
 type Passkey = {
   id: string;
@@ -184,6 +185,7 @@ export default function SettingsPage() {
       </div>
 
       <AccountSafety />
+      <ScreenTimePanel />
     </div>
   );
 }

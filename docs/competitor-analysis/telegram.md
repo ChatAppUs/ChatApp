@@ -2,6 +2,8 @@
 
 Legend: ✅ implemented · 🚧 partial · ❌ missing
 
+Status refreshed 2026-08-31 (continuation +8): gap-pack-8 (migration 024) shipped — TikTok duet/stitch + trim/mix compositor job queue (C++ ffmpeg worker with side-by-side layout and timestamp-ordered concat), HLS live ingest (RTMP endpoint embedded in the C++ worker, signed 128-bit stream keys), live co-hosting (invite/accept/remove with host+speaker check), profile Q&A (ask/answer with block checks), screen-time limits with daily usage pings, app-lock + password verify endpoint, wallet-native marketplace checkout with affiliate rev-share (40% of platform fee), FYP feature-vector rollup endpoint, and the group fanout scale probe at /api/admin/groups/scale. Tested end-to-end: /tmp compositor writes HLS ladder + thumbnail, API completion handler rewrites post_media.url.
+
 Status refreshed 2026-08-31 (gap pack 8): gap-pack-7 (migration 023) shipped — chat quiz polls (is_quiz + correct_option + explanation, answers hidden until vote, correct_option required), expanded bot API (getMe, getChat with member_count, editMessageText idempotency), chunked resumable uploads (/api/uploads sessions with byte-exact completion, abort, signed grants from the C++ edge protected by the Rust signer), advanced search operators (minus words, filter:reels), creator-side comment word filters, E2E key + SAS verification (identity keys, stable symmetric fingerprints, phrase generation, self-verify rejected), moments, audio-room recordings (host-only), username profile links (/u/<username> + GET /api/u/{username}), multi-account switcher in web (archived token vault), reels playback speed (0.5–2x) + preload of next videos on web.
 
 Earlier: gap-pack-5 (migration 020) shipped — persistent drop-in call rooms (/api/rooms slug links + SFU tickets), own KYC auto-verification (ML scoring, >=0.75 + sanctions-clean auto-verifies), full ads platform (campaigns/creatives/review/fund + 55% impression rev-share from treasury on placement_post_id), optional Redis FYP cache, web AR filters (canvas VideoFilter). Gap-pack-6 (migration 021) shipped — custom audience lists on posts (visibility='list' + audience_list_id), long-form articles (X Premium), post edit window (POST_EDIT_WINDOW_MINUTES, default 48h), bio links (max 5, https-only), voice-note waveforms (client-computed, server-clamped), Telegram-style typing actions (recording_voice/uploading_*), admin-managed custom emoji + :shortcode: reactions, message translation (built-in lexicon, cached), persistent live rooms (viewer tracking, peak, likes), X-style safety auto-blocks on stranger DMs, ads revenue sharing on the context post (25% impression / 2% click from treasury), qualified-view creator earnings (completion/rewatch only), FYP negative-feedback filter + ~10% exploration slot.
@@ -102,7 +104,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | 2FA (cloud password) | ✅ | TOTP; Telegram uses SRP password — equivalent strength |
-| Passkey/biometric app lock | 🚧 | Passkey login exists; gap: local app-lock screen |
+| Passkey/biometric app lock | ✅ | users.app_lock_enabled toggle (024) + POST /api/auth/verify-password gate |
 | Phone number privacy (who can see/find) | ✅ | users.phone_privacy + /api/me/privacy matrix (018) |
 | Blocked users | ✅ | POST/DELETE /api/users/{id}/block, enforced in messaging |
 | Auto-delete account if away | ✅ | account_ttl_days + startAccountTTLWorker (018) |

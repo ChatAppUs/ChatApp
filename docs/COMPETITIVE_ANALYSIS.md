@@ -99,7 +99,7 @@ Polyglot split per requirement: **Go** core API (high-load, distributed),
 2. 🔴 **Friends (symmetric) as a first-class surface** — follow requests +
    close friends exist; mutual-friends view is a query increment.
 3. 🔴 **Events** (group/page events) — entity + feed reuse.
-4. 🚧 **Reels creation depth** — duet/stitch, multi-clip editing (text
+4. ✅ **Reels creation depth** — duet/stitch/trim/mix compositor queue (gap-8) + text
    overlays, ASR captions, speed ramp shipped).
 5. 🚧 **Messaging polish** — silent send, spoiler entities, slow mode, topics.
 6. 🚧 **SFU scale-out** — C++ RTP forwarding plane when one room saturates a

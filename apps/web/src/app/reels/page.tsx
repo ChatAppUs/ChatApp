@@ -6,7 +6,7 @@ import { api, getAccessToken, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Post } from "@/lib/types";
 import Composer from "@/components/Composer";
-import { RemixModal, ReelAnalytics, RemixList, RemixPlayer } from "@/components/ReelExtras";
+import { DuetStitchModal, RemixModal, ReelAnalytics, RemixList, RemixPlayer } from "@/components/ReelExtras";
 import CommunityNotes from "@/components/CommunityNotes";
 
 function Reel({ post }: { post: Post }) {
@@ -17,6 +17,7 @@ function Reel({ post }: { post: Post }) {
   const [liked, setLiked] = useState(post.liked_by_me);
   const [likes, setLikes] = useState(post.like_count);
   const [remixOpen, setRemixOpen] = useState(false);
+  const [duetStitch, setDuetStitch] = useState<"duet" | "stitch" | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showRemixes, setShowRemixes] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
@@ -100,6 +101,12 @@ function Reel({ post }: { post: Post }) {
             {t("like")} · {likes}
           </button>
           <button className="secondary small" title="Remix" onClick={() => setRemixOpen(true)}>🎬</button>
+          {video && (
+            <>
+              <button className="secondary small" title={t("duet")} onClick={() => setDuetStitch("duet")}>🎭</button>
+              <button className="secondary small" title={t("stitch")} onClick={() => setDuetStitch("stitch")}>✂️</button>
+            </>
+          )}
           <button className="secondary small" title="Remixes" onClick={() => setShowRemixes((v) => !v)}>⑂</button>
           {video && (
             <button className="secondary small" title="Playback speed"
@@ -114,6 +121,7 @@ function Reel({ post }: { post: Post }) {
         {showRemixes && <RemixList reelId={post.id} />}
         <CommunityNotes postId={post.id} />
         {remixOpen && <RemixModal reelId={post.id} onClose={() => setRemixOpen(false)} />}
+        {duetStitch && <DuetStitchModal reelId={post.id} mode={duetStitch} onClose={() => setDuetStitch(null)} />}
       </div>
     </div>
   );

@@ -130,7 +130,7 @@ func (a *App) customEmojiExists(ctx context.Context, shortcode string) bool {
 
 func (a *App) handleListCustomEmoji(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
-		`SELECT name, media_url FROM custom_emoji ORDER BY name LIMIT 500`)
+		`SELECT name, media_url, animated FROM custom_emoji ORDER BY name LIMIT 500`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load custom emoji")
 		return
@@ -139,11 +139,12 @@ func (a *App) handleListCustomEmoji(w http.ResponseWriter, r *http.Request) {
 	type emoji struct {
 		Shortcode string `json:"shortcode"`
 		MediaURL  string `json:"media_url"`
+		Animated  bool   `json:"animated"`
 	}
 	out := []emoji{}
 	for rows.Next() {
 		var e emoji
-		if err := rows.Scan(&e.Shortcode, &e.MediaURL); err == nil {
+		if err := rows.Scan(&e.Shortcode, &e.MediaURL, &e.Animated); err == nil {
 			out = append(out, e)
 		}
 	}
@@ -154,6 +155,7 @@ func (a *App) handleAdminAddCustomEmoji(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		Shortcode string `json:"shortcode"`
 		MediaURL  string `json:"media_url"`
+		Animated  bool   `json:"animated"` // Telegram-style animated emoji (webm/lottie asset)
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -170,13 +172,13 @@ func (a *App) handleAdminAddCustomEmoji(w http.ResponseWriter, r *http.Request) 
 	}
 	var id string
 	if err := a.db.QueryRow(r.Context(),
-		`INSERT INTO custom_emoji (owner_id, name, media_url) VALUES ($1,$2,$3)
-		 ON CONFLICT (name) DO UPDATE SET media_url=EXCLUDED.media_url
-		 RETURNING id`, userIDFrom(r), req.Shortcode, req.MediaURL).Scan(&id); err != nil {
+		`INSERT INTO custom_emoji (owner_id, name, media_url, animated) VALUES ($1,$2,$3,$4)
+		 ON CONFLICT (name) DO UPDATE SET media_url=EXCLUDED.media_url, animated=EXCLUDED.animated
+		 RETURNING id`, userIDFrom(r), req.Shortcode, req.MediaURL, req.Animated).Scan(&id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to save custom emoji")
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "shortcode": req.Shortcode})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "shortcode": req.Shortcode, "animated": req.Animated})
 }
 
 func (a *App) handleAdminDeleteCustomEmoji(w http.ResponseWriter, r *http.Request) {

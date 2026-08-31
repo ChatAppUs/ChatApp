@@ -1,10 +1,12 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
 Date: 2026-08-31 (gap-pack-8 shipped — migration 024 — TikTok-style
-duet/stitch reel remixes: posts.remix_mode, layout picker in the remix
-composer and side-by-side / sequential playback on web + Android + iOS;
-16/16 gap-pack-8 checks green). Earlier: gap-pack-7 (migration 023) — chat
-quiz polls,
+remix_mode duet/stitch on the client, plus the server-side duet/stitch/
+trim/mix compositor queue with a C++ ffmpeg worker; HLS-over-RTMP live
+ingest; profile Q&A; screen-time limits; app lock + verify-password;
+marketplace wallet checkout with affiliate rev-share; FYP feature-vector
+rollup; group fanout scale probe; 70/70 gap-pack-8 checks green). Earlier:
+gap-pack-7 (migration 023) — chat quiz polls,
 bot API expansion (getMe/getChat/editMessageText), chunked resumable upload
 sessions, advanced search operators, creator-side word filters, E2E key + SAS
 verification, moments, audio-room recordings, related-reels embeddings,
@@ -66,7 +68,7 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 | 3 | **Facebook-style content Groups & Pages** (membership, roles, group feeds, business pages, events) | FB, X Communities | ✅ **Shipped** — groups (invite links, join requests, roles, pinned messages) and pages (create/follow/posts) with full API + UI on every client. Events shipped (RSVP + 24h reminder notifications). |
 | 4 | **Push notifications** (FCM/APNs/Web Push) | All six | ✅ **Shipped** — self-built Web Push (VAPID ECDH/AES-GCM) for the PWA + browser extension badge; FCM/APNs gateway hooks behind config. In-app + WS notifications were already live. |
 | 5 | **Watch-time signal ingestion → FYP ranking** | TikTok, FB reels | ✅ **Shipped** — `reel_watch_events` ingestion (completion %, rewatches, not-interested) feeding `/api/fyp` ranking; negative signals down-weight. |
-| 6 | **Reels creation tools** (trim, multi-clip, text overlay, captions, duet/stitch) | TikTok, FB, X | ✅ Duet/stitch shipped (024: `posts.remix_mode`, layout picker + side-by-side/sequential playback on web, Android, iOS); text overlays, ASR captions (ML service) and speed ramp shipped earlier. Multi-clip timeline editing remains phase 2. |
+| 6 | **Reels creation tools** (trim, multi-clip, text overlay, captions, duet/stitch) | TikTok, FB, X | ✅ Duet/stitch shipped (024: `posts.remix_mode` client layout + server compositor queue duet/stitch/trim/mix with C++ ffmpeg worker); text overlays, ASR captions and speed ramp shipped earlier. |
 | 7 | **Monetization depth** (fan subscriptions, tips, gifts, ad-rev share) | X, TikTok, FB, TG | ✅ **Shipped** — wallet rails, platform tokens, creator subscription tiers, tips, revenue dashboard. Gift catalog shipped (handlers_monetization.go). |
 | 8 | **Bot API & mini-apps platform** | Telegram, Discord-class platforms | ✅ **Shipped** — bot accounts, long-poll `getUpdates`, webhooks, `sendMessage`, token-authed payment invoices (`createInvoice` + wallet pay) and inline queries (019). Mini-apps remain phase 2. |
 | 9 | **Messaging polish** (silent send, spoiler/formatting entities, custom emoji, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | ✅ **Shipped** — link previews, invite links, per-conversation + server-side post drafts, public group @handles + join-by-handle, chat archive, chat folders, sticker packs (018); spoiler/bold/italic/mono/link message entities, GIF catalog + gif/contact messages, channel discussion groups + stats, anonymous admins, screenshot alerts, chat export (019). Slow mode (enforced on send, owner/admin exempt) and forum topics shipped in 014. |

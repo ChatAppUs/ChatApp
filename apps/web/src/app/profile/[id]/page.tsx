@@ -7,6 +7,7 @@ import { api, getAccessToken, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Album, Post, PublicUser } from "@/lib/types";
 import PostCard from "@/components/PostCard";
+import ProfileQA from "@/components/ProfileQA";
 
 export default function ProfilePage() {
   const { t } = useI18n();
@@ -87,6 +88,7 @@ export default function ProfilePage() {
           {isMe && <Link href="/albums">🖼️ My albums</Link>}
         </div>
       </div>
+      <ProfileQA userId={user.id} isMe={isMe} />
       {albums.length > 0 && (
         <div className="card">
           <strong>Albums</strong>
