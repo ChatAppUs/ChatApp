@@ -7,7 +7,33 @@ import { api, getAccessToken } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import QRDisplay from "@/components/QRDisplay";
 import QRScanModal from "@/components/QRScanModal";
-import type { WalletAccount, LedgerEntry, DepositAddress, Withdrawal } from "@/lib/types";
+import type { WalletAccount, LedgerEntry, DepositAddress, Withdrawal, TokenPrice } from "@/lib/types";
+
+function PricesTable() {
+  const [prices, setPrices] = useState<TokenPrice[]>([]);
+  useEffect(() => {
+    api<{ prices: TokenPrice[] }>("/api/prices")
+      .then((d) => setPrices(d.prices || []))
+      .catch(() => setPrices([]));
+  }, []);
+  if (prices.length === 0) return <p className="muted">—</p>;
+  return (
+    <table className="table">
+      <thead>
+        <tr><th>asset</th><th>USD</th><th>source</th></tr>
+      </thead>
+      <tbody>
+        {prices.map((p) => (
+          <tr key={`${p.asset}/${p.chain}`}>
+            <td>{p.asset} <span className="muted">{p.chain}</span></td>
+            <td>{p.usd ?? "—"}</td>
+            <td className="muted">{p.source ?? "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 export default function WalletPage() {
   const { t } = useI18n();
@@ -148,7 +174,12 @@ export default function WalletPage() {
       <div className="card">
         <div className="row">
           <Link href="/cards">💳 Cards →</Link>
+          <Link href="/staking">{t("staking")} →</Link>
         </div>
+      </div>
+      <div className="card">
+        <h3>{t("prices")}</h3>
+        <PricesTable />
       </div>
       <div className="card">
         <h3>{t("balance")}</h3>

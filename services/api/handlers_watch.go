@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"sort"
@@ -174,6 +175,7 @@ func (a *App) injectFYPExploration(r *http.Request, uid string, posts []map[stri
 		                  ORDER BY md5(p.id::text || $3) LIMIT $2`,
 		uid, (len(posts)+9)/10, uid+time.Now().UTC().Format("2006-01-02"))
 	if err != nil {
+		log.Printf("fyp exploration query: %v", err)
 		return posts
 	}
 	defer rows.Close()

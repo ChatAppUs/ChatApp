@@ -330,3 +330,37 @@ export interface Campaign {
   target_locales: string[];
   created_at: string;
 }
+
+
+export interface StakingAsset {
+  asset: string;
+  chain: string;
+  apy: string;
+  durations: number[];
+  min_amount: string;
+  max_amount: string;
+  price_usd: string | null;
+}
+
+export interface StakingPosition {
+  id: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  apy: string;
+  duration_days: number;
+  started_at: string;
+  ends_at: string;
+  status: string;
+  reward?: string | null;
+  accrued_estimate?: string | null;
+  closed_at?: string | null;
+}
+
+export interface TokenPrice {
+  asset: string;
+  chain: string;
+  usd: string | null;
+  source: string | null;
+  fetched_at: string | null;
+}

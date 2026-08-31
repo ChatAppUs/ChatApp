@@ -307,3 +307,42 @@
   gaps3/gaps2/gaps/features/finance all green (SFU on :8095).
 - Reaction route is POST /api/messages/{id}/reactions (NOT /react); profile update is
   PATCH /api/me (NOT PUT); post edit is PATCH /api/posts/{id}.
+
+## Contracts discovered while testing (2026-08-31, session 9 — staking + live prices)
+- Migration 022_staking.sql: staking_assets (APY + durations jsonb + min/max
+  NUMERIC(38,18)), staking_rate_audits (every admin upsert logged with admin
+  username + old/new APY), staking_positions (status active|unlock_requested|
+  closed, APY frozen at open, simple-interest rewards), staking_treasury_moves
+  (in/out of the platform treasury with purpose), token_prices (unique
+  asset+chain: usd + source live-coingecko|override|orderbook + fetched_at),
+  platform_tokens.coingecko_id. Platform treasury user = all-zeros uuid with
+  wallet_accounts rows created on demand per (asset, chain).
+- Simple interest reward = amount*apy*duration_days/365, computed with float64
+  then decimal-quantized to 18dp in settlePosition. Rewards pay out from the
+  treasury in the SAME tx as the position close. handleStakingUnlock: mature
+  → settle in one tx; early → 202 + status unlock_requested (admin
+  POST /api/admin/staking/settle {position_id} credits and closes). Admin
+  scope: superadmin only for assets/rates/settle/treasury; audit GET is
+  'staking.manage' permission.
+- pgx scan trap: SELECT must project the same column count as rows.Scan —
+  stakePosSelect lists 13 fields including p.closed_at. Use $N::uuid casts
+  when the same param is also compared to text columns.
+- pricefeed.go: startPriceFeed worker (ticker COINGECKO_INTERVAL_S, default
+  300s; ≤20 ids/call to respect free-tier rate limits; USD cached in Redis
+  60s under key price:<asset>:<chain>). priceUSD(ctx, a, asset, chain, include)
+  order: token_prices override → Redis cache → P2P order book mid → CoinGecko
+  live (fetch+cache+upsert with 10s ctx). COINGECKO_IDS overrides the
+  symbol→id map (CSV). Admin override: PUT /api/admin/prices/{asset}/{chain}
+  {usd:""} clears override; {usd:"<num>"} sets source=override.
+- Staking routes: GET /api/staking/assets (enriched with price_usd),
+  GET/POST /api/staking/positions{,/{id}/unlock}; admin under
+  /api/admin/staking/* + /api/admin/prices*.
+- frontend parity: web /staking + wallet PricesTable, admin dashboard tabs
+  staking + prices (FinanceTabs.tsx), Android ui/StakingScreen.kt (new menu
+  item) + WalletScreen prices tab, iOS Views/StakingView.swift + WalletView
+  Prices tab. i18n keys added for all 8 locales in lib/i18n.tsx extras block.
+- test environment note: gaps5_test.py needs `pip install pillow` + the ML
+  service on :8200 (`uvicorn main:app --port 8200`) or the KYC auto-verify
+  checks fail-open to manual review. All ten suites green: integration 153,
+  features 72, finance 44, gaps 92, gaps2 70, gaps3 82, gaps4 96, gaps5 39,
+  gaps6 91, staking 48.

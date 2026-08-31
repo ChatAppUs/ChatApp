@@ -68,6 +68,7 @@ data class MerchantInfo(val status: String, val tier: Int, val tierName: String,
 data class CardItem(val id: String, val label: String, val last4: String, val status: String,
     val balanceUsd: String, val dailyLimitUsd: String, val monthlyLimitUsd: String)
 data class CardTxn(val id: String, val amountUsd: String, val merchant: String, val status: String, val createdAt: String)
+data class PriceItem(val asset: String, val chain: String, val usd: String?, val source: String?, val fetchedAt: String?)
 
 private fun qrBitmap(content: String, size: Int = 512): Bitmap {
     val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size)
@@ -104,6 +105,7 @@ fun WalletScreen(api: ApiClient, session: Session) {
     var cardLabel by remember { mutableStateOf("") }
     var topupAmount by remember { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
+    var prices by remember { mutableStateOf(listOf<PriceItem>()) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
@@ -169,6 +171,22 @@ fun WalletScreen(api: ApiClient, session: Session) {
         }
     }
 
+    fun loadPrices() {
+        scope.launch {
+            try {
+                val r = withContext(Dispatchers.IO) { api.get("/api/prices", token) }
+                val arr = JSONObject(r).optJSONArray("prices") ?: org.json.JSONArray()
+                prices = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    PriceItem(o.optString("asset"), o.optString("chain"),
+                        if (o.isNull("usd")) null else o.optString("usd"),
+                        if (o.isNull("source")) null else o.optString("source"),
+                        if (o.isNull("fetched_at")) null else o.optString("fetched_at"))
+                }
+            } catch (e: Exception) { error = e.message }
+        }
+    }
+
     fun loadCards() {
         scope.launch {
             try {
@@ -202,11 +220,12 @@ fun WalletScreen(api: ApiClient, session: Session) {
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf("wallet", "deposit", "withdraw", "convert", "p2p", "cards").forEach { tb ->
+            listOf("wallet", "deposit", "withdraw", "convert", "p2p", "cards", "prices").forEach { tb ->
                 TextButton(onClick = {
                     tab = tb
                     if (tb == "p2p") loadOffers()
                     if (tb == "cards") loadCards()
+                    if (tb == "prices") loadPrices()
                 }) { Text(tb.replaceFirstChar { it.uppercase() }) }
             }
         }
@@ -371,6 +390,25 @@ fun WalletScreen(api: ApiClient, session: Session) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            "prices" -> LazyColumn {
+                items(prices) { p ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(modifier = Modifier.padding(12.dp)) {
+                            Text("${p.asset} (${p.chain})", modifier = Modifier.weight(1f))
+                            Text("${p.usd ?: "—"} USD")
+                            Text(p.source ?: "", style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(start = 6.dp))
+                        }
+                    }
+                }
+                if (prices.isEmpty()) {
+                    item {
+                        Text("No prices yet", style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp))
                     }
                 }
             }

@@ -80,6 +80,9 @@ fun ChatAppNav(session: Session, onToggleTheme: () -> Unit) {
         composable("wallet") {
             AuthedScreen(nav, session, onToggleTheme) { WalletScreen(api, session) }
         }
+        composable("staking") {
+            AuthedScreen(nav, session, onToggleTheme) { StakingScreen(api, session) }
+        }
         composable("bots") {
             AuthedScreen(nav, session, onToggleTheme) { BotsScreen(api, session) }
         }

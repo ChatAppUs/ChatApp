@@ -32,6 +32,7 @@ type platformToken struct {
 	ConvertEnabled  bool      `json:"convert_enabled"`
 	MinWithdraw     string    `json:"min_withdraw"`
 	WithdrawFee     string    `json:"withdraw_fee"`
+	CoinGeckoID     string    `json:"coingecko_id"`
 	AddedBy         *string   `json:"added_by"`
 	Created         time.Time `json:"created_at"`
 }
@@ -41,7 +42,8 @@ func (a *App) handleAdminListTokens(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, symbol, name, chain, contract_address, decimals,
 		        COALESCE(logo_url,''), is_native, enabled,
 		        deposit_enabled, withdraw_enabled, p2p_enabled, convert_enabled,
-		        min_withdraw::text, withdraw_fee::text, added_by, created_at
+		        min_withdraw::text, withdraw_fee::text, COALESCE(coingecko_id,''),
+		        added_by, created_at
 		 FROM platform_tokens ORDER BY symbol, chain`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load tokens")
@@ -54,7 +56,7 @@ func (a *App) handleAdminListTokens(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&t.ID, &t.Symbol, &t.Name, &t.Chain, &t.Contract,
 			&t.Decimals, &t.LogoURL, &t.IsNative, &t.Enabled,
 			&t.DepositEnabled, &t.WithdrawEnabled, &t.P2PEnabled, &t.ConvertEnabled,
-			&t.MinWithdraw, &t.WithdrawFee, &t.AddedBy, &t.Created); err == nil {
+			&t.MinWithdraw, &t.WithdrawFee, &t.CoinGeckoID, &t.AddedBy, &t.Created); err == nil {
 			out = append(out, t)
 		}
 	}
@@ -63,13 +65,14 @@ func (a *App) handleAdminListTokens(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleAdminAddToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Symbol   string `json:"symbol"`
-		Name     string `json:"name"`
-		Chain    string `json:"chain"`
-		Contract string `json:"contract_address"`
-		Decimals int    `json:"decimals"`
-		LogoURL  string `json:"logo_url"`
-		IsNative bool   `json:"is_native"`
+		Symbol      string `json:"symbol"`
+		Name        string `json:"name"`
+		Chain       string `json:"chain"`
+		Contract    string `json:"contract_address"`
+		Decimals    int    `json:"decimals"`
+		LogoURL     string `json:"logo_url"`
+		IsNative    bool   `json:"is_native"`
+		CoinGeckoID string `json:"coingecko_id"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -92,15 +95,16 @@ func (a *App) handleAdminAddToken(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	var id string
 	err := a.db.QueryRow(r.Context(),
-		`INSERT INTO platform_tokens (symbol, name, chain, contract_address, decimals, logo_url, is_native, added_by)
-		 VALUES ($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''),$7,$8)
+		`INSERT INTO platform_tokens (symbol, name, chain, contract_address, decimals, logo_url, is_native, coingecko_id, added_by)
+		 VALUES ($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''),$7,COALESCE(NULLIF($8,''),''),$9)
 		 ON CONFLICT (symbol, chain) DO UPDATE SET
 		   name=EXCLUDED.name, contract_address=EXCLUDED.contract_address,
 		   decimals=EXCLUDED.decimals, logo_url=EXCLUDED.logo_url,
-		   is_native=EXCLUDED.is_native, enabled=true
+		   is_native=EXCLUDED.is_native, coingecko_id=EXCLUDED.coingecko_id, enabled=true
 		 RETURNING id`,
 		req.Symbol, req.Name, req.Chain, strings.TrimSpace(req.Contract),
-		req.Decimals, strings.TrimSpace(req.LogoURL), req.IsNative, uid).Scan(&id)
+		req.Decimals, strings.TrimSpace(req.LogoURL), req.IsNative,
+		strings.ToLower(strings.TrimSpace(req.CoinGeckoID)), uid).Scan(&id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to add token")
 		return
@@ -141,6 +145,7 @@ func (a *App) handleAdminSetTokenFeatures(w http.ResponseWriter, r *http.Request
 		ConvertEnabled  *bool   `json:"convert_enabled"`
 		MinWithdraw     *string `json:"min_withdraw"`
 		WithdrawFee     *string `json:"withdraw_fee"`
+		CoinGeckoID     *string `json:"coingecko_id"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -169,6 +174,9 @@ func (a *App) handleAdminSetTokenFeatures(w http.ResponseWriter, r *http.Request
 	}
 	if req.WithdrawFee != nil {
 		add("withdraw_fee=$%d::numeric", *req.WithdrawFee)
+	}
+	if req.CoinGeckoID != nil {
+		add("coingecko_id=$%d", strings.ToLower(strings.TrimSpace(*req.CoinGeckoID)))
 	}
 	if len(sets) == 0 {
 		writeErr(w, http.StatusBadRequest, "nothing to update")

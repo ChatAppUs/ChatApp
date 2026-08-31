@@ -44,6 +44,53 @@ interface Dispute {
   status: string;
 }
 
+interface StakingAsset {
+  asset: string;
+  chain: string;
+  apy: string;
+  durations: number[];
+  min_amount: string;
+  max_amount: string;
+  updated_at: string;
+}
+
+interface StakingPosition {
+  id: string;
+  username: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  apy: string;
+  duration_days: number;
+  started_at: string;
+  ends_at: string;
+  status: string;
+  reward: string | null;
+  accrued_estimate?: string | null;
+  closed_at: string | null;
+}
+
+interface TreasuryMove {
+  id: string;
+  admin: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  direction: string;
+  purpose: string;
+  created_at: string;
+}
+
+interface AdminPrice {
+  asset: string;
+  chain: string;
+  usd: string | null;
+  source: string | null;
+  fetched_at: string | null;
+  updated_at?: string | null;
+}
+
+
 type Act = (fn: () => Promise<unknown>) => void;
 
 export function WithdrawalsTab({ act }: { act: Act }) {
@@ -509,6 +556,229 @@ export function TransfersTab({ act }: { act: (fn: () => Promise<unknown>) => voi
             </tr>
           ))}
           {transfers.length === 0 && <tr><td colSpan={6} className="muted">No user-to-user transfers yet</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function StakingTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [assets, setAssets] = useState<StakingAsset[]>([]);
+  const [positions, setPositions] = useState<StakingPosition[]>([]);
+  const [moves, setMoves] = useState<TreasuryMove[]>([]);
+  const [statusFilter, setStatusFilter] = useState("unlock_requested");
+  const [form, setForm] = useState({ asset: "", chain: "", apy: "", min_amount: "0.0001", max_amount: "1000000", durations: "7,30,90,180,365" });
+  const [audit, setAudit] = useState<{ total_locked_usd: string; positions_active: number } | null>(null);
+
+  const load = useCallback(() => {
+    adminApi<{ assets: StakingAsset[] }>("/api/admin/staking/assets")
+      .then((d) => { setAssets(d.assets || []); })
+      .catch(() => setAssets([]));
+    adminApi<{ positions: StakingPosition[] }>(`/api/admin/staking/positions${statusFilter ? `?status=${statusFilter}` : ""}`)
+      .then((d) => setPositions(d.positions || []))
+      .catch(() => setPositions([]));
+    adminApi<{ moves: TreasuryMove[] }>("/api/admin/staking/treasury/moves")
+      .then((d) => setMoves(d.moves || []))
+      .catch(() => setMoves([]));
+    adminApi<{ total_locked_usd: string; positions_active: number }>("/api/admin/staking/audit")
+      .then((d) => setAudit(d))
+      .catch(() => setAudit(null));
+  }, [statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addAsset = async (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+    const durations = form.durations.split(",").map((s) => Number(s.trim())).filter((n) => n > 0);
+    await act(async () => adminApi("/api/admin/staking/assets", {
+      method: "POST",
+      body: JSON.stringify({
+        asset: form.asset, chain: form.chain, apy: form.apy,
+        min_amount: form.min_amount, max_amount: form.max_amount,
+        durations: durations.length ? durations : [7, 30, 90, 180, 365],
+      }),
+    }));
+    load();
+  };
+
+  const updateAsset = (a: StakingAsset, patch: Partial<StakingAsset>) =>
+    act(() => adminApi(`/api/admin/staking/assets/${encodeURIComponent(a.asset)}/${encodeURIComponent(a.chain)}`, {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }));
+
+
+  const settle = (opt: { position_id?: string; asset?: string; chain?: string }) =>
+    act(() => adminApi("/api/admin/staking/settle", { method: "POST", body: JSON.stringify(opt) }));
+
+  const treasuryMove = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formEl = e.target as HTMLFormElement;
+    const data = new FormData(formEl);
+    await act(() => adminApi("/api/admin/staking/treasury/move", {
+      method: "POST",
+      body: JSON.stringify({
+        direction: data.get("direction"),
+        asset: data.get("asset"),
+        chain: data.get("chain"),
+        amount: data.get("amount"),
+        purpose: data.get("purpose"),
+      }),
+    }));
+    formEl.reset();
+    load();
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <h3>Staking assets</h3>
+        <form onSubmit={addAsset} className="grid2">
+          <input required placeholder="symbol (e.g. BTC)" value={form.asset} onChange={(e) => setForm({ ...form, asset: e.target.value })} />
+          <input required placeholder="chain (e.g. bitcoin)" value={form.chain} onChange={(e) => setForm({ ...form, chain: e.target.value })} />
+          <input required placeholder="APY (e.g. 9.5)" value={form.apy} onChange={(e) => setForm({ ...form, apy: e.target.value })} />
+          <input placeholder="min amount" value={form.min_amount} onChange={(e) => setForm({ ...form, min_amount: e.target.value })} />
+          <input placeholder="max amount" value={form.max_amount} onChange={(e) => setForm({ ...form, max_amount: e.target.value })} />
+          <input placeholder="durations csv (default 7,30,90,180,365)" value={form.durations} onChange={(e) => setForm({ ...form, durations: e.target.value })} />
+          <button>create / upsert</button>
+        </form>
+        <table className="table">
+          <thead><tr><th>asset</th><th>APY</th><th>min/max</th><th>durations</th><th>actions</th></tr></thead>
+          <tbody>
+            {assets.map((a) => (
+              <tr key={`${a.asset}/${a.chain}`}>
+                <td>{a.asset} <span className="muted">{a.chain}</span></td>
+                <td>{a.apy}</td>
+                <td className="muted">{a.min_amount} … {a.max_amount}</td>
+                <td>{(a.durations || []).join(", ")}</td>
+                <td>
+                  <button className="secondary small" onClick={() => {
+                    const apy = prompt("new APY (blank = keep)", a.apy);
+                    if (apy === null || apy === "") return;
+                    updateAsset(a, { ...a, apy });
+                  }}>APY</button>
+                  <button className="secondary small" onClick={() => {
+                    const durations = prompt("durations csv", (a.durations || []).join(","));
+                    if (!durations) return;
+                    updateAsset(a, { ...a, durations: durations.split(",").map((s) => Number(s.trim())).filter((n) => n > 0) });
+                  }}>durations</button>
+                </td>
+              </tr>
+            ))}
+            {assets.length === 0 && <tr><td colSpan={5} className="muted">no staking assets</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="card">
+        <h3>Staking positions</h3>
+        <div className="row" style={{ marginBottom: 10 }}>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: "auto" }}>
+            {["unlock_requested", "active", "closed"].map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button className="secondary small" onClick={load}>Refresh</button>
+          {audit && <span className="muted">locked total ≈ ${audit.total_locked_usd} · {audit.positions_active} active</span>}
+        </div>
+        <table className="table">
+          <thead><tr><th>user</th><th>amount</th><th>terms</th><th>matures</th><th>reward</th><th>settle</th></tr></thead>
+          <tbody>
+            {positions.map((p) => (
+              <tr key={p.id}>
+                <td>@{p.username}</td>
+                <td>{p.amount} {p.asset} <span className="muted">{p.chain}</span></td>
+                <td className="muted">{p.duration_days}d @ {p.apy}</td>
+                <td className="muted">{p.ends_at.slice(0, 10)} · {p.status}</td>
+                <td className="muted">{p.reward ?? p.accrued_estimate ?? "—"}</td>
+                <td>
+                  {p.status === "unlock_requested" && (
+                    <button className="success small" onClick={() => settle({ position_id: p.id })}>settle</button>
+                  )}
+                  {p.status === "closed" && <span className="muted">closed {p.closed_at?.slice(0, 10)}</span>}
+                </td>
+              </tr>
+            ))}
+            {positions.length === 0 && <tr><td colSpan={6} className="muted">no positions</td></tr>}
+          </tbody>
+        </table>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="secondary" onClick={() => settle({})}>settle mature</button>
+        </div>
+      </div>
+      <div className="card">
+        <h3>Treasury deploy</h3>
+        <form onSubmit={treasuryMove} className="row" style={{ flexWrap: "wrap" }}>
+          <select name="direction" style={{ width: "auto" }}>
+            <option value="in">in (deposit)</option>
+            <option value="out">out (deploy)</option>
+          </select>
+          <input name="asset" required placeholder="asset" style={{ width: 110 }} />
+          <input name="chain" required placeholder="chain" style={{ width: 110 }} />
+          <input name="amount" required placeholder="amount" style={{ width: 130 }} />
+          <input name="purpose" placeholder="purpose (e.g. buy stock)" style={{ width: 220 }} />
+          <button>move</button>
+        </form>
+        <table className="table">
+          <tbody>
+            {moves.map((m) => (
+              <tr key={m.id}>
+                <td className="muted">{m.id.slice(0, 8)}</td>
+                <td>@{m.admin}</td>
+                <td>{m.direction} {m.amount} {m.asset}/{m.chain}</td>
+                <td className="muted">{m.purpose}</td>
+                <td className="muted">{m.created_at.slice(0, 19)}</td>
+              </tr>
+            ))}
+            {moves.length === 0 && <tr><td className="muted">no treasury moves</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function PricesTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [prices, setPrices] = useState<AdminPrice[]>([]);
+  const [form, setForm] = useState({ asset: "", chain: "", usd: "" });
+
+  const load = useCallback(() => {
+    adminApi<{ prices: AdminPrice[] }>("/api/admin/prices")
+      .then((d) => setPrices(d.prices || []))
+      .catch(() => setPrices([]));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setOverride = async (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+    const { asset, chain, usd } = form;
+    await act(() => adminApi(`/api/admin/prices/${encodeURIComponent(asset)}/${encodeURIComponent(chain)}`, {
+      method: "PUT",
+      body: JSON.stringify({ usd }),
+    }));
+    setForm({ asset: "", chain: "", usd: "" });
+    load();
+  };
+
+  return (
+    <div className="card">
+      <h3>Token prices (admin overrides)</h3>
+      <form onSubmit={setOverride} className="row" style={{ flexWrap: "wrap" }}>
+        <input required placeholder="asset" value={form.asset} onChange={(e) => setForm({ ...form, asset: e.target.value })} style={{ width: 110 }} />
+        <input required placeholder="chain" value={form.chain} onChange={(e) => setForm({ ...form, chain: e.target.value })} style={{ width: 110 }} />
+        <input placeholder="USD (blank to keep)" value={form.usd} onChange={(e) => setForm({ ...form, usd: e.target.value })} style={{ width: 130 }} />
+        <button>set override</button>
+      </form>
+      <table className="table">
+        <thead><tr><th>asset</th><th>USD</th><th>source</th><th>updated</th></tr></thead>
+        <tbody>
+          {prices.map((p) => (
+            <tr key={`${p.asset}/${p.chain}`}>
+              <td>{p.asset} <span className="muted">{p.chain}</span></td>
+              <td>{p.usd ?? "—"}</td>
+              <td className="muted">{p.source ?? "—"}</td>
+              <td className="muted">{p.fetched_at?.slice(0, 19) ?? "—"}</td>
+            </tr>
+          ))}
+          {prices.length === 0 && <tr><td colSpan={4} className="muted">no prices</td></tr>}
         </tbody>
       </table>
     </div>

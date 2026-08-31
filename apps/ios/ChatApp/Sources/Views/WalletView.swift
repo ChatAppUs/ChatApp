@@ -7,6 +7,15 @@ import UIKit
 // signed withdrawals (paste or camera-scan the destination QR), convert and
 // the escrowed P2P market — same feature set as web/desktop/Android.
 
+struct PriceItem: Identifiable {
+    let id = UUID()
+    let asset: String
+    let chain: String
+    let usd: String?
+    let source: String?
+    let fetchedAt: String?
+}
+
 struct WalletAccountItem: Identifiable {
     let id: String
     let asset: String
@@ -103,6 +112,7 @@ struct WalletView: View {
     @State private var topupAmount = ""
     @State private var issuedCardDetails = ""
     @State private var scanning = false
+    @State private var prices: [PriceItem] = []
     @State private var message: String?
     @State private var error: String?
 
@@ -208,12 +218,14 @@ struct WalletView: View {
                     Text("Convert").tag("convert")
                     Text("P2P").tag("p2p")
                     Text("Cards").tag("cards")
+                    Text("Prices").tag("prices")
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .onChange(of: tab) { _, newTab in
                     if newTab == "p2p" { loadOffers() }
                     if newTab == "cards" { loadCards() }
+                    if newTab == "prices" { loadPrices() }
                 }
                 if let message { Text(message).foregroundStyle(.green).font(.footnote) }
                 if let error { Text(error).foregroundStyle(.red).font(.footnote) }
@@ -311,6 +323,20 @@ struct WalletView: View {
                                     load()
                                 } catch { self.error = error.localizedDescription }
                             }
+                        }
+                    }
+                case "prices":
+                    List {
+                        Section("Live prices") {
+                            ForEach(prices) { p in
+                                HStack {
+                                    Text("\(p.asset) (\(p.chain))")
+                                    Spacer()
+                                    Text("\(p.usd ?? "—") USD")
+                                    if let s = p.source { Text(s).font(.caption2).foregroundStyle(.secondary) }
+                                }
+                            }
+                            if prices.isEmpty { Text("No prices yet").foregroundStyle(.secondary) }
                         }
                     }
                 case "cards":
@@ -447,6 +473,22 @@ struct WalletView: View {
             do {
                 _ = try await client().post("/api/p2p/trades/\(id)/\(action)")
                 load()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func loadPrices() {
+        Task {
+            do {
+                let data = try await client().get("/api/prices")
+                let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                prices = (obj?["prices"] as? [[String: Any]] ?? []).map {
+                    PriceItem(asset: $0["asset"] as? String ?? "",
+                              chain: $0["chain"] as? String ?? "",
+                              usd: $0["usd"] as? String,
+                              source: $0["source"] as? String,
+                              fetchedAt: $0["fetched_at"] as? String)
+                }
             } catch { self.error = error.localizedDescription }
         }
     }

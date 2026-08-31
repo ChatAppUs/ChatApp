@@ -19,6 +19,7 @@ private val ITEMS = listOf(
     MenuItem("chat", "Chat"),
     MenuItem("monetize", "Money"),
     MenuItem("wallet", "Wallet"),
+    MenuItem("staking", "Staking"),
     MenuItem("bots", "Bots"),
     MenuItem("privacy", "Privacy"),
 )
