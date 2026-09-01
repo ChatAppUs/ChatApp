@@ -48,6 +48,7 @@ type Config struct {
 	SFUHost               string
 	SFUSecret             string
 	TURNSecret            string
+	TURNForwarder         string // host:port of the C++ TURN relay forwarder; empty = embedded pion/turn fallback
 	VAPIDSubject          string // mailto: or https: contact for push services
 	VAPIDPrivateKey       string // base64url P-256 scalar
 	FCMServerKey          string
@@ -135,6 +136,7 @@ func loadConfig() Config {
 		SFUHost:         getenv("SFU_HOST", "localhost"),
 		SFUSecret:       getenv("SFU_SECRET", "dev-sfu-secret"),
 		TURNSecret:      getenv("TURN_SECRET", "dev-turn-secret"),
+		TURNForwarder:   os.Getenv("TURN_FORWARDER"),
 		VAPIDSubject:    getenv("VAPID_SUBJECT", "mailto:ops@chatapp.local"),
 		VAPIDPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
 		FCMServerKey:    os.Getenv("FCM_SERVER_KEY"),

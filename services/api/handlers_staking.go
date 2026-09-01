@@ -394,58 +394,11 @@ func (a *App) handleAdminStakingAssetCreate(w http.ResponseWriter, r *http.Reque
 }
 
 func (a *App) handleAdminStakingAssetUpdate(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		APY       *string `json:"apy"`
-		MinAmount *string `json:"min_amount"`
-		Durations []int32 `json:"durations_days"`
-		Active    *bool   `json:"active"`
-	}
+	var req stakingAssetPatch
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	id := r.PathValue("id")
-	uid := userIDFrom(r)
-	sets := []string{}
-	args := []any{id}
-	add := func(clause string, val any) {
-		args = append(args, val)
-		sets = append(sets, fmt.Sprintf(clause, len(args)))
-	}
-	if req.APY != nil {
-		add("apy=$%d::numeric", *req.APY)
-	}
-	if req.MinAmount != nil {
-		add("min_amount=$%d::numeric", *req.MinAmount)
-	}
-	if req.Durations != nil {
-		if len(req.Durations) == 0 {
-			writeErr(w, http.StatusBadRequest, "at least one duration required")
-			return
-		}
-		add("durations_days=$%d", req.Durations)
-	}
-	if req.Active != nil {
-		add("active=$%d", *req.Active)
-	}
-	if len(sets) == 0 {
-		writeErr(w, http.StatusBadRequest, "nothing to update")
-		return
-	}
-	tag, err := a.db.Exec(r.Context(),
-		`UPDATE staking_assets SET `+strings.Join(sets, ", ")+`, updated_at=now() WHERE id=$1`,
-		args...)
-	if err != nil || tag.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "asset not found or invalid value")
-		return
-	}
-	if req.APY != nil {
-		if _, err := a.db.Exec(r.Context(),
-			`INSERT INTO staking_rates (asset_id, apy, set_by) VALUES ($1,$2::numeric,$3)`,
-			id, *req.APY, uid); err == nil {
-		}
-	}
-	a.audit(r.Context(), uid, "staking.asset_update", id, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	a.updateStakingAsset(w, r, r.PathValue("id"), &req)
 }
 
 func (a *App) handleAdminStakingAssetDelete(w http.ResponseWriter, r *http.Request) {
@@ -678,4 +631,144 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// Position-settle from the admin dashboard: by position id or by
+// (asset, chain) batch filter over the unlock queue.
+func (a *App) handleAdminStakingSettleBy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PositionID string `json:"position_id"`
+		Asset      string `json:"asset"`
+		Chain      string `json:"chain"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.PositionID != "" {
+		settled, err := a.settleStakes(r.Context(), req.PositionID)
+		if err != nil {
+			writeErr(w, http.StatusNotFound, "position not found")
+			return
+		}
+		if !settled {
+			writeErr(w, http.StatusConflict, "treasury liquidity insufficient")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
+		return
+	}
+	rows, err := a.db.Query(r.Context(),
+		`SELECT id FROM stake_positions
+		 WHERE status='unlock_requested'
+		   AND ($1::text='' OR asset=$1) AND ($2::text='' OR chain=$2)`,
+		req.Asset, req.Chain)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	failed := 0
+	for _, id := range ids {
+		settled, err := a.settleStakes(r.Context(), id)
+		if err != nil || !settled {
+			failed++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"settled":       len(ids) - failed,
+		"pending_total": len(ids),
+		"status":        "closed",
+	})
+}
+
+// Aggregate staking totals for the admin audit panel.
+func (a *App) handleAdminStakingAudit(w http.ResponseWriter, r *http.Request) {
+	var active string
+	var totalLocked string
+	_ = a.db.QueryRow(r.Context(),
+		`SELECT COUNT(*)::text,
+		        COALESCE(SUM(p.amount * COALESCE(cp.price_usd, 0))::text, '0')
+		 FROM stake_positions p
+		 LEFT JOIN crypto_prices cp ON cp.asset=p.asset AND cp.chain=p.chain
+		 WHERE p.status='active'`).Scan(&active, &totalLocked)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"positions_active": atoi(active),
+		"total_locked_usd": totalLocked,
+	})
+}
+
+// Resolves a staking asset id from (asset, chain) for the
+// dashboard-friendly update URL /api/admin/staking/assets/{asset}/{chain}.
+func (a *App) handleAdminStakingAssetUpdateBy(w http.ResponseWriter, r *http.Request) {
+	id, err := a.stakingAssetID(r.Context(), r.PathValue("asset"), r.PathValue("chain"))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "asset not found")
+		return
+	}
+	var req stakingAssetPatch
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	a.updateStakingAsset(w, r, id, &req)
+}
+
+func (a *App) stakingAssetID(ctx context.Context, asset, chain string) (string, error) {
+	var id string
+	err := a.db.QueryRow(ctx, `SELECT id FROM staking_assets WHERE asset=$1 AND chain=$2`,
+		asset, chain).Scan(&id)
+	return id, err
+}
+
+type stakingAssetPatch struct {
+	APY       *string `json:"apy"`
+	MinAmount *string `json:"min_amount"`
+	Durations []int32 `json:"durations_days"`
+	Active    *bool   `json:"active"`
+}
+
+func (a *App) updateStakingAsset(w http.ResponseWriter, r *http.Request, id string, req *stakingAssetPatch) {
+	uid := userIDFrom(r)
+	sets := []string{}
+	args := []any{id}
+	add := func(clause string, val any) {
+		args = append(args, val)
+		sets = append(sets, fmt.Sprintf(clause, len(args)))
+	}
+	if req.APY != nil {
+		add("apy=$%d::numeric", *req.APY)
+	}
+	if req.MinAmount != nil {
+		add("min_amount=$%d::numeric", *req.MinAmount)
+	}
+	if len(req.Durations) != 0 {
+		add("durations_days=$%d", req.Durations)
+	}
+	if req.Active != nil {
+		add("active=$%d", *req.Active)
+	}
+	if len(sets) == 0 {
+		writeErr(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+	tag, err := a.db.Exec(r.Context(),
+		`UPDATE staking_assets SET `+strings.Join(sets, ", ")+`, updated_at=now() WHERE id=$1`,
+		args...)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "asset not found or invalid value")
+		return
+	}
+	if req.APY != nil {
+		_, _ = a.db.Exec(r.Context(),
+			`INSERT INTO staking_rates (asset_id, apy, set_by) VALUES ($1,$2::numeric,$3)`,
+			id, *req.APY, uid)
+	}
+	a.audit(r.Context(), uid, "staking.asset_update", id, nil)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }

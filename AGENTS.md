@@ -507,3 +507,22 @@
 - json_get_num must tolerate whitespace between ':' and number (Python/Go
   JSON encoders emit spaces).
 - tests/authn_test.py (14 checks), tests/counters_test.py (12 checks).
+## Contracts discovered while testing (2026-09-01 — TURN forwarder + parity)
+- services/sfu-forwarder main.cpp: C++ TURN relay (UDP 3479), control REST
+  :8099, 18/18 checks in tests/sfu_turn_test.py. Self-contained SHA-1/
+  HMAC-SHA1 (no deps). API prefers it via TURN_FORWARDER env, pion fallback.
+  txid = 12 bytes; MI verification excludes the MI attribute with header-
+  length adjust; Data indication header length finalized before send.
+- tests/parity_check.py: frontend/backend route parity test — scans all
+  frontend sources (web/admin, backtick+quotes literals), normalizes
+  template/embed prefixes, matches segment-wise `{}` wildcard. 443 routes.
+  Closed 5 orphaned admin routes: /api/admin/prices (GET), staking
+  treasury/moves alias, staking audit (totals), staking settle (body pos or
+  filter), staking asset update by {asset}/{chain} (uses
+  stakingAssetID resolver + refactored updateStakingAsset helper).
+- Web LOCALES now 30 (extras block {}; t() falls back to en).
+- Full sweep: staking 56 PASS (old 48 + 8 new parity checks), parity OK,
+  sfu-turn 18/18, go test ok, admin tsc 0, web build 0. New admin endpoints
+  registered under requireAdminPerm('staking.manage'|'tokens.manage').
+- theme parity verified across all five clients (web/admin chatapp.theme,
+  extension theme, Android Session.darkTheme, iOS preferredColorScheme).

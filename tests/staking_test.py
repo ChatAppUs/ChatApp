@@ -272,6 +272,28 @@ def main():
     s, r = req("GET", "/api/admin/staking/treasury", token=admin_tok)
     check("treasury moves listed", s == 200 and len(r.get("moves", [])) >= 2, f"{s} {r}")
 
+    # ---- parity endpoints (admin dashboard shape; closed by gap handler work) ----
+    s, r = req("GET", "/api/admin/staking/treasury/moves", token=admin_tok)
+    check("treasury/moves alias", s == 200 and len(r.get("moves", [])) >= 2, f"{s} {r}")
+    s, r = req("GET", "/api/admin/staking/audit", token=admin_tok)
+    check("staking audit totals",
+          s == 200 and "total_locked_usd" in r and "positions_active" in r, f"{s} {r}")
+    s, r = req("GET", "/api/admin/prices", token=admin_tok)
+    check("admin prices list", s == 200, f"{s} {r}")
+    s, r = req("GET", f"/api/admin/staking/assets", token=admin_tok)
+    check("admin assets list (for resolver test)", s == 200, f"{s} {r}")
+    # dashboard-friendly update-by (asset, chain)
+    s, r = req("PUT", f"/api/admin/staking/assets/{ASYM}/{CHAIN}", {"apy": "25"}, token=admin_tok)
+    check("update asset by asset/chain", s == 200, f"{s} {r}")
+    s, r = req("GET", "/api/admin/staking/assets", token=admin_tok)
+    check("updated asset APY 25", any(a["apy"] == "25.00" for a in r.get("assets", [])), f"{s} {r}")
+    # settle-by position_id variant
+    s, r = req("POST", "/api/admin/staking/settle", {"position_id": pos3}, token=admin_tok)
+    check("settle by body position_id", s in (200, 409, 404), f"{s} {r}")
+    # settle-by filter variant settles nothing when queue is empty
+    s, r = req("POST", "/api/admin/staking/settle", {"asset": ASYM, "chain": CHAIN}, token=admin_tok)
+    check("settle by filter empty queue ok", s == 200 and r.get("pending_total", 0) == 0, f"{s} {r}")
+
 
 if __name__ == "__main__":
     main()

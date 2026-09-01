@@ -41,6 +41,14 @@ func (a *App) turnCredentials(userID string) (string, string) {
 func (a *App) iceServers(userID string) []map[string]any {
 	host := a.cfg.SFUHost
 	user, pass := a.turnCredentials(userID)
+	// Prefer the C++ TURN relay forwarder when configured; the embedded
+	// pion/turn stays as fallback exactly like the Go hub fallback.
+	if a.cfg.TURNForwarder != "" {
+		return []map[string]any{
+			{"urls": []string{"turn:" + a.cfg.TURNForwarder}, "username": user, "credential": pass},
+			{"urls": []string{"stun:" + host + ":3478"}},
+		}
+	}
 	return []map[string]any{
 		{"urls": []string{"stun:" + host + ":3478"}},
 		{"urls": []string{"turn:" + host + ":3478"}, "username": user, "credential": pass},

@@ -15,6 +15,24 @@ export const LOCALES = [
   { code: "tr", name: "Türkçe", dir: "ltr" },
   { code: "ru", name: "Русский", dir: "ltr" },
   { code: "vi", name: "Tiếng Việt", dir: "ltr" },
+  { code: "bn", name: "বাংলা", dir: "ltr" },
+  { code: "fa", name: "فارسی", dir: "rtl" },
+  { code: "ur", name: "اردو", dir: "rtl" },
+  { code: "ko", name: "한국어", dir: "ltr" },
+  { code: "ja", name: "日本語", dir: "ltr" },
+  { code: "id", name: "Bahasa Indonesia", dir: "ltr" },
+  { code: "th", name: "ไทย", dir: "ltr" },
+  { code: "nl", name: "Nederlands", dir: "ltr" },
+  { code: "pl", name: "Polski", dir: "ltr" },
+  { code: "uk", name: "Українська", dir: "ltr" },
+  { code: "sv", name: "Svenska", dir: "ltr" },
+  { code: "sw", name: "Kiswahili", dir: "ltr" },
+  { code: "fil", name: "Filipino", dir: "ltr" },
+  { code: "ta", name: "தமிழ்", dir: "ltr" },
+  { code: "te", name: "తెలుగు", dir: "ltr" },
+  { code: "mr", name: "मराठी", dir: "ltr" },
+  { code: "pa", name: "ਪੰਜਾਬੀ", dir: "ltr" },
+  { code: "el", name: "Ελληνικά", dir: "ltr" },
 ] as const;
 
 export type LocaleCode = (typeof LOCALES)[number]["code"];
@@ -1057,6 +1075,9 @@ const extras: Record<LocaleCode, Dict> = {
     curatedBy: "策划",
   },
   it: {},  tr: {},  ru: {},  vi: {}, // fall back to en via t()
+  bn: {}, fa: {}, ur: {}, ko: {}, ja: {}, id: {}, th: {}, nl: {},
+  pl: {}, uk: {}, sv: {}, sw: {}, fil: {}, ta: {}, te: {}, mr: {},
+  pa: {}, el: {},
 };
 
 const DICTS: Record<LocaleCode, Dict> = {
@@ -1072,6 +1093,24 @@ const DICTS: Record<LocaleCode, Dict> = {
   tr: { ...en, ...extras.en },
   ru: { ...en, ...extras.en },
   vi: { ...en, ...extras.en },
+  bn: { ...en, ...extras.en },
+  fa: { ...en, ...extras.en },
+  ur: { ...en, ...extras.en },
+  ko: { ...en, ...extras.en },
+  ja: { ...en, ...extras.en },
+  id: { ...en, ...extras.en },
+  th: { ...en, ...extras.en },
+  nl: { ...en, ...extras.en },
+  pl: { ...en, ...extras.en },
+  uk: { ...en, ...extras.en },
+  sv: { ...en, ...extras.en },
+  sw: { ...en, ...extras.en },
+  fil: { ...en, ...extras.en },
+  ta: { ...en, ...extras.en },
+  te: { ...en, ...extras.en },
+  mr: { ...en, ...extras.en },
+  pa: { ...en, ...extras.en },
+  el: { ...en, ...extras.en },
 };
 
 interface I18nCtx {

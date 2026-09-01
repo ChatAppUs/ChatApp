@@ -55,7 +55,7 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
   rejected on every user route, RBAC (superadmin/moderator/support/finance/
   ads_reviewer), audit log, user/reports/KYC/ads/payouts/platform-token/
   fleet management. Users can never reach admin functionality.
-- **Clients**: Next.js web (8 locales incl. RTL), Android (Compose), iOS
+- **Clients**: Next.js web (30 locales incl. RTL), Android (Compose), iOS
   (SwiftUI), desktop (Tauri), Chrome/Firefox MV3 browser extension — every
   client with a persisted light/dark theme switch.
 
@@ -74,7 +74,7 @@ Status legend: ✅ shipped and working end-to-end · 🚧 partially shipped ·
 | 9 | **Messaging polish** (silent send, spoiler/formatting entities, custom emoji, slow mode, topics, per-user delete, cross-device draft sync) | Telegram mostly | ✅ **Shipped** — link previews, invite links, per-conversation + server-side post drafts, public group @handles + join-by-handle, chat archive, chat folders, sticker packs (018); spoiler/bold/italic/mono/link message entities, GIF catalog + gif/contact messages, channel discussion groups + stats, anonymous admins, screenshot alerts, chat export (019). Slow mode (enforced on send, owner/admin exempt) and forum topics shipped in 014. |
 | 10 | **Stories extras** (highlights, close-friends audience, composer tools) | FB, IG, WA | ✅ **Shipped** — close-friends audience, story reactions/replies, story highlights (story_highlights + /api/highlights), and the text-story composer (story_background/story_stickers/story_music, 017). |
 | 11 | **Privacy suite depth** (custom audience lists, restricted list, profile lock, message-request inbox, mutes/word filters, presence/phone granularity, account self-destruct TTL) | FB, X, Telegram, imo | ✅ **Shipped** — blocks, audience selector, message-request inbox, follow requests, mutes, word filters, restricted list (014); presence/phone privacy matrix, data-saver, safety-mode flag and account TTL worker (018). |
-| 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade) | imo, WhatsApp | 🚧 8 locales + data-saver flag shipped (018); simulcast comes with the SFU scale-out (C++ RTP forwarder). |
+| 12 | **Locale expansion to 30+** and low-bandwidth call profile (simulcast, audio-only downgrade) | imo, WhatsApp | ✅ 30 web locales shipped (en fallback, `apps/web/src/lib/i18n.tsx`); data-saver flag (018) shipped. Audio-only downgrade done (gap-pack-9). Simulcast ships with the C++ SFU scale-out. |
 
 ## 3. Gap-pack-4 (migration 019) — shipped 2026-08-31
 
