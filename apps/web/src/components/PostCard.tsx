@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Post, Comment, PollOption, Conversation, Album } from "@/lib/types";
 import { REACTIONS } from "@/lib/types";
 import CommunityNotes from "@/components/CommunityNotes";
+import EmojiText from "@/components/EmojiText";
 
 export default function PostCard({ post, onChanged }: { post: Post; onChanged?: () => void }) {
   const { t } = useI18n();
@@ -248,7 +249,7 @@ export default function PostCard({ post, onChanged }: { post: Post; onChanged?: 
           </div>
         </div>
       ) : (
-        post.body && <p style={{ whiteSpace: "pre-wrap" }}>{post.body}</p>
+        post.body && <p style={{ whiteSpace: "pre-wrap" }}><EmojiText text={post.body} /></p>
       )}
       {poll.length > 0 && (
         <div className="col" style={{ marginTop: 8 }}>

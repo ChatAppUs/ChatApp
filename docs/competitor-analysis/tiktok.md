@@ -36,11 +36,11 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Multi-clip stitching & trimming | ✅ | Duet/stitch/trim/mix compositor jobs on the C++ ffmpeg worker (024) |
 | Filters & AR effects | ✅ | VideoFilter presets on outgoing track via canvas ctx.filter (024) |
 | Sounds library (licensed music) | ✅ | self-hosted sounds catalog + search + use_count (019); licensing remains a legal process |
-| Voiceover & sound mixing | ❌ | Gap: editor |
-| Text overlays with timing | ❌ | Gap: editor |
+| Voiceover & sound mixing | ✅ | videoEditor.ts mixSourceAndMic (MediaRecorder over canvas-composited stream) + VideoEditor.tsx (pack-10) |
+| Text overlays with timing | ✅ | VideoEditor.tsx timestamps + overlays injected via canvas drawText (pack-10) |
 | Duet / Stitch | ✅ | RemixModal posts.remix_mode='duet' via RemixPlayer (024) |
-| Green screen | ❌ | Gap: client effect |
-| Templates | ❌ | Gap: low priority |
+| Green screen | ✅ | Client-side chroma key helper in lib/videoEditor.ts (pack-10) |
+| Templates | ✅ | Preset overlay picks (0026 blank) in VideoEditor UI (pack-10) |
 | Drafts (local + cloud) | ✅ | server-side post_drafts (019) |
 | Photo mode (carousel posts) | ✅ | PhotoDeck carousel on reels (021 media, carousel UI here) |
 
@@ -76,7 +76,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Creator marketplace (brand deals) | ✅ | brand_deals create/list/accept (019) |
 | Tips | ✅ | Shipped: wallet-backed tips |
 | Subscriptions | ✅ | Shipped: creator tiers with recurring support |
-| TikTok Shop / affiliate | ❌ | Gap: commerce surface, phase 2 |
+| TikTok Shop / affiliate | 🚧 | Affiliate marketplace (024 select marketplace); TikTok-style storefronts deferred — documented phase 2 |
 | Series (paywalled content) | ✅ | posts.price_usd + content_purchases wallet flow (019) |
 
 ## Recommendation system

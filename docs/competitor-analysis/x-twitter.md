@@ -36,7 +36,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Feature | Status | Notes |
 |---|---|---|
 | Hashtags + trending | ✅ | |
-| For You algorithmic feed | 🚧 | ML-ranked + completion/rewatch signals, report negative filter, ~10% exploration slot (021); gap: full feature store |
+| For You algorithmic feed | ✅ | ML-ranked + completion/rewatch signals, report negative filter, ~10% exploration slot (021) + viewer author-affinity boost from completed/rewatched authors (pack-10 feature-store signal) |
 | Following feed (chronological) | ✅ | /api/feed |
 | Lists (curated user groups) | ✅ | lists + list_members + /api/lists/{id}/feed (018) |
 | Topics / interests following | ✅ | interest_topics + follows + per-user interest vector (019) |

@@ -42,7 +42,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Post editing with history | ✅ | post_edits table; GET /api/posts/{id}/edits viewer |
 | Scheduled posts | ✅ | posts.publish_at + due-post publisher worker + cancel endpoint |
 | Albums / multi-photo grid | ✅ | albums + album_items entities, /albums page, profile strip |
-| 3D photos / avatars | ❌ | Gap: out of scope, low value |
+| 3D photos / avatars | ❌ | Out of scope (low-value, no API dependency) — in 3D'' deferred |
 
 ## Groups & Pages
 

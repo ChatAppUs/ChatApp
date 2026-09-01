@@ -5,6 +5,7 @@ import { api, uploadMedia } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Media } from "@/lib/types";
 import CameraRecorder from "@/components/CameraRecorder";
+import VideoEditor from "@/components/VideoEditor";
 
 function mediaKind(file: File): Media["kind"] {
   if (file.type.startsWith("video/")) return "video";
@@ -231,10 +232,16 @@ export default function Composer({
           <span className="col" style={{ gap: 4 }}>
             <CameraRecorder onCaptured={(f) => setCaptured((prev) => [...prev, f])} />
             {captured.length > 0 && (
-              <div className="row" style={{ gap: 6 }}>
-                <span className="muted small">📹 {captured.length}</span>
-                <button className="secondary small" onClick={() => setCaptured([])}>{t("remove")}</button>
-              </div>
+              <>
+                <div className="row" style={{ gap: 6 }}>
+                  <span className="muted small">📹 {captured.length}</span>
+                  <button className="secondary small" onClick={() => setCaptured([])}>{t("remove")}</button>
+                </div>
+                {captured.at(-1) && (
+                  <VideoEditor source={captured[captured.length - 1]}
+                               onExported={(f) => setCaptured((prev) => [...prev.filter(x => x !== prev[prev.length - 1]), f])} />
+                )}
+              </>
             )}
           </span>
         )}

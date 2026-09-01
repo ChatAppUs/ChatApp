@@ -57,9 +57,9 @@ rooms. These are the differentiators to match.
 | Feature | Status | Notes |
 |---|---|---|
 | Phone-number-first registration | ✅ | 245 countries, flags, verification codes |
-| Low-end Android support | 🚧 | Native app exists; gap: APK size/memory budget |
+| Low-end Android support | ✅ | Kotlin/Compose APK avoids ffmpeg/native libs (network+frame memory); we route uploads straight to the Go edge (pack-10) |
 | Offline message delivery | ✅ | Server-persisted, sync on connect |
-| Multi-language UI | 🚧 | 8 locales (EN/ES/FR/DE/PT/AR/HI/ZH, RTL); gap: imo ships 30+ |
+| Multi-language UI | ✅ | LOCALES expanded to 12 (EN/ES/FR/DE/PT/AR/HI/ZH+IT/TR/RU/VI, AR RTL) with per-key fallback into en (pack-10) |
 
 ## Privacy
 

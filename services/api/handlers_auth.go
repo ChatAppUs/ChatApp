@@ -354,8 +354,8 @@ type publicUser struct {
 	KYCStatus    string          `json:"kyc_status,omitempty"`
 	CreatedAt    string          `json:"created_at"`
 	// Client-facing wellbeing/lock flags (Telegram app lock, screen time).
-	AppLock      bool            `json:"app_lock_enabled"`
-	ScreenLimit  int             `json:"screen_time_limit_minutes"`
+	AppLock     bool `json:"app_lock_enabled"`
+	ScreenLimit int  `json:"screen_time_limit_minutes"`
 }
 
 func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {

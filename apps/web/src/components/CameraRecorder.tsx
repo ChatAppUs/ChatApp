@@ -23,7 +23,7 @@ export default function CameraRecorder({ onCaptured }: { onCaptured: (file: File
   const start = async () => {
     setError("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { noiseSuppression: true, echoCancellation: true } });
       if (previewRef.current) previewRef.current.srcObject = stream;
       const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
         ? "video/webm;codecs=vp9,opus"

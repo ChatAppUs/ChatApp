@@ -191,6 +191,29 @@ func (a *App) handleSetMiniApp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
+// GET /api/miniapps — public directory of bot-owned mini apps (Telegram Mini
+// Apps launcher).
+func (a *App) handleListMiniApps(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.db.Query(r.Context(),
+		`SELECT ma.id::text, u.username, ma.title, ma.url, ma.icon_url
+		 FROM mini_apps ma JOIN bots b ON b.id=ma.bot_id JOIN users u ON u.id=b.user_id
+		 WHERE b.active ORDER BY ma.created_at DESC LIMIT 200`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	defer rows.Close()
+	apps := []map[string]any{}
+	for rows.Next() {
+		var id, bot, title, url, icon string
+		if err := rows.Scan(&id, &bot, &title, &url, &icon); err != nil {
+			continue
+		}
+		apps = append(apps, map[string]any{"id": id, "bot": bot, "title": title, "url": url, "icon_url": icon})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"apps": apps})
+}
+
 // ---- bot API (token-authed) ----
 
 // botFromToken resolves a bot by its API token (hash-compared).

@@ -83,7 +83,12 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 		          AVG(not_interested::int::float8) AS not_interested_rate,
 		          COUNT(*) AS signals
 		   FROM reel_watch_events GROUP BY post_id
-		 )
+		 ),
+		 preferred AS (
+		  SELECT DISTINCT p2.author_id
+		  FROM reel_watch_events rw JOIN posts p2 ON p2.id=rw.post_id
+		  WHERE rw.user_id=$1 AND (rw.completed OR rw.rewatched)
+		)
 		 SELECT p.id, p.author_id, u.display_name, u.username, u.avatar_url,
 		        p.body, p.like_count, p.comment_count, p.view_count, p.created_at,
 		        COALESCE(a.signals,0), COALESCE(a.avg_watch_pct,0), COALESCE(a.completion_rate,0), COALESCE(a.rewatch_rate,0),
@@ -91,7 +96,8 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
                         COALESCE(p.remix_mode,''), COALESCE(p.remix_of::text,'')
 		 FROM posts p
 		 JOIN users u ON u.id = p.author_id
-		 LEFT JOIN agg a ON a.post_id = p.id
+		LEFT JOIN agg a ON a.post_id = p.id
+		LEFT JOIN preferred pf ON pf.author_id = p.author_id
 		 WHERE p.type='reel' AND p.deleted_at IS NULL AND p.visibility='public'
 		   AND p.author_id <> $1
 		   AND NOT EXISTS(SELECT 1 FROM user_mutes m WHERE m.user_id=$1 AND m.muted_id=p.author_id)
@@ -106,6 +112,7 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 		   * (1.0 + COALESCE(a.completion_rate,0))
 		   * (1.0 + COALESCE(a.rewatch_rate,0)*2)
 		   / (1.0 + COALESCE(a.not_interested_rate,0)*4)
+		   * (CASE WHEN pf.author_id IS NOT NULL THEN 1.5 ELSE 1.0 END)
 		   / (1.0 + EXTRACT(EPOCH FROM (now()-p.created_at))/86400.0)
 		 ) DESC
 		 LIMIT $2 OFFSET $3`, uid, limit, offset)

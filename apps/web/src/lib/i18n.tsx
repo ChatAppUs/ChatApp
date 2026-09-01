@@ -11,6 +11,10 @@ export const LOCALES = [
   { code: "ar", name: "العربية", dir: "rtl" },
   { code: "hi", name: "हिन्दी", dir: "ltr" },
   { code: "zh", name: "中文", dir: "ltr" },
+  { code: "it", name: "Italiano", dir: "ltr" },
+  { code: "tr", name: "Türkçe", dir: "ltr" },
+  { code: "ru", name: "Русский", dir: "ltr" },
+  { code: "vi", name: "Tiếng Việt", dir: "ltr" },
 ] as const;
 
 export type LocaleCode = (typeof LOCALES)[number]["code"];
@@ -465,6 +469,11 @@ const extras: Record<LocaleCode, Dict> = {
     notHelpful: "Not helpful",
     noNotes: "No notes yet.",
     cameraUnavailable: "Camera unavailable",
+    voiceover: "🎙 Voiceover",
+    template: "🎬 Template",
+    overlayText: "Overlay text",
+    greenScreen: "🟩 Green screen",
+    exportClip: "Export clip",
     recordClip: "🎥 Record clip",
     rec: "● REC", stopAndAttach: "■ Stop & attach", remove: "Remove",
     photoMode: "Photo mode",
@@ -1047,6 +1056,7 @@ const extras: Record<LocaleCode, Dict> = {
     noMoments: "还没有时刻。",
     curatedBy: "策划",
   },
+  it: {},  tr: {},  ru: {},  vi: {}, // fall back to en via t()
 };
 
 const DICTS: Record<LocaleCode, Dict> = {
@@ -1058,6 +1068,10 @@ const DICTS: Record<LocaleCode, Dict> = {
   ar: { ...ar, ...extras.ar },
   hi: { ...hi, ...extras.hi },
   zh: { ...zh, ...extras.zh },
+  it: { ...en, ...extras.en },
+  tr: { ...en, ...extras.en },
+  ru: { ...en, ...extras.en },
+  vi: { ...en, ...extras.en },
 };
 
 interface I18nCtx {

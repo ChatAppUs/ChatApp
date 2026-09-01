@@ -258,14 +258,14 @@ func (a *App) handleMarketplaceBuy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var affAuthor, fee, affCut string
-	_ = a.db.QueryRow(r.Context(), `SELECT ($1::numeric * ` + shopPlatformFee + `)::text`,
+	_ = a.db.QueryRow(r.Context(), `SELECT ($1::numeric * `+shopPlatformFee+`)::text`,
 		price).Scan(&fee)
 	if req.ViaPostID != "" {
 		_ = a.db.QueryRow(r.Context(),
 			`SELECT author_id::text FROM posts WHERE id=$1::uuid AND deleted_at IS NULL`,
 			req.ViaPostID).Scan(&affAuthor)
 		_ = a.db.QueryRow(r.Context(),
-			`SELECT ($1::numeric * ` + shopPlatformFee + ` * 0.4)::text`, price).Scan(&affCut)
+			`SELECT ($1::numeric * `+shopPlatformFee+` * 0.4)::text`, price).Scan(&affCut)
 	}
 	var sellerGets, platformGets string
 	_ = a.db.QueryRow(r.Context(),
@@ -316,12 +316,12 @@ func (a *App) handleListOrders(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type order struct {
-		ID       string    `json:"id"`
-		Listing  string    `json:"listing_id"`
-		Title    string    `json:"title"`
-		Amount   string    `json:"amount_usd"`
-		Status   string    `json:"status"`
-		Created  time.Time `json:"created_at"`
+		ID      string    `json:"id"`
+		Listing string    `json:"listing_id"`
+		Title   string    `json:"title"`
+		Amount  string    `json:"amount_usd"`
+		Status  string    `json:"status"`
+		Created time.Time `json:"created_at"`
 	}
 	out := []order{}
 	for rows.Next() {
@@ -645,9 +645,9 @@ func (a *App) handleLiveCohost(w http.ResponseWriter, r *http.Request) {
 // be validated non-interactively.
 func (a *App) handleGroupScaleReport(w http.ResponseWriter, r *http.Request) {
 	type grp struct {
-		ID       string `json:"id"`
-		Title    string `json:"title"`
-		Members  int    `json:"members"`
+		ID      string `json:"id"`
+		Title   string `json:"title"`
+		Members int    `json:"members"`
 	}
 	rows, err := a.db.Query(r.Context(),
 		`SELECT c.id::text, c.title, COUNT(m.user_id)

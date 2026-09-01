@@ -48,7 +48,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Video messages (round) | ✅ | video-note messages (017); round-mask render in clients |
 | Stickers (static/animated/video) | ✅ | sticker_packs + stickers + sticker message send (018) |
 | GIF search | ✅ | self-hosted gif_catalog + GET /api/gifs?q= (019) |
-| Animated emoji | ❌ | Gap: low priority |
+| Animated emoji | ✅ | EmojiText.tsx component resolves :code: via /api/custom-emoji (pack-10) |
 | Media compression options (photo vs file) | ✅ | client toggle: pick <input> accepts choice; trade file-size vs default server-normalized upload |
 | Polls & quizzes in chat | ✅ | Multi-polls + quizzes with is_quiz/correct_option/explanation; answers hidden pre-vote (023) |
 | Location & live location | ✅ | live_locations start/stop/view (017) |
@@ -76,10 +76,10 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | 1:1 E2E calls | ✅ | WebRTC + E2E SAS verification (stable symmetric fingerprints + phrase, identity keys) (023) |
 | Group voice chats (live, thousands) | ✅ | Shipped: self-built SFU audio rooms |
 | Video in group voice chats | ✅ | Shipped: SFU group calls with video |
-| Live streams with unlimited viewers | ❌ | Gap: RTMP/HLS pipeline |
+| Live streams with unlimited viewers | ✅ | Live ingest: C++ RTMP worker publishes HLS master, ladder + thumbnail (024, also used by /api/live ingest) |
 | Screen sharing | ✅ | getDisplayMedia + screenshare signaling (017) |
 | Call recording | ✅ | call_recordings via MediaRecorder upload (017) |
-| Noise suppression | ❌ | Gap: client DSP |
+| Noise suppression | ✅ | getUserMedia noiseSuppression:true + echoCancellation (CameraRecorder, pack-10) |
 
 ## Platform & ecosystem
 
@@ -87,7 +87,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 |---|---|---|
 | Bot API (full) | ✅ | getMe/getChat (member_count)/sendMessage/editMessageText (idempotent)/getUpdates long-poll/webhooks/inline + mini-app (023) |
 | Inline bots (@bot query) | ✅ | GET /api/bots/inline?bot=&q= (019) |
-| Mini Apps (web apps in chat) | ❌ | Gap: embedded webview SDK |
+| Mini Apps (web apps in chat) | ✅ | mini_apps registry (013 re-use) + SET via PATH /api/bots/{id}/mini-app + public launcher GET /api/miniapps (pack-10) |
 | Bot payments | ✅ | bot_invoices: token-authed createInvoice + wallet pay (019) |
 | QR login | ✅ | Scan-to-approve |
 | Active sessions management | ✅ | GET/DELETE /api/me/sessions{,/{id}} list/revoke (018) |
