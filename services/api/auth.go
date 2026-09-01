@@ -126,6 +126,61 @@ func sha256hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ---- authn delegation layer (Rust P0 surface) ----
+//
+// When AUTHN_SERVICE_URL is configured the Rust authn service owns the
+// trust-critical crypto (RUST_CONVERSION_PLAN P0 surface). Local
+// implementations stay available as the fail-open fallback so the login
+// plane survives an unreachable service, exactly like checkTOTP's
+// delegation.
+func (a *App) passwordHash(pw string) (string, error) {
+	if a.authn != nil {
+		if h, ok := a.authn.passwordHash(pw); ok {
+			return h, nil
+		}
+	}
+	return hashPassword(pw)
+}
+
+func (a *App) passwordVerify(pw, hash string) bool {
+	if a.authn != nil {
+		if ok, done := a.authn.passwordVerify(pw, hash); done {
+			return ok
+		}
+	}
+	return verifyPassword(pw, hash)
+}
+
+func (a *App) mintClaims(claims Claims) (string, error) {
+	if a.authn != nil {
+		if tok, ok := a.authn.jwtMint(claims); ok {
+			return tok, nil
+		}
+	}
+	return signJWT(a.cfg.JWTSecret, claims)
+}
+
+func (a *App) parseClaims(token string) (*Claims, error) {
+	if a.authn != nil {
+		if cl, ok := a.authn.jwtVerify(token); ok {
+			if cl == nil {
+				return nil, errors.New("bad token")
+			}
+			return cl, nil
+		}
+	}
+	return parseJWT(a.cfg.JWTSecret, token)
+}
+
+func (a *App) randomNum(n int) (string, error) {
+	if a.authn != nil {
+		if tok, ok := a.authn.randomToken(n); ok {
+			return tok, nil
+		}
+	}
+	return randomToken(n)
+}
+
 // ---- Auth middleware ----
 
 type ctxKey string
@@ -139,7 +194,7 @@ func (a *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		claims, err := parseJWT(a.cfg.JWTSecret, strings.TrimPrefix(h, "Bearer "))
+		claims, err := a.parseClaims(strings.TrimPrefix(h, "Bearer "))
 		if err != nil || claims.Type != "access" || claims.Scope == "admin" {
 			// Admin-scoped tokens are never accepted on user routes; the
 			// admin system is a fully separate plane.
@@ -173,14 +228,14 @@ func (a *App) bootstrapFirstAdmin(ctx context.Context, userID string) {
 
 func (a *App) issueTokens(ctx context.Context, userID, userAgent, ip string) (map[string]any, error) {
 	now := time.Now()
-	access, err := signJWT(a.cfg.JWTSecret, Claims{
+	access, err := a.mintClaims(Claims{
 		Sub: userID, Type: "access",
 		Iat: now.Unix(), Exp: now.Add(a.cfg.AccessTokenTTL).Unix(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	refresh, err := randomToken(32)
+	refresh, err := a.randomNum(32)
 	if err != nil {
 		return nil, err
 	}

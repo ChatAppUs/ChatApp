@@ -58,7 +58,7 @@ func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		claims, err := parseJWT(a.cfg.JWTSecret, strings.TrimPrefix(h, "Bearer "))
+		claims, err := a.parseClaims(strings.TrimPrefix(h, "Bearer "))
 		if err != nil || claims.Type != "access" || claims.Scope != "admin" {
 			writeErr(w, http.StatusUnauthorized, "admin session required")
 			return
@@ -97,7 +97,7 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, password_hash, status, totp_secret, totp_enabled FROM users
 		 WHERE username = $1 OR email = lower($1)`, id).
 		Scan(&userID, &hash, &status, &totpSecret, &totpEnabled)
-	if err != nil || !verifyPassword(req.Password, hash) {
+	if err != nil || !a.passwordVerify(req.Password, hash) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -122,7 +122,7 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	now := time.Now()
-	access, err := signJWT(a.cfg.JWTSecret, Claims{
+	access, err := a.mintClaims(Claims{
 		Sub: userID, Type: "access", Scope: "admin",
 		Iat: now.Unix(), Exp: now.Add(adminTokenTTL).Unix(),
 	})

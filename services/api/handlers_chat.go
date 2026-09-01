@@ -87,7 +87,7 @@ var upgrader = websocket.Upgrader{}
 
 func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
-	claims, err := parseJWT(a.cfg.JWTSecret, token)
+	claims, err := a.parseClaims(token)
 	if err != nil || claims.Type != "access" {
 		writeErr(w, http.StatusUnauthorized, "invalid token")
 		return

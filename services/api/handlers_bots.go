@@ -49,12 +49,12 @@ func (a *App) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 
 	// Bot accounts use an unguessable random password: bots never log in
 	// through the user auth plane, only via their API token.
-	rawPw, err := randomToken(32)
+	rawPw, err := a.randomNum(32)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "bot creation failed")
 		return
 	}
-	pwHash, err := hashPassword(rawPw)
+	pwHash, err := a.passwordHash(rawPw)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "bot creation failed")
 		return
@@ -67,7 +67,7 @@ func (a *App) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "username already taken")
 		return
 	}
-	token, err := randomToken(24)
+	token, err := a.randomNum(24)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "bot creation failed")
 		return

@@ -26,6 +26,17 @@ func generateTOTPSecret() (string, error) {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf), nil
 }
 
+// generateTOTP prefers the delegated Rust implementation so the
+// secret-generation RNG sits inside the authn boundary when available.
+func (a *App) generateTOTP() (string, error) {
+	if a.authn != nil {
+		if s, ok := a.authn.totpGenerate(); ok {
+			return s, nil
+		}
+	}
+	return generateTOTPSecret()
+}
+
 func totpCode(secret string, counter uint64) (string, error) {
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
 	if err != nil {
@@ -61,13 +72,18 @@ func verifyTOTP(secret, code string, at time.Time) bool {
 	return false
 }
 
-// checkTOTP verifies a TOTP code. When the Rust security service is
-// configured it owns this crypto (same delegation pattern as media signing);
-// the local RFC 6238 implementation remains as the fallback so the login
-// plane stays up if the security service is unreachable.
+// checkTOTP verifies a TOTP code. When the Rust authn service is configured
+// it owns this crypto (P0 delegation per RUST_CONVERSION_PLAN), followed by
+// the older security-service delegation, then the local RFC 6238
+// implementation — the login plane stays up in every chain of failures.
 func (a *App) checkTOTP(secret, code string) bool {
 	if len(code) != 6 {
 		return false
+	}
+	if a.authn != nil {
+		if remote, ok := a.authn.totpVerify(secret, code); ok {
+			return remote
+		}
 	}
 	if a.cfg.SecuritySvcURL != "" {
 		if remote, ok := a.totpRemote(secret, code); ok {
@@ -106,7 +122,7 @@ func (a *App) totpRemote(secret, code string) (bool, bool) {
 
 func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
-	secret, err := generateTOTPSecret()
+	secret, err := a.generateTOTP()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to generate secret")
 		return

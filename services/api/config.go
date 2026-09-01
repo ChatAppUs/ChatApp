@@ -39,6 +39,10 @@ type Config struct {
 	ClusterMediaURL       string
 	ClusterSecret         string
 	RelayURL              string // C++ realtime relay control plane
+	CountersURL           string // C++ counters engine control plane
+	CountersSecret        string
+	AuthnURL              string // Rust authn service control plane
+	AuthnSecret           string
 	SFUInternalURL        string
 	SFUPublicURL          string
 	SFUHost               string
@@ -122,6 +126,10 @@ func loadConfig() Config {
 		ClusterMediaURL: os.Getenv("CLUSTER_MEDIA_URL"),
 		ClusterSecret:   os.Getenv("CLUSTER_SECRET"),
 		RelayURL:        os.Getenv("REALTIME_RELAY_URL"),
+		CountersURL:     os.Getenv("COUNTERS_URL"),
+		AuthnURL:        os.Getenv("AUTHN_SERVICE_URL"),
+		AuthnSecret:     os.Getenv("AUTHN_SECRET"),
+		CountersSecret:  getenv("COUNTERS_SECRET", "dev-counters-secret"),
 		SFUInternalURL:  getenv("SFU_INTERNAL_URL", "http://localhost:8095"),
 		SFUPublicURL:    getenv("SFU_PUBLIC_URL", "ws://localhost:8095/ws"),
 		SFUHost:         getenv("SFU_HOST", "localhost"),

@@ -13,7 +13,7 @@ const qrLoginTTL = 2 * time.Minute
 
 // POST /api/auth/qr/new — unauthenticated. Returns the token to encode.
 func (a *App) handleQRLoginNew(w http.ResponseWriter, r *http.Request) {
-	token, err := randomToken(32)
+	token, err := a.randomNum(32)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create token")
 		return

@@ -316,11 +316,26 @@ NULLIF($11,'')::uuid,NULLIF($20,''),$12,$13,$14,$15,$16,$17,$18,NULLIF($19,'')::
 		}
 	}
 	for _, tag := range extractHashtags(req.Body) {
-		if _, err := tx.Exec(r.Context(),
-			`INSERT INTO hashtags (tag, use_count, last_used) VALUES ($1,1,now())
-                         ON CONFLICT (tag) DO UPDATE SET use_count = hashtags.use_count + 1, last_used = now()`, tag); err != nil {
-			writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
-			return
+		// Trending counts route through the C++ counters engine when it is
+		// configured (it flushes deltas back to the hashtags table);
+		// otherwise the SQL upsert path persists them directly.
+		// The hashtag row itself always has to exist: post_hashtags.tag is a
+		// foreign key to hashtags.tag.
+		useEngine := a.counters != nil && a.counters.incr(r.Context(), "hashtag", tag, 1)
+		if useEngine {
+			if _, err := tx.Exec(r.Context(),
+				`INSERT INTO hashtags (tag, use_count, last_used) VALUES ($1,0,now())
+                            ON CONFLICT (tag) DO NOTHING`, tag); err != nil {
+				writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
+				return
+			}
+		} else {
+			if _, err := tx.Exec(r.Context(),
+				`INSERT INTO hashtags (tag, use_count, last_used) VALUES ($1,1,now())
+                            ON CONFLICT (tag) DO UPDATE SET use_count = hashtags.use_count + 1, last_used = now()`, tag); err != nil {
+				writeErr(w, http.StatusInternalServerError, "failed to index hashtag")
+				return
+			}
 		}
 		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO post_hashtags (post_id, tag) VALUES ($1,$2) ON CONFLICT DO NOTHING`, postID, tag); err != nil {
@@ -598,9 +613,13 @@ func (a *App) handleDeletePost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handlePostView(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
-		`UPDATE posts SET view_count = view_count + 1 WHERE id = $1 AND deleted_at IS NULL`,
-		r.PathValue("id"))
+	// Per-view UPDATEs are the classic write-hot path: route the count to the
+	// counters engine (which flushes deltas back in bulk) when configured.
+	if a.counters == nil || !a.counters.incr(r.Context(), "view", r.PathValue("id"), 1) {
+		_, _ = a.db.Exec(r.Context(),
+			`UPDATE posts SET view_count = view_count + 1 WHERE id = $1 AND deleted_at IS NULL`,
+			r.PathValue("id"))
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

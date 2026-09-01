@@ -21,6 +21,9 @@ C++ footprint (all shipped, `-O3 -std=c++17`, zero dependencies, clean
 - `services/transcode/main.cpp` — ffmpeg HLS ladder worker: polls the API's
   internal claim endpoint (SKIP LOCKED jobs), renders 240p→1080p renditions +
   thumbnail into the media volume, reports the ladder back.
+- `services/counters/main.cpp` — trending/counters engine: hot in-memory hash
+  tables for hashtag views, post view deltas, and live-room viewer peaks,
+  drained by the Go `/internal/counters/flush` loop.
 
 ## Conversion status
 
@@ -30,7 +33,7 @@ C++ footprint (all shipped, `-O3 -std=c++17`, zero dependencies, clean
 | 2 | Presence/typing fanout (same file, `handleWS` broadcast paths) | Same `services/realtime` relay | ✅ **Shipped** — same publish path; presence/typing never queue behind persistence. |
 | 3 | `services/sfu/` (shipped in Go/Pion: signaling + embedded STUN/TURN + HMAC room tickets) | Port the RTP/RTCP forwarding hot loop to C++ | 🚧 Roadmap (P1) — the Go/Pion SFU closes the meetings/group-call/live gap functionally. When a single room's packet rate saturates a core, the forwarding plane (RTP relay, NACK/PLI handling, simulcast layer selection) ports to a C++ io_uring forwarder while Go keeps signaling — same split as the media edge. |
 | 4 | — | `services/transcode/` C++ worker (ffmpeg HLS ladder) | ✅ **Shipped** — closes the #1 media gap: HLS/ABR ladder, thumbnails; jobs queue in Postgres with SKIP LOCKED claiming via `/internal/transcode/claim` + `/complete`. |
-| 5 | — | Trending/counter engine inside `services/realtime` or standalone | ❌ Roadmap (P2) — hashtag trending, reel view counts and live viewer counts as hot in-memory counters flushed periodically to Postgres. |
+| 5 | — | Trending/counter engine standalone `services/counters` | ✅ **Shipped** — hot in-memory counters (hashtag trending, post view deltas, live-room viewer peaks) flushed on a timer to Postgres; `POST /counters {hashtag,post_id?} /live-view` + `GET /trending` + `GET /flush` (Go API drains via `/internal/counters/flush` + FLUSH_SECRET). Rehash-only reallocation, zero-alloc overflow tags, nanosecond timers — same hot-path discipline as the epoll relay. The API routes trending through it when `COUNTERS_URL` is set; SQL upsert fallback keeps behavior identical when not. |
 
 ## What must NOT be converted
 

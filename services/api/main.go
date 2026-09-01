@@ -51,7 +51,9 @@ func main() {
 	}
 	defer db.Close()
 
-	app := &App{cfg: cfg, db: db, hub: newHub(), cache: newCache(cfg.RedisURL)}
+	app := &App{cfg: cfg, db: db, hub: newHub(), cache: newCache(cfg.RedisURL),
+		authn:    newAuthnClient(cfg.AuthnURL, cfg.AuthnSecret),
+		counters: newCounters(cfg.CountersURL, cfg.CountersSecret)}
 	app.startCluster()
 	app.startScheduler()
 	app.startExpirySweeper()
@@ -671,6 +673,7 @@ func main() {
 	// internal control plane (transcode worker; shared-secret bearer)
 	mux.HandleFunc("POST /internal/transcode/claim", app.requireInternal(app.handleTranscodeClaim))
 	mux.HandleFunc("POST /internal/transcode/complete", app.requireInternal(app.handleTranscodeComplete))
+	mux.HandleFunc("POST /internal/counters/flush", app.requireInternal(app.handleCountersFlush))
 
 	// admin (role-gated)
 	mux.HandleFunc("GET /api/admin/stats", app.requireAdmin("superadmin", "moderator", "support", "finance", "ads_reviewer")(app.handleAdminStats))

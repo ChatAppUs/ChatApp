@@ -175,7 +175,7 @@ func (a *App) handleLiveIngestStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only the host of a live room can ingest")
 		return
 	}
-	key, err := randomToken(24)
+	key, err := a.randomNum(24)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "key generation failed")
 		return
@@ -537,7 +537,7 @@ func (a *App) handleVerifyPassword(w http.ResponseWriter, r *http.Request) {
 	var hash string
 	err := a.db.QueryRow(r.Context(),
 		`SELECT password_hash FROM users WHERE id=$1`, userIDFrom(r)).Scan(&hash)
-	if err != nil || !verifyPassword(req.Password, hash) {
+	if err != nil || !a.passwordVerify(req.Password, hash) {
 		writeErr(w, http.StatusUnauthorized, "password mismatch")
 		return
 	}

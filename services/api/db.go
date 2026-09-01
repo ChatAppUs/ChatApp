@@ -12,12 +12,14 @@ import (
 )
 
 type App struct {
-	cfg   Config
-	db    *pgxpool.Pool
-	hub   *Hub
-	smtp  *Mailer
-	otp   *OTPService
-	cache *cache
+	cfg      Config
+	db       *pgxpool.Pool
+	hub      *Hub
+	smtp     *Mailer
+	otp      *OTPService
+	cache    *cache
+	counters *countersClient
+	authn    *authnClient
 
 	vapidKey *ecdsa.PrivateKey
 }

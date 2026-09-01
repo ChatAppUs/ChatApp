@@ -78,7 +78,7 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if req.Locale == "" {
 		req.Locale = "en"
 	}
-	hash, err := hashPassword(req.Password)
+	hash, err := a.passwordHash(req.Password)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "hashing failed")
 		return
@@ -125,7 +125,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, password_hash, status, totp_secret, totp_enabled FROM users
 		 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
 		Scan(&userID, &hash, &status, &totpSecret, &totpEnabled)
-	if errors.Is(err, pgx.ErrNoRows) || !verifyPassword(req.Password, hash) {
+	if errors.Is(err, pgx.ErrNoRows) || !a.passwordVerify(req.Password, hash) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -209,7 +209,7 @@ func (a *App) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "if the email exists, a reset link was sent"})
 		return
 	}
-	token, err := randomToken(32)
+	token, err := a.randomNum(32)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "token generation failed")
 		return
@@ -255,7 +255,7 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid or expired reset token")
 		return
 	}
-	hash, err := hashPassword(req.NewPassword)
+	hash, err := a.passwordHash(req.NewPassword)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "hashing failed")
 		return

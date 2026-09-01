@@ -64,6 +64,37 @@ func hashOTP(salt, code string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// otpMake is the delegated generator: when the Rust authn service is
+// configured it owns the code-generation RNG + hash (same distribution
+// contract); local implementations are the fail-open fallback.
+func (a *App) otpMake() (code, salt, hash string, err error) {
+	if a.authn != nil {
+		if c, s, h, ok := a.authn.otpGenerate(); ok {
+			return c, s, h, nil
+		}
+	}
+	code, err = generateOTP()
+	if err != nil {
+		return "", "", "", err
+	}
+	salt, err = randomToken(8)
+	if err != nil {
+		return "", "", "", err
+	}
+	return code, salt, hashOTP(salt, code), nil
+}
+
+// otpHashOf computes the verifier hash, delegating to the Rust service
+// when one is configured so both halves hash in the same boundary.
+func (a *App) otpHashOf(salt, code string) string {
+	if a.authn != nil {
+		if h, ok := a.authn.otpHash(salt, code); ok {
+			return h
+		}
+	}
+	return hashOTP(salt, code)
+}
+
 // SendCode generates, stores and queues a code. Returns the plaintext code
 // only in development mode so the flow is testable end-to-end without a
 // carrier link.
@@ -78,18 +109,14 @@ func (s *OTPService) SendCode(phoneE164 string) (devCode string, err error) {
 	if recent {
 		return "", errOTPThrottled
 	}
-	code, err := generateOTP()
-	if err != nil {
-		return "", err
-	}
-	salt, err := randomToken(8)
+	code, salt, hash, err := s.app.otpMake()
 	if err != nil {
 		return "", err
 	}
 	if _, err := s.app.db.Exec(ctx,
 		`INSERT INTO phone_verifications (phone_e164, code_hash, salt, expires_at)
 		 VALUES ($1,$2,$3, now() + interval '10 minutes')`,
-		phoneE164, hashOTP(salt, code), salt); err != nil {
+		phoneE164, hash, salt); err != nil {
 		return "", err
 	}
 	if err := s.gateway.Deliver(ctx, phoneE164,
@@ -115,7 +142,7 @@ func (s *OTPService) CheckCode(phoneE164, code string) (bool, error) {
 			 WHERE phone_e164=$1 AND verified_at IS NULL`, phoneE164)
 		return false, nil
 	}
-	if subtle.ConstantTimeCompare([]byte(hashOTP(salt, code)), []byte(wantHash)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(s.app.otpHashOf(salt, code)), []byte(wantHash)) != 1 {
 		_, _ = s.app.db.Exec(ctx,
 			`UPDATE phone_verifications SET attempts = attempts + 1 WHERE id=$1`, id)
 		return false, nil

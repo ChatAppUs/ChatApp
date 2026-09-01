@@ -272,8 +272,8 @@ func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	// Random, unguessable password — the account is usable via Google/passkey;
 	// the user can set a password later in settings.
-	randomPW, _ := randomToken(24)
-	hash, err := hashPassword(randomPW)
+	randomPW, _ := a.randomNum(24)
+	hash, err := a.passwordHash(randomPW)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to create account")
 		return

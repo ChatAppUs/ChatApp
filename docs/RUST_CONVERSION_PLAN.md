@@ -20,8 +20,14 @@ orchestration (JSON REST, SQL, WebSocket control plane) — converting those
 paths to Rust would add months of work with no safety gain. So the plan is
 **surgical**: convert the trust-critical core, keep the I/O shell in Go.
 
-Current Rust footprint: `services/security` (HMAC-SHA256 signing service,
-zero dependencies, std-only).
+Current Rust footprint: `services/security` (HMAC-SHA256 signing service),
+plus — new — `services/authn` (the P0 auth surface: argon2id/PHC, JWT HMAC,
+TOTP, OTP engine, CSPRNG) shipped 2026-09-01, reachable through
+`AUTHN_SERVICE_URL`.
+The API's `authn_client.go` delegates password/JWT/TOTP/OTP/CSPRNG to it with
+a fail-open local fallback. Equivalence proven by a Go-generated argon2
+cross-test vector + full-register/login/TOTP/OTP integration pass
+(`tests/authn_test.py`).
 
 ## Files to convert to Rust: 11 (≈2,600 LOC of ~7,500 in the Go API)
 

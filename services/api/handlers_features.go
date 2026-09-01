@@ -447,6 +447,12 @@ func extractHashtags(body string) []string {
 }
 
 func (a *App) handleTrending(w http.ResponseWriter, r *http.Request) {
+	// The counters engine answers trending from its in-memory 24h window when
+	// configured; fall back to the persisted table otherwise.
+	if top, ok := a.counters.topHashtags(r.Context(), 0); ok {
+		writeJSON(w, http.StatusOK, map[string]any{"trending": top})
+		return
+	}
 	rows, err := a.db.Query(r.Context(),
 		`SELECT tag, use_count FROM hashtags
 		 WHERE last_used > now() - interval '7 days'
@@ -456,13 +462,9 @@ func (a *App) handleTrending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	type tag struct {
-		Tag   string `json:"tag"`
-		Count int64  `json:"count"`
-	}
-	out := []tag{}
+	out := []trendingTag{}
 	for rows.Next() {
-		var t tag
+		var t trendingTag
 		if err := rows.Scan(&t.Tag, &t.Count); err == nil {
 			out = append(out, t)
 		}

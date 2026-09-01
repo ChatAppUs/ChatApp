@@ -61,6 +61,10 @@ services:
       SECURITY_SERVICE_URL: http://security:8090
       CLUSTER_SECRET: ${CLUSTER_SECRET:-}
       REALTIME_RELAY_URL: http://realtime:8301
+      COUNTERS_URL: http://counters:8600
+      COUNTERS_SECRET: ${COUNTERS_SECRET:-dev-counters-secret}
+      AUTHN_SERVICE_URL: http://authn:8400
+      AUTHN_SECRET: ${AUTHN_SECRET:-dev-authn-secret}
       WALLET_MASTER_SEED: ${WALLET_MASTER_SEED:-}
       WITHDRAW_AUTO_LIMIT_USD: ${WITHDRAW_AUTO_LIMIT_USD:-10000}
       WITHDRAW_AUTO_THRESHOLD: ${WITHDRAW_AUTO_THRESHOLD:-100}
@@ -130,6 +134,34 @@ services:
     depends_on:
       - api
       - media
+
+  # C++ hot-counters engine: hashtag trending, post view counts and live
+  # viewer counts in memory, flushed to Postgres via the API control plane.
+  counters:
+    build: ./services/counters
+    environment:
+      COUNTERS_PORT: "8600"
+      COUNTERS_SECRET: ${COUNTERS_SECRET:-dev-counters-secret}
+      FLUSH_URL: http://api:8080/internal/counters/flush
+      FLUSH_SECRET: ${CLUSTER_SECRET:-}
+      FLUSH_INTERVAL_MS: "15000"
+    ports:
+      - "8600:8600"
+    depends_on:
+      - api
+
+  # Rust authn service: the trust-critical crypto surface (password hashing,
+  # JWT mint/verify, TOTP, OTP engine, QR-login tokens, SFU ticket/withdrawal
+  # HMAC) behind an internal HMAC channel.
+  authn:
+    build: ./services/authn
+    environment:
+      AUTHN_PORT: "8400"
+      AUTHN_SECRET: ${AUTHN_SECRET:-dev-authn-secret}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret}
+      APP_ENV: ${APP_ENV:-development}
+    ports:
+      - "8400:8400"
 
   ml:
     build: ./services/ml

@@ -429,13 +429,23 @@ func (a *App) handleLiveRoomJoin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to join")
 		return
 	}
-	// Peak tracking: cheapest correct spot is right after membership changed.
-	a.db.Exec(r.Context(),
-		`UPDATE live_rooms SET peak_viewers = GREATEST(peak_viewers,
-		   (SELECT COUNT(*) FROM live_room_viewers WHERE room_id=$1)) WHERE id=$1`, roomID)
-	var viewers int
-	_ = a.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM live_room_viewers WHERE room_id=$1`, roomID).Scan(&viewers)
+	var viewers int64
+	// Viewer tracking routes through the counters engine when configured
+	// (peak flushes back to live_rooms.peak_viewers); SQL path otherwise.
+	if a.counters.viewer(r.Context(), roomID, "join") {
+		if v, _, ok := a.counters.viewers(r.Context(), roomID); ok {
+			viewers = v
+		}
+	} else {
+		// Peak tracking: cheapest correct spot is right after membership changed.
+		a.db.Exec(r.Context(),
+			`UPDATE live_rooms SET peak_viewers = GREATEST(peak_viewers,
+			   (SELECT COUNT(*) FROM live_room_viewers WHERE room_id=$1)) WHERE id=$1`, roomID)
+		var v int64
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT COUNT(*) FROM live_room_viewers WHERE room_id=$1`, roomID).Scan(&v)
+		viewers = v
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": roomID, "viewer_count": viewers})
 }
 
@@ -444,9 +454,17 @@ func (a *App) handleLiveRoomLeave(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("id")
 	_, _ = a.db.Exec(r.Context(),
 		`DELETE FROM live_room_viewers WHERE room_id=$1 AND user_id=$2`, roomID, userIDFrom(r))
-	var viewers int
-	_ = a.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM live_room_viewers WHERE room_id=$1`, roomID).Scan(&viewers)
+	var viewers int64
+	if a.counters.viewer(r.Context(), roomID, "leave") {
+		if v, _, ok := a.counters.viewers(r.Context(), roomID); ok {
+			viewers = v
+		}
+	} else {
+		var v int64
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT COUNT(*) FROM live_room_viewers WHERE room_id=$1`, roomID).Scan(&v)
+		viewers = v
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": roomID, "viewer_count": viewers})
 }
 

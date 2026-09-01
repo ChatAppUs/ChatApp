@@ -44,7 +44,7 @@ func (a *App) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid max_uses")
 		return
 	}
-	code, err := randomToken(9)
+	code, err := a.randomNum(9)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "invite failed")
 		return
