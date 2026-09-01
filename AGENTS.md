@@ -486,3 +486,24 @@
   + DuetStitchModal (server compositor).
 - Gotcha: sandbox had a stale /tmp/chatapp-api PID from an earlier session
   holding :8080 — always pkill by exact path AND check remaining PID holders.
+
+## Contracts discovered while testing (2026-09-01 — counters + authn shipped)
+- C++ counters engine (`services/counters`, :8600): `POST /counters` {hashtag,
+  post_id?}, `POST /live-view` {room, uid, event}, `GET /trending` (24h top-N),
+  `GET /flush` (delta drain consumed by Go /internal/counters/flush with
+  FLUSH_SECRET). Engine secrets: COUNTERS_SECRET bearer + FLUSH_SECRET. Go
+  routes through `a.counters` when COUNTERS_URL set, SQL upsert fallback
+  otherwise.
+- Rust authn (`services/authn`, :8400) = P0 crypto surface per
+  docs/RUST_CONVERSION_PLAN.md: /password/{hash,verify} (argon2id PHC,
+  time=3 mem=65536 p=2 len=32), /jwt/{mint,verify} (HS256 + exp),
+  /totp/{generate,verify} (RFC 6238 t=30, 6 digits), /otp/{generate,hash}
+  (6-digit + salt + sha256 "salt:code"), /random {bytes}, /hmac {key,message},
+  /health. Bearer via AUTHN_SECRET; JWT verification cached in small map.
+- Go integration: services/api/authn_client.go + App.authn, built by
+  newAuthnClient(cfg.AuthnURL, cfg.AuthnSecret); all crypto call sites
+  (register/login/TOTP/OTP/QR/bots/oauth/gap8) route via the delegation
+  helpers with fail-open local fallbacks.
+- json_get_num must tolerate whitespace between ':' and number (Python/Go
+  JSON encoders emit spaces).
+- tests/authn_test.py (14 checks), tests/counters_test.py (12 checks).
