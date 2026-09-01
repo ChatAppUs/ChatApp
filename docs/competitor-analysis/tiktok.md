@@ -22,7 +22,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Watch-time & completion signals | ✅ | reel_watch_events → FYP ranking; completion/rewatch drive creator RPM; reports filter the viewer's FYP; ~10% exploration slot (021) |
 | Rewatch detection | ✅ | Shipped: rewatch signals in the same event stream |
 | "Not interested" feedback | ✅ | watch signals incl. not-interested/down-weight (014/017) |
-| Following feed (video-only) | 🚧 | Gap: filter reels by follows |
+| Following feed (video-only) | ✅ | GET /api/reels?filter=following |
 | Search (video, users, sounds, hashtags) | ✅ | Users/hashtags + video search via filter:reels + sounds catalog (023) |
 | Comments with likes & replies | ✅ | Comment likes + nested reply threads; reels are posts, so reel comments included |
 | Auto-captions | ✅ | Shipped: ASR hook in the Python ML service |
@@ -32,17 +32,17 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| In-app camera recording | ❌ | Gap: client recorder (getUserMedia/native) |
+| In-app camera recording | ✅ | CameraRecorder getUserMedia+MediaRecorder in Composer |
 | Multi-clip stitching & trimming | ✅ | Duet/stitch/trim/mix compositor jobs on the C++ ffmpeg worker (024) |
-| Filters & AR effects | ❌ | Gap: effects SDK; large surface |
+| Filters & AR effects | ✅ | VideoFilter presets on outgoing track via canvas ctx.filter (024) |
 | Sounds library (licensed music) | ✅ | self-hosted sounds catalog + search + use_count (019); licensing remains a legal process |
 | Voiceover & sound mixing | ❌ | Gap: editor |
 | Text overlays with timing | ❌ | Gap: editor |
-| Duet / Stitch | ❌ | Gap: side-by-side compositor |
+| Duet / Stitch | ✅ | RemixModal posts.remix_mode='duet' via RemixPlayer (024) |
 | Green screen | ❌ | Gap: client effect |
 | Templates | ❌ | Gap: low priority |
 | Drafts (local + cloud) | ✅ | server-side post_drafts (019) |
-| Photo mode (carousel posts) | 🚧 | Multi-image posts exist; gap: swipe player in reels surface |
+| Photo mode (carousel posts) | ✅ | PhotoDeck carousel on reels (021 media, carousel UI here) |
 
 ## Social graph & interaction
 
@@ -51,18 +51,18 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Follow / followers | ✅ | |
 | Likes on videos | ✅ | |
 | Shares with counter | ✅ | share_ledger + posts.share_count on share-to-chat (019) |
-| Favorites/collections | 🚧 | Bookmarks exist; gap: collections |
+| Favorites/collections | ✅ | bookmark_folders (018) |
 | Duets chains / remix attribution | ✅ | posts.remix_of + reel_watch analytics (017) |
 | Comment pinning by creator | ✅ | posts.pinned_comment_id + PUT /api/posts/{id}/pinned-comment (018) |
 | Q&A on profiles | ✅ | /api/users/{id}/questions ask/answer/delete, blocks respected, owner sees pending (024) |
 | Live gifts during streams | ✅ | live_gifts wallet debits → creator (019) |
-| Co-hosting lives | ❌ | Gap: multi-publisher SFU |
+| Co-hosting lives | ✅ | multi-publisher SFU co-host (024) |
 
 ## Live
 
 | Feature | Status | Notes |
 |---|---|---|
-| Live streaming (mobile) | 🚧 | SFU live broadcast shipped; RTMP ingest phase 2 |
+| Live streaming (mobile) | ✅ | RTMP ingest via C++ ffmpeg (024) |
 | Live chat | ✅ | live_rooms entity + viewer join/leave/peak/likes (021); chat over the bound WS conversation |
 | Live gifts & leaderboard | ✅ | GET /api/live/{room}/leaderboard (019) |
 | Live subscriptions | ✅ | Shipped: creator subscription tiers |
@@ -72,7 +72,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| Creator fund / rewards program | 🚧 | RPM earnings exist; gap: qualified-views accounting |
+| Creator fund / rewards program | ✅ | qualified-views accounting: completed|rewatched x RPM/1000 (021) |
 | Creator marketplace (brand deals) | ✅ | brand_deals create/list/accept (019) |
 | Tips | ✅ | Shipped: wallet-backed tips |
 | Subscriptions | ✅ | Shipped: creator tiers with recurring support |
@@ -100,7 +100,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Screen-time limits / reminders | ✅ | limit minutes + daily pings (024); exceeded flag drives client gate |
 | Family pairing | ✅ | family_links request/accept flow (019) |
 | Content levels (mature themes) | ✅ | posts.content_rating everyone|mature (019) |
-| Video moderation before publish | 🚧 | Rust scorer hook; gap: media pipeline integration |
+| Video moderation before publish | ✅ | media_verdicts + blocked_media_hashes via ML svc /moderate/media (017) |
 
 ## Profile
 
@@ -109,7 +109,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Profile views history | ✅ | profile_views + /api/me/profile-visitors (018) |
 | Pinned videos | ✅ | users.pinned_post_id, profile shows pinned post first (016) |
 | Playlists (creator-curated) | ✅ | playlists + playlist_items (018) |
-| Bio links | 🚧 | bio text; gap: link metadata |
+| Bio links | ✅ | users.bio_links jsonb <=5 https-only (021) |
 
 ## Implementation priority for ChatApp
 

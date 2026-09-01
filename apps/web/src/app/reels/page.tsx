@@ -6,6 +6,7 @@ import { api, getAccessToken, getUserId } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Post } from "@/lib/types";
 import Composer from "@/components/Composer";
+import PhotoDeck from "@/components/PhotoDeck";
 import { DuetStitchModal, RemixModal, ReelAnalytics, RemixList, RemixPlayer } from "@/components/ReelExtras";
 import CommunityNotes from "@/components/CommunityNotes";
 
@@ -79,6 +80,8 @@ function Reel({ post }: { post: Post }) {
           const el = videoRef.current;
           if (el) el.paused ? el.play() : el.pause();
         }} preload="auto" />
+      ) : post.media.length > 1 && post.media.every((m) => m.kind === "image") ? (
+        <PhotoDeck media={post.media} />
       ) : post.media[0] ? (
         <img src={post.media[0].url} alt="" style={{ width: "100%" }} />
       ) : (

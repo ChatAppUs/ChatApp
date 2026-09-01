@@ -1,6 +1,6 @@
 # ChatApp — Consolidated Gap Analysis vs Facebook, X, Telegram, TikTok, WhatsApp, imo
 
-Date: 2026-08-31 (gap-pack-8 shipped — migration 024 — TikTok-style
+Date: 2026-09-01 (gap-pack-9 shipped — remaining client gaps closed: TikTok in-app camera (CameraRecorder, getUserMedia+MediaRecorder), reels photo-mode deck (PhotoDeck), imo call-quality (SfuCall.networkQuality from inbound-rtp loss) and adaptive audio-only downgrade, imo low-bitrate handling, plus the "delete-for-me" undo endpoint (POST /api/messages/{id}/unhide). Tests: 15/15 gap-pack-9 + full sweep green. Earlier: gap-pack-8 shipped — migration 024 — TikTok-style
 remix_mode duet/stitch on the client, plus the server-side duet/stitch/
 trim/mix compositor queue with a C++ ffmpeg worker; HLS-over-RTMP live
 ingest; profile Q&A; screen-time limits; app lock + verify-password;

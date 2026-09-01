@@ -12,6 +12,8 @@ export default function MeetingPage() {
   const params = useParams<{ conversationId: string }>();
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState("");
+  const [quality, setQuality] = useState<"good" | "fair" | "poor" | "unknown">("unknown");
+  const [audioOnly, setAudioOnly] = useState(false);
   const localRef = useRef<HTMLVideoElement>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const callRef = useRef<SfuCall | null>(null);
@@ -35,6 +37,20 @@ export default function MeetingPage() {
   };
 
   useEffect(() => () => filterRef.current?.stop(), []);
+
+  // Poll RCTP stats every 3s. When quality is poor, automatically drop local
+  // video to audio-only (imo-style adaptive downgrade); restore when it recovers.
+  useEffect(() => {
+    const call = () => callRef.current;
+    const timer = setInterval(async () => {
+      const q = await call()?.networkQuality();
+      if (!q) return;
+      setQuality(q);
+      if (q === "poor") { call()?.setAudioOnly(true); setAudioOnly(true); }
+      else if (audioOnly) { call()?.setAudioOnly(false); setAudioOnly(false); }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [audioOnly]);
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -99,6 +115,9 @@ export default function MeetingPage() {
       <div className="row">
         <h3 style={{ margin: 0 }}>Meeting</h3>
         <span className="badge">{status}</span>
+        <span className={`badge ${quality === "poor" ? "danger" : ""}`} title="Network quality (RTCP)">
+          {quality === "good" ? "📶 good" : quality === "fair" ? "📶 fair" : quality === "poor" ? "📶 poor" : "📶"}
+        </span>
         <div className="spacer" />
         <select className="secondary" value={filter} title="AR effect"
           onChange={(e) => applyFilter(e.target.value)}>
@@ -106,6 +125,10 @@ export default function MeetingPage() {
             <option key={f} value={f}>✨ {f}</option>
           ))}
         </select>
+        <button className={audioOnly ? "secondary" : ""} title="Audio-only"
+          onClick={() => { callRef.current?.setAudioOnly(!audioOnly); setAudioOnly(!audioOnly); }}>
+          {audioOnly ? "🔇 audio-only" : "🎥 video"}
+        </button>
         <button className="danger" onClick={hangUp}>Leave</button>
       </div>
       {error && <div className="error-text" style={{ marginTop: 8 }}>{error}</div>}

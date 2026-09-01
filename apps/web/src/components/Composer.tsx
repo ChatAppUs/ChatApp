@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { api, uploadMedia } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Media } from "@/lib/types";
+import CameraRecorder from "@/components/CameraRecorder";
 
 function mediaKind(file: File): Media["kind"] {
   if (file.type.startsWith("video/")) return "video";
@@ -30,6 +31,7 @@ export default function Composer({
   const [tagged, setTagged] = useState("");
   const [scheduleAt, setScheduleAt] = useState("");
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [captured, setCaptured] = useState<File[]>([]);
   const [storyBg, setStoryBg] = useState("");
   const [stickers, setStickers] = useState<string[]>([]);
   const [musicTrack, setMusicTrack] = useState("");
@@ -50,12 +52,12 @@ export default function Composer({
 
   const submit = async () => {
     const hasPoll = pollMode && activePollOptions.length >= 2;
-    if (!body.trim() && !fileRef.current?.files?.length && !hasPoll) return;
+    if (!body.trim() && !fileRef.current?.files?.length && !captured.length && !hasPoll) return;
     setBusy(true);
     setError("");
     try {
       const media: Media[] = [];
-      const files = Array.from(fileRef.current?.files ?? []).slice(0, 10);
+      const files = [...Array.from(fileRef.current?.files ?? []), ...captured].slice(0, 10);
       for (const f of files) {
         const url = await uploadMedia(f);
         media.push({ kind: mediaKind(f), url });
@@ -94,6 +96,7 @@ export default function Composer({
       setMusicOffset(0);
       setPollMode(false);
       setPollOptions(["", ""]);
+      setCaptured([]);
       if (fileRef.current) fileRef.current.value = "";
       onPosted?.();
     } catch (e) {
@@ -223,6 +226,17 @@ export default function Composer({
             onClick={() => setExtrasOpen((v) => !v)}>
             😊 Extras
           </button>
+        )}
+        {type === "reel" && (
+          <span className="col" style={{ gap: 4 }}>
+            <CameraRecorder onCaptured={(f) => setCaptured((prev) => [...prev, f])} />
+            {captured.length > 0 && (
+              <div className="row" style={{ gap: 6 }}>
+                <span className="muted small">📹 {captured.length}</span>
+                <button className="secondary small" onClick={() => setCaptured([])}>{t("remove")}</button>
+              </div>
+            )}
+          </span>
         )}
         {type === "post" && (
           <select

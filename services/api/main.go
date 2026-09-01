@@ -479,6 +479,7 @@ func main() {
 	mux.HandleFunc("POST /api/conversations/{id}/topics", app.requireAuth(app.handleCreateTopic))
 	mux.HandleFunc("GET /api/conversations/{id}/topics", app.requireAuth(app.handleListTopics))
 	mux.HandleFunc("POST /api/messages/{id}/hide", app.requireAuth(app.handleHideMessageForMe))
+	mux.HandleFunc("POST /api/messages/{id}/unhide", app.requireAuth(app.handleUnhideMessageForMe))
 	mux.HandleFunc("PUT /api/conversations/{id}/draft", app.requireAuth(app.handleSaveDraft))
 	mux.HandleFunc("GET /api/conversations/{id}/draft", app.requireAuth(app.handleGetDraft))
 	mux.HandleFunc("POST /api/link-preview", app.requireAuth(app.handleLinkPreview))

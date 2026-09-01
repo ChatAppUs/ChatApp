@@ -21,12 +21,12 @@ rooms. These are the differentiators to match.
 | Feature | Status | Notes |
 |---|---|---|
 | Free international audio calls | ✅ | WebRTC; gap: PSTN is not imo's model either |
-| Video calls on 2G/3G (adaptive quality) | 🚧 | WebRTC adapts; gap: explicit low-bitrate profile + simulcast |
+| Video calls on 2G/3G (adaptive quality) | ✅ | RTCP loss classification every 3s + auto-downgrade (024) |
 | Group video calls | ✅ | Mesh ≤8 |
 | Large group voice chat rooms (drop-in) | ✅ | Shipped: self-built SFU audio rooms |
-| Call quality indicator | ❌ | Gap: client RTCP stats UI |
+| Call quality indicator | ✅ | SfuCall.networkQuality() aggregates inbound-rtp loss; meeting badge + manual audio-only toggle |
 | Data-usage saver mode | ✅ | users.data_saver flag drives client bitrate caps (018) |
-| Call on slow networks auto-audio-only | ❌ | Gap: adaptive downgrade logic |
+| Call on slow networks auto-audio-only | ✅ | SfuCall.setAudioOnly auto on poor + restore (024) |
 
 ## Messaging
 

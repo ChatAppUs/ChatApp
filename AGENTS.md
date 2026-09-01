@@ -346,7 +346,27 @@
   checks fail-open to manual review. All ten suites green: integration 153,
   features 72, finance 44, gaps 92, gaps2 70, gaps3 82, gaps4 96, gaps5 39,
   gaps6 91, staking 48.
-## Contracts discovered while testing (2026-08-31, session 9b — gap pack 7)
+## Contracts discovered while testing (2026-09-01, session 10 — gap pack 9)
+- Gap-pack-9 closes the remaining client-side gaps from the
+  competitor-analysis sweep — TikTok in-app camera (getUserMedia +
+  MediaRecorder → upload, `CameraRecorder.tsx`, wired in Composer for
+  reel type), reels photo-mode carousel (`PhotoDeck.tsx` for image-only
+  reels), imo call-quality badge (`SfuCall.networkQuality()`,
+  inbound-rtp loss polling every 3s, auto audio-only downgrade +
+  manual audio-only toggle on the meeting page), plus the
+  backend `POST /api/messages/{id}/unhide` (undo for "delete for me"
+  = `message_hidden`). tests/gaps9_test.py = 15 checks; web builds.
+- Stale-doc sweep done in the same pass: tiktok.md rows for
+  duet/stitch, photo mode, following feed, favorites, co-host, RTMP,
+  creators, bio-links, video moderation, filters now read ✅ with
+  pointers; imo.md call-quality/adaptive rows; telegram.md
+  delete-for-me/silent/drafts/hashtags/last-seen/slow-mode/topics/
+  compression ✔; x-twitter live-video ✔.
+- Environment: fresh sandbox needs Postgres installed
+  (`apt-get install postgresql`) + `CREATE USER chatapp
+  PASSWORD 'chatapp' SUPERUSER` before integration/feature/finance
+  suites run; Go toolchain comes from `apt-get install golang-go`.
+
 - Migration 023_gap_pack7.sql (renamed: remote main took 022 for staking):
   upload_sessions (chunked resumable uploads),
   chat_polls.is_quiz + correct_option_id + explanation (quizzes), moments

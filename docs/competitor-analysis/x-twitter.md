@@ -90,7 +90,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Image/video/GIF upload | ✅ | |
 | Multi-image posts (4-grid) | ✅ | media_urls array |
 | Video transcoding + adaptive bitrate | ✅ | C++ ffmpeg HLS worker, claim/complete control plane, post_media rewrite to HLS master |
-| Live video streaming | 🚧 | live broadcast over the self-built SFU; RTMP ingest pending |
+ | Live video streaming | ✅ | RTMP ingest via C++ transcode role (024) |
 | GIF picker (GIPHY/Tenor) | ✅ | self-hosted gif_catalog + search + gif messages (019) — no third-party dependency |
 
 ## Moderation & safety

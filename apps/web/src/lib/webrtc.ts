@@ -255,6 +255,39 @@ export class SfuCall {
     this.pc?.close();
     this.ws?.close();
   }
+
+  /** Estimated network quality: good | fair | poor | unknown. imo-style
+   *  call-quality badge polled from RTCP inbound-rtp packet loss / jitter. */
+  async networkQuality(): Promise<"good" | "fair" | "poor" | "unknown"> {
+    if (!this.pc) return "unknown";
+    const stats = await this.pc.getStats().catch(() => null);
+    if (!stats) return "unknown";
+    let quality: "good" | "fair" | "poor" | "unknown" = "unknown";
+    stats.forEach((s) => {
+      if (s.type === "inbound-rtp") {
+        const t = s as RTCInboundRtpStreamStats;
+        const packets = (t.packetsReceived ?? 0) + (t.packetsLost ?? 0);
+        if (packets === 0) return;
+        const loss = (t.packetsLost ?? 0) / packets;
+        let q: "good" | "fair" | "poor" =
+          loss < 0.02 ? "good" : loss < 0.08 ? "fair" : "poor";
+        if (quality === "unknown" || q === "poor") quality = q;
+      }
+    });
+    return quality;
+  }
+
+  /** imo-style adaptive downgrade: cut outgoing video when the network is poor. */
+  async setAudioOnly(on: boolean) {
+    const sender = this.pc?.getSenders().find((s) => s.track?.kind === "video");
+    if (on) {
+      this.pausedVideoTrack = sender?.track ?? null;
+      sender?.replaceTrack(null);
+    } else {
+      sender?.replaceTrack(this.pausedVideoTrack);
+    }
+  }
+  private pausedVideoTrack: MediaStreamTrack | null = null;
 }
 
 /**

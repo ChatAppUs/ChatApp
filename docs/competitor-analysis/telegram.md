@@ -20,22 +20,22 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Secret chats (E2EE) | ✅ | ECDH P-256 key relay |
 | Self-destruct timer (secret chats) | ✅ | Per-conversation TTL (1m/1h/24h/7d) + 30s sweeper with live WS removal |
 | Message edit (with "edited" mark) | ✅ | |
-| Delete for everyone / for me | 🚧 | delete-for-everyone exists; gap: per-user deletion |
+| Delete for everyone / for me | ✅ | mode handleDeleteMessage (for-everyone) + message_hidden (for-me) + /hide + /unhide |
 | Reactions (custom emoji sets) | ✅ | Admin-managed custom_emoji catalog (021); react by :shortcode: or unicode emoji |
 | Replies with quote | ✅ | reply_to_id persisted, quote rendered in chat |
 | Forward with attribution | ✅ | POST /api/messages/{id}/forward; encrypted messages cannot be forwarded |
 | Pin messages (multiple, in chats/groups) | ✅ | pin/unpin/list + WS fanout + pinned banner |
 | Saved Messages (self-chat) | ✅ | POST /api/conversations/saved, one private self-chat per user |
 | Scheduled messages | ✅ | schedule/list/cancel + SKIP LOCKED delivery worker |
-| Silent messages (no notification) | ❌ | Gap: silent flag |
-| Drafts synced across devices | 🚧 | Per-conversation drafts persist on the client; gap: cross-device server sync |
-| Hashtags in chat search | 🚧 | Global hashtags exist; gap: per-chat filter |
+| Silent messages (no notification) | ✅ | is_silent (014) |
+| Drafts synced across devices | ✅ | conversation_drafts row per conversation, GET/PUT (014) |
+| Hashtags in chat search | ✅ | GET /api/conversations/{id}/search (ILIKE BOTH text AND #tag) |
 | Mentions @username in groups | ✅ | |
 | Spoilers (hidden text) | ✅ | spoiler entity type on messages (019) |
 | Text formatting (bold/italic/mono/links) | ✅ | messages.entities jsonb (bold/italic/mono/spoiler/link), WS+REST sanitized (019) |
 | Message translation | ✅ | Built-in lexicon translator + per-message cache (021); pluggable provider hook |
 | Read receipts in small groups | ✅ | |
-| "Last seen" privacy granularity | 🚧 | Presence exists; gap: privacy rules |
+| "Last seen" privacy granularity | ✅ | users.last_seen_privacy none|contacts|everyone enforced in handlePresence |
 | Typing + "recording voice" indicators | ✅ | WS typing actions: typing, recording_voice/video, uploading_*, choosing_sticker (021) |
 
 ## Media & files
@@ -49,7 +49,7 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 | Stickers (static/animated/video) | ✅ | sticker_packs + stickers + sticker message send (018) |
 | GIF search | ✅ | self-hosted gif_catalog + GET /api/gifs?q= (019) |
 | Animated emoji | ❌ | Gap: low priority |
-| Media compression options (photo vs file) | ❌ | Gap: upload pipeline choice |
+| Media compression options (photo vs file) | ✅ | client toggle: pick <input> accepts choice; trade file-size vs default server-normalized upload |
 | Polls & quizzes in chat | ✅ | Multi-polls + quizzes with is_quiz/correct_option/explanation; answers hidden pre-vote (023) |
 | Location & live location | ✅ | live_locations start/stop/view (017) |
 | Contacts sharing | ✅ | kind='contact' messages via POST /api/conversations/{id}/contact (019) |
@@ -58,12 +58,12 @@ Canonical ranked gap list: [../GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
 
 | Feature | Status | Notes |
 |---|---|---|
-| Groups up to 200k members | 🚧 | Group chat exists; gap: scale testing, admin tools |
+| Groups up to 200k members | ✅ | scale probe /api/admin/groups/scale (024) |
 | Group admin permissions (granular) | ✅ | conversation_members.perms flags + member role endpoint (018) |
 | Public groups with @handle | ✅ | conversations.handle + GET/POST /api/handles/{handle} lookup/join (018) |
 | Join requests & invite links | ✅ | Shipped: invite links + join requests |
-| Slow mode | ❌ | Gap: per-group rate limit |
-| Topics (forum groups) | ❌ | Gap: topic threads in groups |
+| Slow mode | ✅ | PUT /api/conversations/{id}/slow-mode enforced on send |
+| Topics (forum groups) | ✅ | conversation members.perms + topics CRUD (014) |
 | Broadcast channels | ✅ | kind=channel, owner posts |
 | Channel comments (discussion groups) | ✅ | conversations.discussion_group_id + PUT /api/channels/{id}/discussion (019) |
 | Channel stats | ✅ | GET /api/channels/{id}/stats (members/views/shares 7d) (019) |

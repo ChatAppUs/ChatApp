@@ -265,6 +265,24 @@ func (a *App) handleHideMessageForMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "hidden"})
 }
 
+// handleUnhideMessageForMe reverses a per-user deletion ("delete for me" undo).
+func (a *App) handleUnhideMessageForMe(w http.ResponseWriter, r *http.Request) {
+	msgID := r.PathValue("id")
+	uid := userIDFrom(r)
+	convID, _, ok := a.messageConv(r.Context(), msgID)
+	if !ok || !a.isMember(r.Context(), convID, uid) {
+		writeErr(w, http.StatusNotFound, "message not found")
+		return
+	}
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM message_hidden WHERE message_id=$1 AND user_id=$2`,
+		msgID, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "unhide failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
+}
+
 // ---- cross-device drafts ----
 
 func (a *App) handleSaveDraft(w http.ResponseWriter, r *http.Request) {
