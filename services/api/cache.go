@@ -49,3 +49,22 @@ func (c *cache) set(ctx context.Context, key string, val []byte, ttl time.Durati
 	defer cancel()
 	_ = c.rdb.Set(ctx, key, val, ttl).Err()
 }
+
+// delPrefix removes every key matching a prefix (used to drop all cached
+// FYP pages for a user the moment a negative-feedback signal lands — reports,
+// mutes, blocks, not-interested).
+func (c *cache) delPrefix(ctx context.Context, prefix string) {
+	if c == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	iter := c.rdb.Scan(ctx, 0, prefix+"*", 100).Iterator()
+	var keys []string
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	if len(keys) > 0 {
+		_ = c.rdb.Del(ctx, keys...).Err()
+	}
+}

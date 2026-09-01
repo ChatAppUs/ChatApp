@@ -92,9 +92,10 @@ func (c *countersClient) incr(ctx context.Context, kind, key string, delta int64
 }
 
 // viewer forwards a live-room join/leave event. ok=false means unreachable.
-func (c *countersClient) viewer(ctx context.Context, room, op string) bool {
+// uid identifies the viewer so the engine keeps joins idempotent per user.
+func (c *countersClient) viewer(ctx context.Context, room, uid, op string) bool {
 	_, ok := c.do(ctx, http.MethodPost, "/viewer", map[string]string{
-		"room": room, "op": op})
+		"room": room, "uid": uid, "op": op})
 	return ok
 }
 

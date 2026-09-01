@@ -28,16 +28,24 @@ services/
                   RBAC, push notifications, transcode job control plane
   sfu             Go 1.23 (Pion) — self-built SFU for meetings/group calls/live
                   broadcast + embedded STUN/TURN server
+  authn           Rust — trust-critical authentication core: argon2id password
+                  hashing, HS256 JWT mint/verify, RFC 6238 TOTP, OTP engine,
+                  CSPRNG token minting, HMAC-SHA256
   security        Rust — request signing, media upload grants, HMAC tokens
   media           C++17 — media upload & streaming edge (HTTP range requests)
   realtime        C++17 — epoll WebSocket fanout edge (10k+ connections,
                   JWT-verified /ws, HMAC-guarded /publish control port)
   transcode       C++17 — ffmpeg HLS ABR ladder + thumbnail worker
                   (SKIP LOCKED job claiming via the API control plane)
-  ml              Python — feed ranking, content moderation, ASR hooks
+  counters        C++17 — real-time counters engine (hashtag trends, view
+                  counts, live-room viewers) with periodic flush to Postgres
+  sfu-forwarder   C++17 — TURN relay (UDP 3479) with self-contained SHA-1/
+                  HMAC-SHA1 STUN message handling
+  ml              Python — feed ranking, content moderation, KYC auto-verify,
+                  ASR hooks
 
 infra/
-  db              PostgreSQL migrations 001–023 (pgcrypto, citext)
+  db              PostgreSQL migrations 001–024 (pgcrypto, citext)
   docker-compose  Postgres, MongoDB, Redis, MinIO + all services
 ```
 
@@ -133,51 +141,190 @@ infra/
 ## Quick start (Docker)
 
 ```bash
-cp .env.example .env   # set real secrets
+cp .env.example .env   # set real secrets (see "Secrets & production setup")
 docker compose up --build
-# web: http://localhost:3000  api: http://localhost:8080
+# web: http://localhost:3000  api: http://localhost:8080  admin: http://localhost:3100
 ```
 
-## Local development
+## System requirements
+
+**Minimum (single-node dev):** 4 vCPU, 8 GB RAM, 20 GB disk, Linux x86_64
+(Ubuntu 22.04+/Debian 12+ recommended) or macOS 13+ for client builds.
+
+**Recommended (production node):** 8+ vCPU, 16 GB+ RAM, NVMe SSD, and one
+node per stateful service (Postgres, Redis, MinIO) behind a load balancer.
+
+**Toolchains (build from source):**
+
+| Component | Requirement |
+|-----------|-------------|
+| Go services (`api`, `sfu`) | Go 1.23+ |
+| Rust services (`authn`, `security`) | Rust 1.75+ (`rustup`) |
+| C++ services (`media`, `realtime`, `transcode`, `counters`, `sfu-forwarder`) | g++ 11+ or clang 14+ with C++17 |
+| ML service | Python 3.10+, `pip` |
+| Web/admin/desktop | Node.js 18+ / npm 9+ |
+| Android | Android Studio Hedgehog+, JDK 17, Android SDK 34 |
+| iOS | Xcode 15+, `xcodegen` (`brew install xcodegen`) |
+| Datastores | PostgreSQL 15+ (pgcrypto, citext), Redis 6+, MongoDB 6+, MinIO/S3 |
+| Media | `ffmpeg` 5+ (transcode worker + live ingest) |
+
+## Installation
+
+### 1. Datastores
 
 ```bash
-# Database
-psql -d chatapp -f infra/db/001_schema.sql
+# PostgreSQL
+sudo apt-get install postgresql
+sudo -u postgres psql -c "CREATE USER chatapp PASSWORD 'chatapp' SUPERUSER;"
+sudo -u postgres createdb -O chatapp chatapp
 
+# Apply migrations in order (001..024)
+for f in infra/db/0*.sql infra/db/1*.sql; do
+  sudo -u postgres psql -d chatapp -f "$f"
+done
+
+# Redis + MongoDB + MinIO (or use docker compose for just these)
+sudo apt-get install redis-server mongodb-org
+```
+
+### 2. Backend services
+
+```bash
 # Core API (Go)
-cd services/api && DATABASE_URL=postgres://... go run .
+cd services/api && go build -o chatapp-api .
+DATABASE_URL=postgres://chatapp:chatapp@localhost:5432/chatapp?sslmode=disable \
+  ./chatapp-api   # :8080
 
-# Security service (Rust)
-cd services/security && cargo run --release
+# Rust authn core
+cd services/authn && cargo build --release && ./target/release/chatapp-authn   # :8400
 
-# Media edge (C++)
-cd services/media && g++ -O2 -std=c++17 -o media main.cpp && ./media
+# Rust security service
+cd services/security && cargo build --release && ./target/release/chatapp-security  # :8090
 
-# Realtime relay (C++) — WS fanout edge
-cd services/realtime && g++ -O3 -std=c++17 -o realtime main.cpp && ./realtime
+# C++ edges
+cd services/media     && g++ -O3 -std=c++17 -Wall -Wextra -pthread main.cpp -o media-edge
+cd services/realtime  && g++ -O3 -std=c++17 -Wall -Wextra -pthread main.cpp -o realtime-relay
+cd services/transcode && g++ -O3 -std=c++17 -Wall -Wextra -pthread main.cpp -o transcode-edge
+cd services/counters  && g++ -O3 -std=c++17 -Wall -Wextra -pthread main.cpp -o counters-edge
+cd services/sfu-forwarder && g++ -O3 -std=c++17 -Wall -Wextra -pthread main.cpp -o sfu-forwarder
 
-# Transcode worker (C++) — needs ffmpeg installed
-cd services/transcode && g++ -O3 -std=c++17 -o transcode main.cpp && ./transcode
+# SFU (Go/Pion)
+cd services/sfu && go build -o sfu . && ./sfu   # :8095 + udp/3478
 
 # ML service (Python)
-cd services/ml && pip install -r requirements.txt && python main.py
-
-# Web app (Next.js)
-cd apps/web && npm install && npm run dev
-
-# Admin console (Next.js, port 3100)
-cd apps/admin && npm install && npm run dev
-
-# Desktop (Tauri shell over the web app)
-cd apps/desktop && npm install && npm run tauri dev
-
-# Android / iOS — native projects
-#   apps/android: open in Android Studio (or ./gradlew assembleDebug)
-#   apps/ios:     xcodegen && open ChatApp.xcodeproj
-
-# Browser extension (MV3): chrome://extensions → Developer mode →
-# "Load unpacked" → apps/extension
+cd services/ml && pip install -r requirements.txt && \
+  python3 -m uvicorn main:app --port 8200
 ```
+
+### 3. Web & admin frontends
+
+```bash
+cd apps/web   && npm install && npm run build && npm start   # :3000
+cd apps/admin && npm install && npm run build && npm start   # :3100
+```
+
+## Building the apps
+
+Every client consumes the same backend; set the API base URL per client.
+
+### Web (Next.js PWA)
+
+```bash
+cd apps/web
+npm install
+NEXT_PUBLIC_API_URL=https://api.example.com npm run build
+npm start                 # or `npm run dev` for development
+```
+
+### Desktop (Tauri 2 shell over the web app)
+
+```bash
+cd apps/desktop
+npm install
+npm run tauri dev         # development
+npm run tauri build       # produces installers (msi/dmg/AppImage/deb)
+```
+
+### Android (Kotlin + Jetpack Compose)
+
+```bash
+cd apps/android
+./gradlew assembleDebug           # debug APK
+./gradlew assembleRelease         # release APK (sign in Gradle config)
+# or open the folder in Android Studio and Run
+```
+Point `BuildConfig.API_BASE_URL` / `MEDIA_BASE_URL` at your deployment.
+
+### iOS (SwiftUI)
+
+```bash
+cd apps/ios
+xcodegen                        # generates ChatApp.xcodeproj from project.yml
+open ChatApp.xcodeproj          # build & run in Xcode 15+
+```
+Set `CHATAPP_API_BASE` / `CHATAPP_MEDIA_BASE` in the scheme environment or
+`Info.plist`.
+
+### Browser extension (Chrome/Firefox MV3)
+
+No build step — it is plain MV3:
+
+1. Open `chrome://extensions` (or `about:debugging#/runtime/this-firefox`).
+2. Enable **Developer mode**.
+3. **Load unpacked** → select `apps/extension`.
+4. Open the extension **Options** page and paste a user access token; the
+   popup badge reads `/api/me` + `/api/notifications`, and the full-page view
+   iframes the web app.
+
+## Secrets & production setup
+
+All secrets are read from environment variables (see `.env.example`). In
+production **every one of these must be set to a strong, unique value** —
+the services refuse to boot with weak/empty critical secrets when
+`APP_ENV=production`.
+
+Generate strong secrets:
+
+```bash
+openssl rand -hex 32   # 64-char hex — use for JWT_SECRET, SIGNING_SECRET,
+                       # WALLET_MASTER_SEED, CLUSTER_SECRET, AUTHN_SECRET,
+                       # SFU_SECRET, TURN_SECRET, COUNTERS_SECRET, FLUSH_SECRET
+```
+
+| Secret | Used by | Purpose |
+|--------|---------|---------|
+| `JWT_SECRET` | Go API | HS256 signing of access/refresh tokens. **Required ≥32 bytes in production.** |
+| `SIGNING_SECRET` | Rust security svc | HMAC request signing + media upload grants. **Required ≥32 chars in production.** |
+| `AUTHN_SECRET` | Rust authn svc | Bearer auth between the API and the authn core. |
+| `WALLET_MASTER_SEED` | Go API | HKDF derivation of deterministic deposit addresses + the withdrawal HMAC signing key. **Required in production.** Never store a real private key. |
+| `CLUSTER_SECRET` | API ↔ realtime ↔ transcode | Internal bearer for the control plane (`/internal/*`, `/publish`). |
+| `SFU_SECRET` | API ↔ SFU | HMAC key for room tickets. |
+| `TURN_SECRET` | API ↔ SFU/TURN | HMAC key for short-lived TURN credentials. |
+| `COUNTERS_SECRET` | API ↔ counters engine | Control-plane bearer for the counters service. |
+| `FLUSH_SECRET` | counters → API | Bearer the counters engine uses on `/internal/counters/flush` (must equal `CLUSTER_SECRET`). |
+| `DATABASE_URL` | Go API | Postgres DSN (use TLS in production). |
+| `REDIS_URL` | Go API | Optional scaling cache (FYP). Empty = caching off (fail-open). |
+| `MONGO_URL` | Go API | MongoDB for non-relational stores. |
+| `S3_*` | media | Object storage endpoint/credentials for media. |
+| `ALLOWED_ORIGINS` | Go API | Comma-separated CORS + WebSocket Origin allowlist. Empty = dev wildcard. **Set explicitly in production.** |
+| `GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | API + web | Google sign-in (ID-token verified against Google's JWKS). |
+| `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGINS` | API | Passkey relying-party — must match the public origin. |
+| `VAPID_*` / `FCM_SERVER_KEY` / `APNS_*` | API | Optional push gateways (in-app + WS notifications work without them). |
+| `SMTP_*` | API | Optional carrier-gateway hook for OTP code delivery (the OTP engine itself is self-built). |
+| `SUMSUB_*` | API | Optional KYC provider (self-built ML auto-verify runs without it). |
+
+**Production hardening checklist:**
+
+- Set `APP_ENV=production` and provide every required secret above.
+- Terminate TLS at a load balancer; put Postgres/Redis/Mongo/MinIO on a
+  private network with TLS enabled.
+- Set `ALLOWED_ORIGINS` to your exact app origins (no wildcard).
+- Run the admin console (`apps/admin`, port 3100) on a separate, access-
+  restricted domain — it uses admin-scoped tokens rejected everywhere else.
+- Wire on-chain deposits/withdrawals through a custody provider SDK
+  (Fireblocks/BitGo) writing into the existing double-entry ledger.
+- Put the media edge behind a CDN; keep download IDs unguessable (they are
+  128-bit CSPRNG by default).
 
 ## Testing
 

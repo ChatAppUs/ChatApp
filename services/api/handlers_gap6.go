@@ -432,7 +432,7 @@ func (a *App) handleLiveRoomJoin(w http.ResponseWriter, r *http.Request) {
 	var viewers int64
 	// Viewer tracking routes through the counters engine when configured
 	// (peak flushes back to live_rooms.peak_viewers); SQL path otherwise.
-	if a.counters.viewer(r.Context(), roomID, "join") {
+	if a.counters.viewer(r.Context(), roomID, uid, "join") {
 		if v, _, ok := a.counters.viewers(r.Context(), roomID); ok {
 			viewers = v
 		}
@@ -455,7 +455,7 @@ func (a *App) handleLiveRoomLeave(w http.ResponseWriter, r *http.Request) {
 	_, _ = a.db.Exec(r.Context(),
 		`DELETE FROM live_room_viewers WHERE room_id=$1 AND user_id=$2`, roomID, userIDFrom(r))
 	var viewers int64
-	if a.counters.viewer(r.Context(), roomID, "leave") {
+	if a.counters.viewer(r.Context(), roomID, userIDFrom(r), "leave") {
 		if v, _, ok := a.counters.viewers(r.Context(), roomID); ok {
 			viewers = v
 		}

@@ -483,5 +483,10 @@ func (a *App) handleCreateReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to file report")
 		return
 	}
+	// Negative feedback must leave the reporter's FYP immediately, not after
+	// the 15s cache TTL.
+	if req.TargetType == "post" || req.TargetType == "user" {
+		a.invalidateFYP(r.Context(), userIDFrom(r))
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }

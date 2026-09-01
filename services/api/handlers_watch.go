@@ -50,6 +50,9 @@ func (a *App) handleReelWatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "signal failed")
 		return
 	}
+	if req.NotInterested {
+		a.invalidateFYP(r.Context(), userIDFrom(r))
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "recorded"})
 }
 
@@ -363,6 +366,16 @@ func toStr(v any) string {
 		return s
 	}
 	return ""
+}
+
+// invalidateFYP drops a viewer's cached FYP pages after a negative-feedback
+// signal (report, mute, block, not-interested) so the change is reflected on
+// the next request instead of waiting out the 15s TTL.
+func (a *App) invalidateFYP(ctx context.Context, uid string) {
+	if a.cache == nil {
+		return
+	}
+	a.cache.delPrefix(ctx, fmt.Sprintf("fyp:%s:", uid))
 }
 
 // ---- transcode job endpoints (C++ worker claims these via SKIP LOCKED) ----

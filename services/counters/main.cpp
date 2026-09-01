@@ -47,6 +47,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -115,6 +116,9 @@ struct HashCounter {
 struct ViewerCount {
     long long viewers = 0;
     long long peak = 0;
+    // Unique current viewers; viewer count is always this set's size so
+    // duplicate joins stay idempotent (matching the API's SQL uniqueness).
+    std::unordered_set<std::string> members;
 };
 
 static std::mutex gMu;
@@ -155,14 +159,16 @@ static void incrView(const std::string& id, long long d) {
     }
 }
 
-static void viewerOp(const std::string& room, bool join) {
+static void viewerOp(const std::string& room, const std::string& uid, bool join) {
     std::lock_guard<std::mutex> lk(gMu);
     auto& v = gRooms[room];
     if (join) {
-        v.viewers++;
-        if (v.viewers > v.peak) v.peak = v.viewers;
-    } else if (v.viewers > 0) {
-        v.viewers--;
+        if (v.members.insert(uid).second) {
+            v.viewers = static_cast<long long>(v.members.size());
+            if (v.viewers > v.peak) v.peak = v.viewers;
+        }
+    } else if (v.members.erase(uid) > 0) {
+        v.viewers = static_cast<long long>(v.members.size());
     }
 }
 
@@ -392,10 +398,11 @@ static void handleClient(int fd) {
     } else if (method == "POST" && path == "/viewer") {
         std::string room = jsonString(body, "room");
         std::string op = jsonString(body, "op");
-        if (room.empty() || (op != "join" && op != "leave")) {
-            respond(fd, 400, "{\"error\":\"op must be join|leave with non-empty room\"}");
+        std::string uid = jsonString(body, "uid");
+        if (room.empty() || uid.empty() || (op != "join" && op != "leave")) {
+            respond(fd, 400, "{\"error\":\"op must be join|leave with non-empty room and uid\"}");
         } else {
-            viewerOp(room, op == "join");
+            viewerOp(room, uid, op == "join");
             std::lock_guard<std::mutex> lk(gMu);
             auto it = gRooms.find(room);
             long long viewers = it == gRooms.end() ? 0 : it->second.viewers;

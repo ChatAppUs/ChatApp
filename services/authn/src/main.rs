@@ -1,6 +1,6 @@
 // ChatApp authn — Rust trust-critical authentication core.
 //
-// Owns the P0 surfaces from docs/RUST_CONVERSION_PLAN.md: argon2id password
+// Owns the P0 security surfaces: argon2id password
 // hashing/verify (PHC format, m=65536 t=3 p=2), HS256 JWT mint/verify of
 // ChatApp claims (sub/typ/scope/exp/iat), RFC 6238 TOTP with +-1 drift,
 // the self-built 6-digit OTP engine (unbiased crypto-random codes, salted

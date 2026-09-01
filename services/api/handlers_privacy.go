@@ -24,6 +24,7 @@ func (a *App) handleMute(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "mute failed")
 		return
 	}
+	a.invalidateFYP(r.Context(), uid)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "muted"})
 }
 
