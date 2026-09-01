@@ -1,4 +1,12 @@
 # ChatApp — Agent Memory
+## Gap-pack-10 contracts (2026-09-01)
+- Mini Apps surface: mini registry comes from infra/db/013_bots.sql::mini_apps — pack-10 only adds GET /api/miniapps launcher; SET is POST /api/bots/{id}/mini-app {title,url,icon_url} (owner-auth).
+- FYP: ranking multiplies engagement x watch-quality x recency x author-affinity (preferred authors = user's completed/rewatched), then diversify, then explore slot injection — order matters.
+- Client editor helpers: apps/web/src/lib/videoEditor.ts (mixSourceAndMic over a canvas-composited stream via MediaRecorder) + VideoEditor.tsx + EmojiText.tsx; wired into Composer after CameraRecorder.
+- Web LOCALES now 12 (en es fr de pt ar hi zh it tr ru vi) — extras block {} so t() falls back to en.
+- tests/gaps10_test.py = 8 checks.
+- proxy support (MTProto/SOCKS5) ❌ in telegram doc intentionally (REST/WS transport); TikTok Shop phase 2 deferred (covered by 024 marketplace); Facebook 3D ❌ deferred (low value).
+
 
 ## Repo facts
 - Repo: github.com/ChatAppUs/ChatApp — push directly to `main` (explicit user requirement).
