@@ -179,7 +179,7 @@ sudo -u postgres psql -c "CREATE USER chatapp PASSWORD 'chatapp' SUPERUSER;"
 sudo -u postgres createdb -O chatapp chatapp
 
 # Apply migrations in order (001..024)
-for f in infra/db/0*.sql infra/db/1*.sql; do
+for f in infra/db/*.sql; do
   sudo -u postgres psql -d chatapp -f "$f"
 done
 
@@ -223,6 +223,147 @@ cd apps/web   && npm install && npm run build && npm start   # :3000
 cd apps/admin && npm install && npm run build && npm start   # :3100
 ```
 
+## Deploy to cloud with a domain
+
+The steps below work on any cloud VM (AWS EC2, GCP Compute Engine, Azure VM,
+DigitalOcean, Hetzner, …). One 8 vCPU / 16 GB VM runs the whole stack for
+tens of thousands of users; scale horizontally later by adding API replicas
+behind the same load balancer (the API is stateless — sessions live in
+Postgres/Redis).
+
+### 1. DNS records
+
+Point your domain at the VM's public IP (use an Elastic/Static IP):
+
+| Record | Points to | Serves |
+|--------|-----------|--------|
+| `app.example.com`     A | public IP | web app (`apps/web`, :3000) |
+| `api.example.com`     A | public IP | REST + WebSocket (`services/api`, :8080) |
+| `media.example.com`   A | public IP | media edge (`services/media`, :8100) |
+| `admin.example.com`   A | public IP | admin console (`apps/admin`, :3100) — IP-allowlist it |
+
+### 2. Run the stack
+
+```bash
+git clone https://github.com/ChatAppUs/ChatApp.git && cd ChatApp
+cp .env.example .env
+
+# Generate strong production secrets (see "Secrets & production setup")
+sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/"        .env
+sed -i "s/^SIGNING_SECRET=.*/SIGNING_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^AUTHN_SECRET=.*/AUTHN_SECRET=$(openssl rand -hex 32)/"     .env
+sed -i "s/^CLUSTER_SECRET=.*/CLUSTER_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^SFU_SECRET=.*/SFU_SECRET=$(openssl rand -hex 32)/"         .env
+sed -i "s/^TURN_SECRET=.*/TURN_SECRET=$(openssl rand -hex 32)/"       .env
+sed -i "s/^COUNTERS_SECRET=.*/COUNTERS_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^WALLET_MASTER_SEED=.*/WALLET_MASTER_SEED=$(openssl rand -hex 32)/" .env
+sed -i "s/^APP_ENV=.*/APP_ENV=production/" .env
+sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com|" .env
+sed -i "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=https://api.example.com|" .env
+sed -i "s|^NEXT_PUBLIC_MEDIA_URL=.*|NEXT_PUBLIC_MEDIA_URL=https://media.example.com|" .env
+
+docker compose up -d --build        # builds + starts every service
+docker compose ps                   # all containers should be "healthy"
+```
+
+### 3. TLS + reverse proxy (nginx on the same VM)
+
+```bash
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+sudo certbot --nginx -d app.example.com -d api.example.com \
+             -d media.example.com -d admin.example.com
+```
+
+Example server blocks (certbot injects the TLS config):
+
+```nginx
+# /etc/nginx/sites-available/chatapp
+server {
+    listen 443 ssl http2;
+    server_name app.example.com;
+    location / { proxy_pass http://127.0.0.1:3000; proxy_set_header Host $host; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+    # WebSocket fanout (chat, calls, presence) lives on the same service
+    location /ws {
+        proxy_pass http://127.0.0.1:8080/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;      # keep idle sockets open
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name media.example.com;
+    client_max_body_size 4G;           # chunked uploads
+    location / { proxy_pass http://127.0.0.1:8100; proxy_set_header Host $host; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name admin.example.com;
+    allow 203.0.113.10;                # your office/VPN IP
+    deny all;
+    location / { proxy_pass http://127.0.0.1:3100; proxy_set_header Host $host; }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/chatapp /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 4. Firewall / security-group ports
+
+| Open publicly | Port | Why |
+|---------------|------|-----|
+| TCP 80/443 | nginx (HTTP → HTTPS redirect, TLS) |
+| UDP+TCP 3478 | STUN/TURN (the SFU) — **required for calls to traverse NAT** |
+| UDP 3479 | C++ TURN forwarder |
+| UDP 10000–20000 (optional) | SFU media port range if you pin one |
+
+Everything else stays on localhost/private networking: Postgres 5432,
+Redis 6379, MongoDB 27017, MinIO 9000, security 8090, authn 8400,
+realtime 8300/8301, counters 8600, ML 8200, SFU control 8095/8099,
+transcode control. The API reaches them over the compose network; never
+expose them publicly.
+
+### 5. Point the clients at your domain
+
+```bash
+# Web (rebuild with the production URLs baked in)
+cd apps/web
+NEXT_PUBLIC_API_URL=https://api.example.com \
+NEXT_PUBLIC_MEDIA_URL=https://media.example.com \
+npm run build && npm start
+
+# Desktop: the Tauri shell loads the deployed web app — set the same
+# NEXT_PUBLIC_* vars (or the URL in apps/desktop/src-tauri/tauri.conf.json),
+# then build (see "Desktop" below).
+```
+
+### 6. Kubernetes / managed clouds (optional)
+
+The same services map 1:1 to Deployments: keep `api` replicas ≥2 behind a
+Service, run the datastores as managed offerings (RDS/Cloud SQL, ElastiCache/
+Memorystore, Atlas, S3), and terminate TLS at the cloud load balancer. The
+SFU pod must keep its UDP ports reachable (hostNetwork or a UDP-capable
+LB). All migrations are idempotent — run them as an init container or a
+one-off Job against the managed Postgres.
+
+
 ## Building the apps
 
 Every client consumes the same backend; set the API base URL per client.
@@ -244,16 +385,25 @@ npm install
 npm run tauri dev         # development
 npm run tauri build       # produces installers (msi/dmg/AppImage/deb)
 ```
+The shell loads the web app from the URL in
+`apps/desktop/src-tauri/tauri.conf.json` (`"url"`); set it to
+`https://app.example.com` for production builds.
 
 ### Android (Kotlin + Jetpack Compose)
 
 ```bash
 cd apps/android
-./gradlew assembleDebug           # debug APK
-./gradlew assembleRelease         # release APK (sign in Gradle config)
-# or open the folder in Android Studio and Run
+./gradlew assembleDebug           # debug APK (defaults to the emulator host 10.0.2.2)
+
+# Release build pointed at your deployment:
+./gradlew assembleRelease \
+  -PCHATAPP_API_URL=https://api.example.com \
+  -PCHATAPP_WS_URL=wss://api.example.com \
+  -PCHATAPP_MEDIA_URL=https://media.example.com
+# Output: app/build/outputs/apk/release/app-release.apk
+# Sign it with your keystore (android.signingConfigs in app/build.gradle.kts)
+# or open the folder in Android Studio and Run / Generate Signed Bundle.
 ```
-Point `BuildConfig.API_BASE_URL` / `MEDIA_BASE_URL` at your deployment.
 
 ### iOS (SwiftUI)
 
@@ -331,19 +481,27 @@ openssl rand -hex 32   # 64-char hex — use for JWT_SECRET, SIGNING_SECRET,
 - Go: `cd services/api && go build ./... && go vet ./... && go test ./...`
   (plus `cd services/sfu && go test ./...`)
 - Rust: `cd services/security && cargo test` (SHA-256/HMAC RFC test vectors)
-- C++: `services/media`, `services/realtime`, `services/transcode` build with
-  `-Wall -Wextra` clean
+  and `cd services/authn && cargo test` (argon2id/JWT/TOTP/OTP round-trips)
+- C++: `services/media`, `services/realtime`, `services/transcode`,
+  `services/counters`, `services/sfu-forwarder` build with `-Wall -Wextra`
+  clean
+- Route parity: `python3 tests/parity_check.py` — audits every `/api/`
+  reference in all five clients (web, admin, Android, iOS, extension)
+  against the registered Go routes; fails on any orphan.
 - Integration: `tests/integration_test.py` — 153 end-to-end checks, plus
   `tests/features_test.py` — 72 checks (watch signals, transcode jobs, groups,
   pages, monetization, bots, push, contacts, 2FA), plus
   `tests/finance_test.py` — 44 checks (deposit address derivation per chain,
   withdrawal auto-approval <1s + superadmin review, escrow/P2P lifecycle,
   disputes, convert rates, token feature switches, dynamic roles), plus
-  `tests/gaps_test.py` … `tests/gaps7_test.py` — 92+ checks incl. quiz polls,
-  bot API expansion, chunked uploads, search operators, word filters,
-  E2E key + SAS verification, moments, audio-room recordings, related-reels
-  embeddings — all passing against real PostgreSQL + Go API + Rust security +
-  C++ media/realtime + SFU, no mocks.
+  `tests/gaps_test.py` … `tests/gaps10_test.py` (social, privacy, quiz polls,
+  chunked uploads, E2E keys + SAS, related-reels embeddings, duet/stitch
+  remixes, RTMP live ingest, marketplace checkout, mini-apps), plus
+  `tests/staking_test.py`, `tests/counters_test.py`, `tests/authn_test.py`,
+  `tests/sfu_turn_test.py` — all passing against real PostgreSQL + Redis +
+  Go API + Rust security/authn + C++ media/realtime/counters/TURN + SFU +
+  Python ML, no mocks. Leave ~60 s between suites (the register endpoint is
+  rate-limited to 10/min per IP).
 
 ## Security notes
 

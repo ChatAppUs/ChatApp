@@ -108,7 +108,8 @@ def main():
     # ---------- remote remix_mode flow ----------
     ts = int(time.time())
     alice = register(f"g8dR{ts}")
-    bob = register(f"g8eR{ts}")
+    bob = register(f"g8eR2{ts}")  # distinct from the first block's g8eR{ts}:
+                                  # both blocks can land in the same second
 
     # ---------- source reel ----------
     s, r = req("POST", "/api/posts",
