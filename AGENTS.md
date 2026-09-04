@@ -526,3 +526,28 @@
   registered under requireAdminPerm('staking.manage'|'tokens.manage').
 - theme parity verified across all five clients (web/admin chatapp.theme,
   extension theme, Android Session.darkTheme, iOS preferredColorScheme).
+
+## Contracts discovered while testing (2026-09-04, session 11 — finance hardening)
+- Withdrawal HMAC signature message is the canonical
+  "withdraw|id|uid|asset|chain|to|amount|fee" (prefix included) — matches the
+  custody co-sign canon in executeWithdrawal. signWithdrawal previously
+  omitted the "withdraw|" prefix; fixed.
+- P2P offer JSON merchant badge fields are owner_is_merchant /
+  owner_merchant_tier / owner_merchant_name (all clients + gaps_test.py use
+  these; the server used to emit merchant/merchant_tier — badge never
+  rendered). Fixed + test updated.
+- Fresh-sandbox bring-up: sudo apt-get install postgresql golang-go ffmpeg;
+  sudo service postgresql start; CREATE USER chatapp PASSWORD 'chatapp'
+  SUPERUSER + CREATE DATABASE chatapp; apply infra/db/001..024 in order.
+  ML svc: python -m uvicorn main:app --port 8200 (uvicorn not on PATH).
+  SFU binary builds from services/sfu; counters needs COUNTERS_URL +
+  COUNTERS_SECRET on the API for engine-backed checks (else SQL fallback
+  and "engine tracks room viewers" fails).
+- gaps6 FYP checks (ranked page size, explore slot) are data-sensitive:
+  re-running the whole sweep on one DB accumulates posts/signals and can
+  fail them spuriously — reset the DB before judging a gaps6 failure.
+- Full sweep (fresh DB, patched binary): integration 153/153, features
+  72/72, finance 44/44, gaps 92/92, gaps2 70, gaps3 82, gaps4 96, gaps5 39,
+  gaps6 91, gaps7 85, gaps8 32, gaps9 15, gaps10 8, staking 56, counters
+  12/12, sfu-turn 19/19, parity OK, go test OK, web next build OK,
+  admin tsc OK, all 5 C++ services compile with g++ -std=c++17 -lpthread.
