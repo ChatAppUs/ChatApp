@@ -70,9 +70,9 @@ type p2pOfferJSON struct {
 	PaymentMethods []string  `json:"payment_methods"`
 	Terms          string    `json:"terms"`
 	Active         bool      `json:"active"`
-	Merchant       bool      `json:"merchant"`      // verified merchant badge
-	MerchantTier   int       `json:"merchant_tier"` // 0 = not a merchant
-	MerchantName   string    `json:"merchant_name"`
+	Merchant       bool      `json:"owner_is_merchant"`   // verified merchant badge
+	MerchantTier   int       `json:"owner_merchant_tier"` // 0 = not a merchant
+	MerchantName   string    `json:"owner_merchant_name"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

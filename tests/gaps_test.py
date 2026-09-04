@@ -97,8 +97,8 @@ def main():
     offer_id = r.get("id")
     s, r = req("GET", "/api/p2p/offers?asset=USDT&side=sell", token=alice_tok)
     mine = [o for o in r.get("offers", []) if o["id"] == offer_id]
-    check("offer carries merchant badge", mine and mine[0]["merchant"] is True
-          and mine[0]["merchant_tier"] == 1 and mine[0]["merchant_name"] == "Bob's Exchange",
+    check("offer carries merchant badge", mine and mine[0]["owner_is_merchant"] is True
+          and mine[0]["owner_merchant_tier"] == 1 and mine[0]["owner_merchant_name"] == "Bob's Exchange",
           f"{mine}")
 
     # tier per-trade limit enforcement: tier 1 caps at $1000/trade; USDT=$1
@@ -117,7 +117,7 @@ def main():
     check("merchant revoked", s == 200, f"{s} {r}")
     s, r = req("GET", "/api/p2p/offers?asset=USDT&side=sell", token=alice_tok)
     mine = [o for o in r.get("offers", []) if o["id"] == offer_id]
-    check("badge removed after revoke", mine and mine[0]["merchant"] is False, f"{mine}")
+    check("badge removed after revoke", mine and mine[0]["owner_is_merchant"] is False, f"{mine}")
 
     # ============ crypto cards ============
     s, r = req("POST", "/api/cards", {"label": "Everyday"}, alice_tok)

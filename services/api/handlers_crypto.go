@@ -108,7 +108,7 @@ func depositPayload(asset, chain, addr string) map[string]any {
 // signature; verification is recomputation.
 func (a *App) signWithdrawal(id, userID, asset, chain, toAddress, amount, fee string) string {
 	m := hmac.New(sha256.New, []byte(a.cfg.WithdrawSigningKey))
-	m.Write([]byte(strings.Join([]string{id, userID, asset, chain, toAddress, amount, fee}, "|")))
+	m.Write([]byte("withdraw|" + strings.Join([]string{id, userID, asset, chain, toAddress, amount, fee}, "|")))
 	return hex.EncodeToString(m.Sum(nil))
 }
 
