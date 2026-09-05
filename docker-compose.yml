@@ -16,13 +16,6 @@ services:
       timeout: 3s
       retries: 10
 
-  mongo:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodata:/data/db
-
   redis:
     image: redis:7-alpine
     ports:
@@ -33,26 +26,12 @@ services:
       timeout: 3s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - miniodata:/data
-
   api:
     build: ./services/api
     env_file: .env
     environment:
       DATABASE_URL: postgres://chatapp:chatapp@postgres:5432/chatapp?sslmode=disable
-      MONGO_URL: mongodb://mongo:27017/chatapp
       REDIS_URL: redis://redis:6379
-      S3_ENDPOINT: minio:9000
       SFU_INTERNAL_URL: http://sfu:8095
       SFU_PUBLIC_URL: ${SFU_PUBLIC_URL:-ws://localhost:8095/ws}
       SFU_HOST: ${SFU_HOST:-localhost}
@@ -190,6 +169,4 @@ services:
 
 volumes:
   pgdata:
-  mongodata:
-  miniodata:
   mediauploads:
