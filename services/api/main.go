@@ -52,8 +52,9 @@ func main() {
 	defer db.Close()
 
 	app := &App{cfg: cfg, db: db, hub: newHub(), cache: newCache(cfg.RedisURL),
-		authn:    newAuthnClient(cfg.AuthnURL, cfg.AuthnSecret),
-		counters: newCounters(cfg.CountersURL, cfg.CountersSecret)}
+		wsLimiter: newRateLimiter(600, 60), // 10 msg/s sustained, burst 60 — abortive spam dies fast
+		authn:     newAuthnClient(cfg.AuthnURL, cfg.AuthnSecret),
+		counters:  newCounters(cfg.CountersURL, cfg.CountersSecret)}
 	app.startCluster()
 	app.startScheduler()
 	app.startExpirySweeper()
@@ -504,6 +505,7 @@ func main() {
 	// Drafts (X/TikTok)
 	mux.HandleFunc("POST /api/me/drafts", app.requireAuth(app.handleCreateDraft))
 	mux.HandleFunc("GET /api/me/drafts", app.requireAuth(app.handleListDrafts))
+	mux.HandleFunc("PUT /api/me/drafts/{id}", app.requireAuth(app.handleUpdateDraft))
 	mux.HandleFunc("DELETE /api/me/drafts/{id}", app.requireAuth(app.handleDeleteDraft))
 	// Topics / interests (X)
 	mux.HandleFunc("GET /api/topics", app.requireAuth(app.handleListInterestTopics))

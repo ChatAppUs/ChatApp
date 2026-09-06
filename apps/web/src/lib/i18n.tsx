@@ -119,6 +119,7 @@ const en: Dict = {
   dismiss: "Dismiss",
   loading: "Loading…",
   noResults: "Nothing here yet",
+  followPeopleToSeePosts: "Follow people to see their posts here",
   error: "Something went wrong",
   phoneVerify: "Phone verification",
   sendCode: "Send code",

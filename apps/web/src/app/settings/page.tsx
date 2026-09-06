@@ -14,6 +14,14 @@ type Passkey = {
   last_used_at: string | null;
 };
 
+type Session = {
+  id: string;
+  user_agent: string;
+  ip: string;
+  created_at: string;
+  expires_at: string;
+};
+
 export default function SettingsPage() {
   const [secret, setSecret] = useState("");
   const [otpauth, setOtpauth] = useState("");
@@ -22,6 +30,19 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
   const [pkName, setPkName] = useState("");
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [recoveryLeft, setRecoveryLeft] = useState<number | null>(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [disableCode, setDisableCode] = useState("");
+  const [notif, setNotif] = useState<Record<string, boolean>>({});
+  const NOTIF_LABELS: Record<string, string> = {
+    messages: "Direct messages", groups: "Group chats", calls: "Calls",
+    live: "Live streams & rooms", gifts: "Gifts", reposts: "Reposts & quotes",
+    replies: "Replies to your posts", mentions: "Mentions of you", sounds: "Sounds",
+    stories: "Stories", marketplace: "Marketplace", withdrawals: "Withdrawals",
+    deposits: "Deposits", kyc: "KYC & verification", system: "System",
+  };
 
   const loadPasskeys = async () => {
     try {
@@ -34,7 +55,44 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadPasskeys();
+    api<{ sessions: Session[] }>("/api/me/sessions").then((d) => setSessions(d.sessions)).catch(() => {});
+    api<{ settings: Record<string, boolean> }>("/api/me/notification-settings").then((d) => setNotif(d.settings ?? {})).catch(() => {});
+    api<{ remaining: number }>("/api/auth/2fa/recovery-codes").then((d) => setRecoveryLeft(d.remaining)).catch(() => {});
   }, []);
+
+  const toggleNotif = async (key: string, value: boolean) => {
+    setNotif((prev) => ({ ...prev, [key]: value }));
+    try {
+      await api(`/api/me/notification-settings/${key}`, { method: "PUT", body: JSON.stringify({ enabled: value }) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed to save notification settings");
+    }
+  };
+
+  const revokeSession = async (id: string) => {
+    try {
+      await api(`/api/me/sessions/${id}`, { method: "DELETE" });
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      setStatus("Session revoked. The device will be signed out on its next request.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "revoke failed");
+    }
+  };
+
+  const reissueRecovery = async () => {
+    setError("");
+    try {
+      const d = await api<{ codes: string[] }>("/api/auth/2fa/recovery-codes", {
+        method: "POST",
+        body: JSON.stringify({ code: verifyCode.trim() }),
+      });
+      setRecoveryCodes(d.codes);
+      setRecoveryLeft(d.codes.length);
+      setStatus("New one-time recovery codes generated. Each code can be used exactly once; store them safely.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "current code required");
+    }
+  };
 
   const addPasskey = async () => {
     setError("");
@@ -76,14 +134,19 @@ export default function SettingsPage() {
   const enable = async () => {
     setError("");
     try {
-      await api("/api/auth/2fa/enable", {
+      const d = await api<{ status: string; recovery_codes?: string[] }>("/api/auth/2fa/enable", {
         method: "POST",
         body: JSON.stringify({ code }),
       });
-      setStatus("Two-factor authentication is now ON. You will need your authenticator code at every login.");
+      if (d?.recovery_codes?.length) {
+        setRecoveryCodes(d.recovery_codes);
+        setStatus("Two-factor authentication is now ON. Save these one-time recovery codes — each can be used once if you lose your authenticator app.");
+      } else {
+        setStatus("Two-factor authentication is now ON. You will need your authenticator code at every login.");
+      }
       setSecret("");
       setOtpauth("");
-      setCode("");
+      setVerifyCode("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "invalid code");
     }
@@ -94,10 +157,11 @@ export default function SettingsPage() {
     try {
       await api("/api/auth/2fa/disable", {
         method: "POST",
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: disableCode }),
       });
       setStatus("Two-factor authentication disabled.");
-      setCode("");
+      setDisableCode("");
+      setRecoveryCodes([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "invalid code");
     }
@@ -130,17 +194,85 @@ export default function SettingsPage() {
           </>
         )}
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", width: "100%" }} />
+
+        <h3>Recovery codes</h3>
+        <p className="muted">
+          One-time scratch codes unlock your account when the authenticator app is unavailable.
+          Each code works exactly once. Codes are hashed at rest — not even the server can read them after issue.
+          {recoveryLeft != null && recoveryLeft > 0 && (
+            <span className="badge green"> {recoveryLeft} unused code{recoveryLeft === 1 ? "" : "s"} remaining</span>
+          )}
+        </p>
+        {recoveryCodes.length > 0 && (
+          <div className="badge green" style={{ whiteSpace: "pre-line" }}>
+            {recoveryCodes.join("\n")}
+          </div>
+        )}
+        <div className="row">
+          <input
+            placeholder="Current 6-digit code (required to re-issue)"
+            value={verifyCode}
+            onChange={(e) => setVerifyCode(e.target.value)}
+            maxLength={6}
+            inputMode="numeric"
+            style={{ flex: 1 }}
+          />
+          <button className="secondary" onClick={reissueRecovery}>Generate / re-issue</button>
+        </div>
+
+        <hr style={{ border: "none", borderTop: "1px solid var(--border)", width: "100%" }} />
         <h3>Disable 2FA</h3>
         <input
           placeholder="Current 6-digit code"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
+          value={disableCode}
+          onChange={(e) => setDisableCode(e.target.value)}
           maxLength={6}
           inputMode="numeric"
         />
         <button className="danger" onClick={disable}>Disable 2FA</button>
         {error && <div className="error">{error}</div>}
         {status && <div className="badge green">{status}</div>}
+      </div>
+
+      <div className="card col">
+        <h3 style={{ marginTop: 0 }}>Active sessions ({sessions.length})</h3>
+        <p className="muted">
+          This device, plus any where you are currently signed in. End a session to force
+          that device to sign in again next time.
+
+        </p>
+        {sessions.map((s) => (
+          <div key={s.id} className="row" style={{ alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <div>{s.user_agent.slice(0, 70)}</div>
+              <div className="muted" style={{ fontSize: 12 }}>
+                {s.ip} · expires {new Date(s.expires_at).toLocaleString()}
+              </div>
+            </div>
+            <button className="danger small" onClick={() => revokeSession(s.id)}>End session</button>
+          </div>
+        ))}
+        {sessions.length === 0 && <p className="muted">No active sessions.</p>}
+      </div>
+
+      <div className="card col">
+        <h3 style={{ marginTop: 0 }}>Notification settings</h3>
+        <p className="muted">
+          Control which notification families reach you. Chat-level mutes still
+          override these at delivery time.
+        </p>
+        {Object.keys(NOTIF_LABELS).map((k) => {
+          return (
+            <label key={k} className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <span>{NOTIF_LABELS[k]}</span>
+              <input
+                type="checkbox"
+                checked={notif[k]}
+                onChange={(e) => toggleNotif(k, e.target.checked)}
+              />
+            </label>
+          );
+        })}
       </div>
 
       <div className="card col">

@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, uploadMedia } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Media } from "@/lib/types";
 import CameraRecorder from "@/components/CameraRecorder";
 import VideoEditor from "@/components/VideoEditor";
+
+interface DraftEntry { id: string; body: string; type: string; updated_at: string }
 
 function mediaKind(file: File): Media["kind"] {
   if (file.type.startsWith("video/")) return "video";
@@ -37,7 +39,63 @@ export default function Composer({
   const [stickers, setStickers] = useState<string[]>([]);
   const [musicTrack, setMusicTrack] = useState("");
   const [musicOffset, setMusicOffset] = useState(0);
+  const [drafts, setDrafts] = useState<DraftEntry[]>([]);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const draftIDRef = useRef<string | null>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const activePollOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+
+  // Server-side draft sync (X/TikTok parity): autosave debounce 1.2s,
+  // seeded from the API so drafts survive logout, device switch and refresh.
+
+
+  useEffect(() => {
+    if (type !== "post" && type !== "reel") return;
+    api<{ drafts: DraftEntry[] }>("/api/me/drafts").then((d) => setDrafts(d.drafts)).catch(() => {});
+  }, [type]);
+
+  useEffect(() => {
+    if (type !== "post" && type !== "reel") return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    const pending = body.trim() || captured.length || pollMode && activePollOptions.length >= 2;
+    if (!pending) return;
+    draftTimerRef.current = setTimeout(async () => {
+      try {
+        const id = draftIDRef.current;
+        const payload = { body, media: [] };
+        if (id) {
+          await api(`/api/me/drafts/${id}`, { method: "PUT", body: JSON.stringify(payload) }).catch(() => {});
+        } else {
+          const created = await api<{ id: string }>("/api/me/drafts", { method: "POST", body: JSON.stringify({ type, ...payload }) }).catch(() => {});
+          if (created?.id) {
+            draftIDRef.current = created.id;
+            setDrafts((prev) => [{ id: created.id, body, type, updated_at: new Date().toISOString() }, ...prev.filter((d) => d.id !== created.id)].slice(0, 50));
+          }
+        }
+        if (draftIDRef.current) {
+          setDrafts((prev) => prev.map((d) => d.id === draftIDRef.current ? { ...d, body, updated_at: new Date().toISOString() } : d));
+        }
+      } catch { /* transient network; next debounce retries */ }
+    }, 1200);
+  }, [body, captured, pollMode, activePollOptions, type]);
+
+  // Restore a draft into the composer (body only; media re-upload is not
+  // recoverable client-side once the draft was created — support text/story
+  // drafts fully and image/video posts as authored content ready to publish).
+
+  const restoreDraft = (d: DraftEntry) => {
+    setBody(d.body);
+    setDraftOpen(false);
+    onPosted?.();
+  };
+
+  const deleteDraft = async (e: React.MouseEvent, d: DraftEntry) => {
+    e.stopPropagation();
+    await api(`/api/me/drafts/${d.id}`, { method: "DELETE" }).catch(() => {});
+    setDrafts((prev) => prev.filter((x) => x.id !== d.id));
+    if (draftIDRef.current === d.id) draftIDRef.current = null;
+  };
 
   const STORY_BGS: Record<string, string> = {
     sunset: "linear-gradient(135deg,#ff9966,#ff5e62)",
@@ -48,8 +106,6 @@ export default function Composer({
     mono: "linear-gradient(135deg,#232526,#414345)",
   };
   const STICKER_CHOICES = ["😂", "😍", "🔥", "🎉", "👍", "💯", "🎵", "❤️", "😮", "🙌"];
-
-  const activePollOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
 
   const submit = async () => {
     const hasPoll = pollMode && activePollOptions.length >= 2;
@@ -228,6 +284,31 @@ export default function Composer({
             😊 Extras
           </button>
         )}
+        {type === "post" || type === "reel" ? (
+          <span className="col" style={{ gap: 4 }}>
+            <span className="row" style={{ gap: 6 }}>
+              <button
+                className={draftOpen ? "small" : "secondary small"}
+                title="Autosaved drafts (server-synced)"
+                onClick={() => setDraftOpen((v) => !v)}
+              >
+                💾 {t("drafts")} {drafts.length > 0 && `(${drafts.length})`}
+              </button>
+            </span>
+            {draftOpen && drafts.length > 0 && (
+              <div className="card" style={{ padding: 8, maxHeight: 180, overflowY: "auto" }}>
+                {drafts.map((d) => (
+                  <div key={d.id} className="row" style={{ gap: 6, padding: "4px 0" }}>
+                    <button className="secondary small" style={{ flex: 1, textAlign: "left" }} onClick={() => restoreDraft(d)}>
+                      {d.type === "reel" ? "🎬" : "📝"} {d.body.slice(0, 60) || "(…)"}
+                    </button>
+                    <button className="secondary small" title={t("remove")} onClick={(e) => deleteDraft(e, d)}>🗑️</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </span>
+        ) : null}
         {type === "reel" && (
           <span className="col" style={{ gap: 4 }}>
             <CameraRecorder onCaptured={(f) => setCaptured((prev) => [...prev, f])} />

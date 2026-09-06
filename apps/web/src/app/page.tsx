@@ -15,10 +15,11 @@ export default function FeedPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState<"all" | "following">("all");
 
   const load = useCallback(async () => {
     try {
-      const data = await api<{ posts: Post[] }>("/api/feed");
+      const data = await api<{ posts: Post[] }>(`/api/feed${filter === "following" ? "?filter=following" : ""}`);
       setPosts(data.posts);
       setError("");
     } catch (e) {
@@ -26,7 +27,7 @@ export default function FeedPage() {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, filter]);
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -40,10 +41,18 @@ export default function FeedPage() {
     <>
       <StoryBar />
       <Composer onPosted={load} />
+      <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+        <button className={filter === "all" ? "small" : "secondary small"} onClick={() => setFilter("all")}>
+          🔥 {t("forYou")}
+        </button>
+        <button className={filter === "following" ? "small" : "secondary small"} onClick={() => setFilter("following")}>
+          👥 {t("following")}
+        </button>
+      </div>
       {loading && <div className="card muted">{t("loading")}</div>}
       {error && <div className="card error-text">{error}</div>}
       {!loading && posts.length === 0 && !error && (
-        <div className="card muted">{t("noResults")}</div>
+        <div className="card muted">{filter === "following" ? t("followPeopleToSeePosts") : t("noResults")}</div>
       )}
       {posts.map((p) => (
         <PostCard key={p.id} post={p} onChanged={load} />

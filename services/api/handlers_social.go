@@ -497,8 +497,13 @@ func (a *App) scanPosts(ctx context.Context, query string, args ...any) ([]postO
 func (a *App) handleFeed(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	limit, offset := pageParams(r)
+	followingClause := ""
+	if r.URL.Query().Get("filter") == "following" {
+		// Following tab: posts from accounts the viewer follows (plus own).
+		followingClause = " AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM follows ff WHERE ff.follower_id = $1 AND ff.followee_id = p.author_id))"
+	}
 	posts, err := a.scanPosts(r.Context(), postSelect+`
-                WHERE p.deleted_at IS NULL AND p.type = 'post'
+                WHERE p.deleted_at IS NULL AND p.type = 'post'`+followingClause+`
                   AND (p.publish_at IS NULL OR p.publish_at <= now() OR p.author_id = $1)
                   AND (p.visibility = 'public'
                        OR p.author_id = $1

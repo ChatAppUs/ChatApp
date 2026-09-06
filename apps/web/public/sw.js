@@ -1,6 +1,7 @@
 // ChatApp service worker: app-shell caching with network-first for API.
 const SHELL_CACHE = "chatapp-shell-v1";
-const SHELL = ["/", "/login", "/manifest.webmanifest", "/icon.svg"];
+const SHELL = ["/", "/login", "/manifest.webmanifest", "/icon.svg",
+  "/icons/16.png", "/icons/32.png", "/icons/48.png", "/icons/192.png", "/icons/512.png", "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));

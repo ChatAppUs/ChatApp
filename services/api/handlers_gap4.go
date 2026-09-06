@@ -46,7 +46,32 @@ func (a *App) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
+// PUT /api/me/drafts/{id} — autosave an existing draft (X/TikTok parity).
+func (a *App) handleUpdateDraft(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Body  string    `json:"body"`
+		Media []mediaIn `json:"media"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	media, _ := json.Marshal(req.Media)
+	if len(req.Media) == 0 {
+		media = []byte("[]")
+	}
+	tag, err := a.db.Exec(r.Context(),
+		`UPDATE post_drafts SET body=$3, media=$4, updated_at=now()
+		 WHERE id=$1 AND user_id=$2`,
+		r.PathValue("id"), userIDFrom(r), req.Body, media)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "draft not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
 // GET /api/me/drafts — list your drafts, newest first.
+
 func (a *App) handleListDrafts(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT id, type, body, media, updated_at FROM post_drafts

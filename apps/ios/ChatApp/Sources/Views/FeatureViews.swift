@@ -298,8 +298,12 @@ struct PrivacyView: View {
     @State private var restricted: [FeatureClient.Person] = []
     @State private var filters: [FeatureClient.Filter] = []
     @State private var followReqs: [FeatureClient.FollowReq] = []
+    @State private var sessions: [SessionInfo] = []
     @State private var locked = false
     @State private var phrase = ""
+    @State private var totpCode = ""
+    @State private var recoveryCodes: [String] = []
+    @State private var notif = FeatureClient.NotifSettings()
     @State private var error: String?
 
     func load() {
@@ -309,7 +313,28 @@ struct PrivacyView: View {
                 restricted = (try await client?.restricted())?.restricted ?? []
                 filters = (try await client?.filters())?.filters ?? []
                 followReqs = (try await client?.followRequests())?.requests ?? []
+                sessions = (try await client?.sessions())?.sessions ?? []
+                notif = try await client?.notificationSettings() ?? FeatureClient.NotifSettings()
             } catch { self.error = errorMessage(error) }
+        }
+    }
+
+    func notifToggle(_ key: String, _ label: String) {
+        Toggle(label, isOn: Binding(
+            get: { notif.setting(key) },
+            set: { newValue in
+                Task { try? await client?.updateNotificationSetting(key,, enabled: newValue) }
+            }
+        ))
+    }
+
+    func issueRecovery() {
+        Task {
+            do {
+                let resp = try await client?.reissueRecovery(code: totpCode)
+                recoveryCodes = resp?.codes ?? []
+                error = nil
+            } catch { error = errorMessage(error) }
         }
     }
 
@@ -358,6 +383,54 @@ struct PrivacyView: View {
                     ForEach(filters, id: \.phrase) { f in
                         HStack { Text(f.phrase)
                             Button("Remove") { Task { try? await client?.removeFilter(f.phrase); load() } } }
+                    }
+                }
+                Section("Active sessions (\(sessions.count))") {
+                    if sessions.isEmpty {
+                        Text("No active sessions")
+                    }
+                    ForEach(sessions) { s in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(s.user_agent ?? "—").lineLimit(1)
+                                Text("\(s.ip ?? "") · \(s.expires_at ?? "")").font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("End") {
+                                Task { try? await client?.revokeSession(s.id); load() }
+                            }
+                        }
+                    }
+                }
+Section("Notification settings") {
+                    notifToggle("messages", "Direct messages")
+                    notifToggle("groups", "Group chats")
+                    notifToggle("calls", "Calls")
+                    notifToggle("live", "Live streams & rooms")
+                    notifToggle("gifts", "Gifts")
+                    notifToggle("reposts", "Reposts & quotes")
+                    notifToggle("replies", "Replies to your posts")
+                    notifToggle("mentions", "Mentions of you")
+                    notifToggle("sounds", "Sounds")
+                    notifToggle("stories", "Stories")
+                    notifToggle("marketplace", "Marketplace")
+                    notifToggle("withdrawals", "Withdrawals")
+                    notifToggle("deposits", "Deposits")
+                    notifToggle("kyc", "KYC & verification")
+                    notifToggle("system", "System")
+                }
+                Section("2FA recovery codes") {
+                    Text("One-time codes unlock your account if you lose your authenticator app.")
+                    if recoveryCodes.isEmpty {
+                        Text("No codes generated yet").foregroundColor(.secondary)
+                    } else {
+                        ForEach(recoveryCodes, id: \.self) { c in
+                            Text(c).textSelection(.enabled).monospaced()
+                        }
+                    }
+                    HStack {
+                        TextField("Current 6-digit code", text: $totpCode).keyboardType(.numberPad)
+                        Button("Generate / re-issue") { issueRecovery() }
                     }
                 }
             }

@@ -35,6 +35,7 @@ import org.json.JSONObject
 data class PrivacyUser(val id: String, val username: String)
 data class FollowReq(val id: String, val username: String)
 data class MsgReq(val conversationId: String, val username: String, val preview: String)
+data class SessionInfo(val id: String, val userAgent: String, val ip: String, val expiresAt: String)
 
 @Composable
 fun PrivacyScreen(api: ApiClient, session: Session) {
@@ -47,8 +48,73 @@ fun PrivacyScreen(api: ApiClient, session: Session) {
     var locked by remember { mutableStateOf(false) }
     var showActive by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    var sessions by remember { mutableStateOf(listOf<SessionInfo>()) }
+    var recoveryCodes by remember { mutableStateOf(listOf<String>()) }
+    var notif by remember { mutableStateOf(mapOf<String, Boolean>()) }
+    val notifLabels = listOf(
+        "messages" to "Direct messages", "groups" to "Group chats", "calls" to "Calls",
+        "live" to "Live streams & rooms", "gifts" to "Gifts", "reposts" to "Reposts & quotes",
+        "replies" to "Replies to your posts", "mentions" to "Mentions of you", "sounds" to "Sounds",
+        "stories" to "Stories", "marketplace" to "Marketplace", "withdrawals" to "Withdrawals",
+        "deposits" to "Deposits", "kyc" to "KYC & verification", "system" to "System",
+    )
+    var totpCode by remember { mutableStateOf("") }
+    var scope by rememberCoroutineScope()
     val token = session.accessToken ?: ""
+
+    fun loadSessions() {
+        scope.launch {
+            try {
+                val resp = withContext(Dispatchers.IO) { api.get("/api/me/sessions", token) }
+                val arr = JSONObject(resp).getJSONArray("sessions")
+                sessions = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    SessionInfo(o.getString("id"), o.optString("user_agent"), o.optString("ip"), o.optString("expires_at"))
+                }
+            } catch (e: Exception) {
+                error = e.message
+            }
+        }
+    }
+
+    fun issueRecovery() {
+        scope.launch {
+            try {
+                val resp = withContext(Dispatchers.IO) {
+                    api.post("/api/auth/2fa/recovery-codes", JSONObject().put("code", totpCode).toString(), token)
+                }
+                val arr = JSONObject(resp).getJSONArray("codes")
+                recoveryCodes = (0 until arr.length()).map { arr.getString(it) }
+                error = null
+            } catch (e: Exception) {
+                error = e.message
+            }
+        }
+    }
+
+    fun loadNotif() {
+        scope.launch {
+            try {
+                val resp = withContext(Dispatchers.IO) { api.get("/api/me/notification-settings", token) }
+                val o = JSONObject(resp).getJSONObject("settings")
+                notif = notifLabels.map { it.first to o.optBoolean(it.first, true) }.toMap()
+            } catch (e: Exception) {
+                error = e.message
+            }
+        }
+    }
+
+    fun saveNotif(key: String, value: Boolean) {
+        notif = notif + (key to value)
+        scope.launch {
+            try {
+                val body = JSONObject().put("enabled", value)
+                withContext(Dispatchers.IO) { api.put("/api/me/notification-settings/$key", body.toString(), token) }
+            } catch (e: Exception) {
+                error = e.message
+            }
+        }
+    }
 
     fun load() {
         scope.launch {
@@ -86,7 +152,7 @@ fun PrivacyScreen(api: ApiClient, session: Session) {
         }
     }
 
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(Unit) { load(); loadSessions(); loadNotif() }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Privacy", style = MaterialTheme.typography.headlineSmall)
@@ -272,6 +338,68 @@ fun PrivacyScreen(api: ApiClient, session: Session) {
                                 }
                             }
                         }) { Text("Remove") }
+                    }
+                }
+            }
+
+            item {
+                Text("Active sessions (${sessions.size})", style = MaterialTheme.typography.titleMedium)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        if (sessions.isEmpty()) Text("No active sessions")
+                        sessions.forEach { s ->
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(s.userAgent.take(50), style = MaterialTheme.typography.bodyMedium)
+                                    Text("${s.ip} · ${s.expiresAt}", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) { api.delete("/api/me/sessions/${s.id}", "{}", token) }
+                                            loadSessions()
+                                        } catch (e: Exception) {
+                                            error = e.message
+                                        }
+                                    }
+                                }) { Text("End") }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text("Notification settings", style = MaterialTheme.typography.titleMedium)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        notifLabels.forEach { (k, label) ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(label, modifier = Modifier.weight(1f))
+                                Checkbox(checked = notif[k] ?: true, onCheckedChange = { v ->
+                                    notif = notif + (k to v)
+                                    saveNotif(k, v)
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text("2FA recovery codes", style = MaterialTheme.typography.titleMedium)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("One-time codes unlock your account if you lose your authenticator app. Re-issuing requires your current 6-digit code.", style = MaterialTheme.typography.bodyMedium)
+ if (recoveryCodes.isEmpty()) {
+                            Text("No codes generated yet", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            recoveryCodes.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        }
+                        OutlinedTextField(value = totpCode, onValueChange = { totpCode = it },
+                            label = { Text("Current 6-digit code") }, singleLine = true)
+                        Button(onClick = { issueRecovery() }) { Text("Generate / re-issue") }
                     }
                 }
             }

@@ -4,6 +4,13 @@ import Foundation
 // through APIClient with the session token; decodable models keep call sites
 // safe and consistent with the shared API contract (same surface as web and
 // Android).
+struct SessionInfo: Decodable, Identifiable {
+    let id: String
+    let user_agent: String?
+    let ip: String?
+    let expires_at: String?
+}
+
 struct FeatureClient {
     let api: APIClient
 
@@ -268,4 +275,42 @@ struct FeatureClient {
     func setActiveStatus(_ show: Bool) async throws {
         _ = try await api.put("/api/me/active-status", body: ["show": show])
     }
+
+    struct SessionList: Decodable { let sessions: [SessionInfo] }
+    func sessions() async throws -> SessionList {
+        decoded(SessionList.self, from: try await api.get("/api/me/sessions"))
+            ?? SessionList(sessions: [])
+    }
+
+    func revokeSession(_ id: String) async throws {
+        _ = try await api.delete("/api/me/sessions/\(id)")
+    }
+
+    struct RecoveryResponse: Decodable { let codes: [String] }
+    func reissueRecovery(code: String) async throws -> RecoveryResponse {
+        decoded(RecoveryResponse.self, from: try await api.post("/api/auth/2fa/recovery-codes", body: ["code": code]))
+            ?? RecoveryResponse(codes: [])
+    }
+
+    func recoveryRemaining() async throws -> Int {
+        let d = decoded(RecoveryRemaining.self, from: try await api.get("/api/auth/2fa/recovery-codes"))
+        return d?.remaining ?? 0
+    }
+
+    struct NotifSettings: Decodable {
+        let settings: [String: Bool]
+        init() { settings = [:] }
+        init(settings: [String: Bool]) { self.settings = settings }
+        func setting(_ key: String) -> Bool { settings[key] ?? true }
+    }
+    func notificationSettings() async throws -> NotifSettings {
+        decoded(NotifSettings.self, from: try await api.get("/api/me/notification-settings"))
+            ?? NotifSettings(settings: [:])
+    }
+
+    func updateNotificationSetting(_ key: String, enabled: Bool) async throws {
+        _ = try await api.put("/api/me/notification-settings/\(key)", body: ["enabled": enabled])
+    }
 }
+
+private struct RecoveryRemaining: Decodable { let remaining: Int }

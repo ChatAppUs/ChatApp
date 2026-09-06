@@ -70,6 +70,17 @@ func (l *rateLimiter) limit(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// wsAllow enforces the per-user WebSocket send limit. Keys scope the bucket
+// per user (and, for message sends, per conversation) so a single abusive
+// conversation cannot starve the user's other chats.
+
+func (a *App) wsAllow(userID, scope string) bool {
+	if a.wsLimiter == nil {
+		return true
+	}
+	return a.wsLimiter.allow("ws:" + userID + ":" + scope)
+}
+
 // ---- Hardened CORS ----
 
 // withCORS reflects only explicitly allowed origins (comma-separated in

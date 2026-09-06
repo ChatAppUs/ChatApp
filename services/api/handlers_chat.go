@@ -132,8 +132,21 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 		if err := conn.ReadJSON(&evt); err != nil {
 			return
 		}
+		// Rate-limit inbound WS sends: per-user globe bucket plus a per-user
+		// per-conversation bucket for message payloads so one chat can't starve others.
+
+		if !a.wsAllow(c.userID, "global") {
+			// Abusive sender: drop the connection rather than silently swallowing
+			// their events (linger gives them a false sense of delivery).
+			_ = conn.WriteControl(websocket.CloseMessage,
+				[]byte(websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "message rate limit exceeded")), time.Now().Add(time.Second))
+			return
+		}
 		switch evt.Type {
 		case "message":
+			if !a.wsAllow(c.userID, "conv:"+evt.ConversationID) || evt.Body == "" && evt.MediaURL == "" {
+				return
+			}
 			a.persistMessage(r.Context(), c.userID, evt.ConversationID, evt.Body, evt.MediaURL, evt.IsEncrypted, evt.Silent, evt.TopicID, evt.ReplyTo, evt.Entities, evt.Kind, evt.Waveform)
 		case "signal":
 			// WebRTC call signaling: forward SDP offers/answers and ICE

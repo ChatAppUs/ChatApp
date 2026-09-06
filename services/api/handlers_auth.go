@@ -142,7 +142,14 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusUnauthorized, "totp_required")
 			return
 		}
-		if !a.checkTOTP(*totpSecret, req.TOTPCode) {
+		ok := a.checkTOTP(*totpSecret, req.TOTPCode)
+		if !ok {
+			// One-time recovery/scratch codes unlock the account when the
+			// authenticator app is unavailable. Each code hashes once.
+
+			ok = a.verifyRecoveryCode(userID, req.TOTPCode)
+		}
+		if !ok {
 			writeErr(w, http.StatusUnauthorized, "invalid 2FA code")
 			return
 		}

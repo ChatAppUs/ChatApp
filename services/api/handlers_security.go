@@ -120,6 +120,65 @@ func (a *App) totpRemote(secret, code string) (bool, bool) {
 	return out.Valid, true
 }
 
+// ---- 2FA one-time recovery codes ----
+// Generate 10 random scratch codes; only SHA-256 hashes are persisted so
+// a DB dump never discloses usable codes. Clients surface the raw codes once
+// (at enable time, or on-demand re-issue); the server only ever sees hashes.
+
+func b32NoPad(b []byte) string {
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
+}
+
+// scrubRecoveryCode normalizes user input (strip dashes/spaces, lowercase) for hashing.
+func (a *App) scrubRecoveryCode(code string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(code) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// POST /api/auth/2fa/recovery — (re-)issue recovery codes (replaces prior).
+// mintRecoveryCodes issues 8 fresh SHA-256-hashed scratch codes (previous
+// codes are revoked first), mirroring the gap-pack-9 recovery_codes table.
+func (a *App) mintRecoveryCodes(uid string) ([]string, error) {
+	if _, err := a.db.Exec(context.Background(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
+		return nil, err
+	}
+	raw := make([]string, 0, 8)
+	for i := 0; i < 8; i++ {
+		buf := make([]byte, 10)
+		if _, err := rand.Read(buf); err != nil {
+			return nil, err
+		}
+		code := strings.ToLower(fmt.Sprintf("%s-%s-%s", b32NoPad(buf[0:4]), b32NoPad(buf[4:8]), b32NoPad(buf[8:10])))
+		if _, err := a.db.Exec(context.Background(),
+			`INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1,$2)`,
+			uid, sha256hex(a.scrubRecoveryCode(code))); err != nil {
+			return nil, err
+		}
+		raw = append(raw, code)
+	}
+	return raw, nil
+}
+
+// verifyRecoveryCode consumes a one-time scratch code: removes the matched hash.
+// verifyRecoveryCode atomically consumes a one-time scratch code from the
+// recovery_codes table (issued by gap-pack-9 mint route) and reports success.
+func (a *App) verifyRecoveryCode(uid string, code string) bool {
+	scrubbed := a.scrubRecoveryCode(code)
+	if len(scrubbed) == 0 {
+		return false
+	}
+	target := sha256hex(scrubbed)
+	res, err := a.db.Exec(context.Background(),
+		`UPDATE recovery_codes SET used_at=now() WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL`,
+		uid, target)
+	return err == nil && res.RowsAffected() == 1
+}
+
 func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	secret, err := a.generateTOTP()
@@ -162,7 +221,14 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to enable 2FA")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+	raw, gerr := a.mintRecoveryCodes(uid)
+	if gerr != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to generate recovery codes")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "enabled", "recovery_codes": raw,
+		"note": "recovery codes are shown once; store them safely"})
 }
 
 func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +250,8 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
+	_, _ = a.db.Exec(r.Context(),
+		`DELETE FROM recovery_codes WHERE user_id=$1`, uid)
 	_, _ = a.db.Exec(r.Context(),
 		`UPDATE users SET totp_secret=NULL, totp_enabled=false, updated_at=now() WHERE id=$1`, uid)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
