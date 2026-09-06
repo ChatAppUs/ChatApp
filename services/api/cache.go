@@ -68,3 +68,13 @@ func (c *cache) delPrefix(ctx context.Context, prefix string) {
 		_ = c.rdb.Del(ctx, keys...).Err()
 	}
 }
+
+// del deletes a single key (used by 2FA recovery-claim consumption).
+func (c *cache) del(ctx context.Context, key string) {
+	if c == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	_ = c.rdb.Del(ctx, key).Err()
+}
