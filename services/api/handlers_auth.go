@@ -203,12 +203,39 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Email string `json:"email"`
+		Email      string `json:"email"`
+		Identifier string `json:"identifier"` // username, email or phone (unified smart input)
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" && req.Identifier != "" {
+		// Unified auth input: backend resolves username/email/phone to the
+		// account's verified email before sending a reset link. No account
+		// existence is revealed in the response..
+		id := strings.TrimSpace(req.Identifier)
+		var found string
+		switch {
+		case phoneRe.MatchString(id):
+			if err := a.db.QueryRow(r.Context(), `SELECT email FROM users WHERE phone_e164=$1`, id).Scan(&found); err == nil {
+				email = found
+			}
+		case strings.Contains(id, "@"):
+			if err := a.db.QueryRow(r.Context(), `SELECT email FROM users WHERE lower(email)=lower($1)`, id).Scan(&found); err == nil {
+				email = found
+			}
+		default:
+			if err := a.db.QueryRow(r.Context(), `SELECT email FROM users WHERE username=$1`, id).Scan(&found); err == nil {
+				email = found
+			}
+		}
+		if email == "" {
+			// Do not reveal account existence..
+			writeJSON(w, http.StatusOK, map[string]string{"status": "if the email exists, a reset link was sent"})
+			return
+		}
+	}
 	var userID string
 	err := a.db.QueryRow(r.Context(), `SELECT id FROM users WHERE email = $1`, email).Scan(&userID)
 	if err != nil {
