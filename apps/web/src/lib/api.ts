@@ -71,6 +71,20 @@ export function clearTokens() {
   localStorage.removeItem(USER_KEY);
 }
 
+// Best-effort server-side logout: revokes the refresh token before local
+// tokens are cleared, so the token cannot be replayed after sign-out.
+export function serverLogout(): Promise<void> {
+  const refresh = localStorage.getItem(REFRESH_KEY);
+  if (!refresh) return Promise.resolve();
+  return rawRequest(
+    "/api/auth/logout",
+    { method: "POST", body: JSON.stringify({ refresh_token: refresh }) },
+    false
+  )
+    .then(() => undefined)
+    .catch(() => undefined);
+}
+
 export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_KEY);
 }

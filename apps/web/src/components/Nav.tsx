@@ -9,6 +9,7 @@ import {
   getAccessToken,
   getUserId,
   listAccounts,
+  serverLogout,
   switchAccount,
   type Account,
 } from "@/lib/api";
@@ -25,15 +26,17 @@ export default function Nav() {
   }, []);
 
   const logout = () => {
-    clearTokens();
-    const rest = listAccounts();
-    setAuthed(false);
-    setAccounts(rest);
-    if (rest.length > 0 && switchAccount(rest[0].userId)) {
-      router.refresh();
-    } else {
-      router.push("/login");
-    }
+    void serverLogout().finally(() => {
+      clearTokens();
+      const rest = listAccounts();
+      setAuthed(false);
+      setAccounts(rest);
+      if (rest.length > 0 && switchAccount(rest[0].userId)) {
+        router.refresh();
+      } else {
+        router.push("/login");
+      }
+    });
   };
 
   const switchAcc = (userId: string) => {
@@ -66,6 +69,16 @@ export default function Nav() {
           <Link className="navlink" href="/p2p">{t("p2p")}</Link>
           <Link className="navlink" href="/staking">{t("staking")}</Link>
           <Link className="navlink" href="/ads">{t("ads")}</Link>
+          <Link className="navlink" href="/premium">💎</Link>
+          <Link className="navlink" href="/topics">🏷️</Link>
+          <Link className="navlink" href="/lists">📚</Link>
+          <Link className="navlink" href="/playlists">🎞️</Link>
+          <Link className="navlink" href="/handles">🪪</Link>
+          <Link className="navlink" href="/suggestions">🤝</Link>
+          <Link className="navlink" href="/level">🏅</Link>
+          <Link className="navlink" href="/memories">🕰️</Link>
+          <Link className="navlink" href="/story-archive">🗄️</Link>
+          <Link className="navlink" href="/visitors">👀</Link>
           <Link className="navlink" href="/scan">▦</Link>
           <Link className="navlink" href="/settings">⚙</Link>
         </>
