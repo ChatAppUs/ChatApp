@@ -688,7 +688,7 @@ func (a *App) recordProfileView(ctx context.Context, profileID, viewerID string)
 // GET /api/me/profile-visitors — recent viewers of your profile.
 func (a *App) handleProfileVisitors(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
-		`SELECT u.id, u.username::text, u.display_name, u.avatar_url, v.viewed_at
+		`SELECT u.id, u.username::text, u.display_name, COALESCE(u.avatar_url,''), v.viewed_at
 		 FROM profile_views v JOIN users u ON u.id = v.viewer_id
 		 WHERE v.profile_id=$1 ORDER BY v.viewed_at DESC LIMIT 100`, userIDFrom(r))
 	if err != nil {
