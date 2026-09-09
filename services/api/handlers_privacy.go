@@ -76,6 +76,7 @@ func (a *App) handleAddWordFilter(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "filter failed")
 		return
 	}
+	a.invalidateFYP(r.Context(), userIDFrom(r))
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "added"})
 }
 
