@@ -95,7 +95,7 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	var totpEnabled bool
 	err := a.db.QueryRow(r.Context(),
 		`SELECT id, password_hash, status, totp_secret, totp_enabled FROM users
-		 WHERE username = $1 OR email = lower($1)`, id).
+		 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
 		Scan(&userID, &hash, &status, &totpSecret, &totpEnabled)
 	if err != nil || !a.passwordVerify(req.Password, hash) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")

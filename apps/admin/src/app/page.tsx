@@ -42,7 +42,7 @@ export default function AdminLoginPage() {
       <h3>Admin sign in</h3>
       <form onSubmit={submit}>
         <input
-          placeholder="Username or email"
+          placeholder="Username / email / phone"
           value={identifier}
           onChange={(e) => setIdentifier(e.target.value)}
           autoComplete="username"
