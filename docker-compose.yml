@@ -122,8 +122,8 @@ services:
       COUNTERS_PORT: "8600"
       COUNTERS_SECRET: ${COUNTERS_SECRET:-dev-counters-secret}
       FLUSH_URL: http://api:8080/internal/counters/flush
-      FLUSH_SECRET: ${CLUSTER_SECRET:-}
-      FLUSH_INTERVAL_MS: "15000"
+      FLUSH_SECRET: ${CLUSTER_SECRET:-${FLUSH_SECRET:-dev-cluster-secret}}
+      FLUSH_INTERVAL_MS: "2000"
     ports:
       - "8600:8600"
     depends_on:

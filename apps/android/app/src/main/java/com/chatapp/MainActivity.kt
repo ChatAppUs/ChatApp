@@ -30,6 +30,8 @@ import com.chatapp.ui.MenuBar
 import com.chatapp.ui.MonetizeScreen
 import com.chatapp.ui.PagesScreen
 import com.chatapp.ui.PrivacyScreen
+import com.chatapp.ui.StakingScreen
+import com.chatapp.ui.WalletScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
