@@ -103,7 +103,6 @@ The single input field auto-detects the identifier type in real time, exactly as
 - **Google / Apple OAuth**,etc.
 - Once done,redirect home.
 - **Passkey authentication**.
-- **MetaMask wallet login** - for DEX features only.
 
 ###4.3 UI
 
