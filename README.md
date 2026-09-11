@@ -6,8 +6,43 @@ multi-chain **crypto wallet** (deposits, P2P marketplace, staking, virtual crypt
 convert, withdrawals, and crypto payouts for earnings** — shipped on **all clients**:
 Web, Admin, Android, iOS, Desktop (Tauri)and Browser Extension.
 
-Every back-end service is wired to every frontend (and every frontend to every backend** —
+Every back-end service is wired to every frontend(and every frontend to every backend** —
 **100/100 feature parity**. Light/dark theme works on **every page of every app**.
+
+## Access — Full App with or without an Account
+
+| Mode | Authentication | Works immediately | Sessions manager | Notes |
+|---|---|---|---|---|
+| **Full member** | Register / login (username, email, phone, Google, passkey, QR, 2FA) | ✔ full features | ✔ multi-account switcher, sessions manager, revoke | Own posts, following, wallet, chats, calls, creator tools, admin plane |
+| **Browser / guest (Telegram/Simplex-style)** | None — no login, no password, no email | ✔ full read-only features | ✔ device-local `chatapp.guest` ephemeral browser session | Browse feed, FYP, reels, stories, groups, pages, chats preview, calls lobby, trending, search, public profiles; session survives tab closure via `localStorage`; logout clears it |
+| **Continue as guest** | One tap from login/register page — `localStorage` session boot | ✔ full feature surfacing | ✔ device-local | Read-only browsing until the user registers/logs in; account creation in place promotes the guest session to full member |
+
+Users access the **entire feature surface** — browsing, search, chats, calls, media, wallet
+prices, trends, unlockables — **in read-only guest mode without registering**, then enjoy
+the **full write experience** (posting, messaging, calls, payments, creator tools) with a
+registered account. The login/register pages carry a **“Continue without account”**
+entry, and guest state is kept in a **device-local browser session** (`localStorage`),
+so nobody is forced to create an account just to look around.
+
+### How access works (tree)
+
+```
+                         ┌─ Login / Register (full member)
+                         │    ├── JWT access + refresh session (multi-account switcher)
+                         │    ├── Full write surface: posts, chats, calls, wallet,
+                         │    │   P2P, staking, cards, convert, creator tools, admin
+                         │    └── Sessions manager: device list, remote revoke
+ A user on ChatApp ────┤
+                         │                         ┌─ One tap "Continue without account"
+                         └─ Browser / guest session ─┤
+                                                    ├── Device-local ephemeral session (`chatapp.guest` = localStorage)
+                                                    ├── Read-only full feature surface: feed, FYP, reels,
+                                                    │   stories, groups, pages, chat preview, calls lobby,
+                                                    │   trending, search, public profiles, prices, listings
+                                                    ├── Survives tab close;; cleared on logout
+                                                    └── Register/login later → promotes guest session in place
+                                                        to the full member session (no re-entry,, no lost context)
+```
 
 ---
 
@@ -25,7 +60,7 @@ Every back-end service is wired to every frontend (and every frontend to every b
 | TURN | `services/sfu-forwarder` | **C++** | Self-contained TURN relay (:3479/:8099) for NAT traversal |
 | SFU | `services/sfu` | **Go** (Pion | Group calls, meetings, live broadcasting + embedded STUN/TURN (:8095) |
 | ML | `services/ml` | **Python/FastAPI** | Reels ranking, KYC auto-verify (score + checks), media moderation, embeddings, captions |
-| DB | Postgres 17 | SQL | Primary store (24 migrations, double-entry ledger, 168 tables) |
+| DB | Postgres 17 | SQL | Primary store (25 migrations, double-entry ledger, 177 tables) |
 | Cache | Redis 7 | — | FYP feed cache (15 s TTL), price cache, rate limiting, sessions |
 
 No SQLite anywhere. All value moves through a **double-entry ledger** with idempotent
@@ -37,7 +72,7 @@ transactions — balances = `SUM(ledger_entries.amount)` per wallet account.
 
 | Client | Location | Notes |
 |---|---|---|
-| Web app | `apps/web` (Next.js 14) | 42 routes: social, chat, calls, wallet, P2P, staking, cards, convert, creator..., full admin of own content. Theme (`chatapp.theme`) on every page via root layout script|
+| Web app | `apps/web` (Next.js 14) | 52 route pages (social, chat, calls, wallet, P2P, staking, cards, convert, creator..., guest browse mode, full admin of own content). Guest "Continue without account" button on login/register; `chatapp.guest` ephemeral browser session for no-login browsing. Theme (`chatapp.theme`) on every page via root layout script|
 | Admin console | `apps/admin` (Next.js,:3100) | Separate admin login plane (admin-scoped JWT); tokens, withdrawals, KYC, merchant, cards, transfers, ads, staking, prices, roles, reports, sanctions, groups, moderation, organizations, moments, verification requests |
 | Android | `apps/android` (Kotlin/Compose) | Same features via tabbed navigation + deep screens (Wallet, P2P, Staking, Cards, Monetize, Bots, Groups, Pages, Privacy...). Native QR scan (ML Kit) + camera recorder. Theme: `Session.darkTheme` → `ChatAppTheme` (root of every Activity)|
 | iOS | `apps/ios` (SwiftUI) | Same feature set (Feed, FYP, Chat, Calls, Wallet, Staking, Cards, Monetize...). Native QR scan (AVFoundation) + camera. Theme: `@AppStorage("chatapp.theme")` → `.preferredColorScheme` |
@@ -141,6 +176,26 @@ transactions — balances = `SUM(ledger_entries.amount)` per wallet account.
 - Bots (create/manage via `POST /api/bots`, per-bot token, getMe/getChat/
   editMessageText idempotent, createInvoice + pay via wallet, inline queries,
   mini-app registry launcher (`GET /api/miniapps`) with add/remove owner-auth.
+
+### Guest Access — Works like Telegram/Simplex Anonymous Browsing
+- **No-account entry**: login/register pages surface a **“Continue without account”** button;
+  one tap boots a **device-local guest browser session** (`chatapp.guest` in `localStorage`),
+  persisting across tab closes until explicit logout — no username,, no password,
+  no email,, no backend account row created..
+- **Full feature surface in read-only mode**: all public content is reachable without auth —
+  feed,, FYP,, reels and fyp ranking,, stories,and moments,, groups,, pages,, channels,
+  events,, hashtags,, trending,, search,, public profiles,, chat preview,, calls/live lobby,
+  marketplace listings,, price tickers,, staking asset catalog,, media playback
+  (signed-grant downloads need a member login); admin plane stays login-only..
+- **Zero signup friction**: guests roam every client the same way a logged-in user does —
+  web inherits the member UI with write actions softly gated to a login prompt..
+- **Promotion in place**: the moment a guest registers or logs in, the existing
+  session takes over as the full member session (no re-entry,, no lost context),
+  and the full write surface — posting,, messaging,, calling,, wallet,, creator tools —
+  unlocks immediately..
+- **Sessions manager parity**: member sessions remain fully manageable (multi-account
+  switcher,, device list,, remote revoke); guest sessions are managed device-locally
+  (clear `chatapp.guest` = logout)..
 
 
 
