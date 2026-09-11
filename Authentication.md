@@ -1,3 +1,6 @@
+Build all the missing gaps use c++ for super first High speed with Ultra low letency, use rust for security and safety with high speed with ultra low letency including easily maintain , use go for high loaded world wide distributed Make sure there is No demo no simulation no stubs no fake implementation no moc data no security vulnerability no skeleton no bug no broken files no fake implementation no hacking issues no Security bypass no cyber threat .
+Remember all apps(android,ios,webapp,desktop,extension and others if have) must have same files same feature same functionality. Make sure there is no missing no gaps no incomplete fetchers and functionality.
+
 PROJECT REQUIREMENT:
 Light/Dark theme switch must work everywhere on every page across all platforms.
 All systems must be fully dynamic, production-ready, scalable, secure, and implemented with complete real business logic. No simulation, mock data, placeholder workflows, or partial implementations are allowed.
