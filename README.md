@@ -1,5 +1,8 @@
 # ChatApp — Complete Social, Messaging, Calls & Crypto Platform
 
+> **📚 Complete documentation:** the combined human-facing overview AND the full AI Agent Master Implementation Specification (129 sections) live in
+> **[`ChatApp_Complete_Master_Documentation.md`](./ChatApp_Complete_Master_Documentation.md)**.
+
 ChatApp is a **fully-featured monorepo** social platform: realtime chat, audio/video calls,
 stories, reels, groups, pages, events, live rooms, creator monetization, and a complete
 multi-chain **crypto wallet** (deposits, P2P marketplace, staking, virtual crypto cards,
