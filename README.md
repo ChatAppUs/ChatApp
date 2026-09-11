@@ -14,16 +14,24 @@ Every back-end service is wired to every frontend(and every frontend to every ba
 | Mode | Authentication | Works immediately | Sessions manager | Notes |
 |---|---|---|---|---|
 | **Full member** | Register / login (username, email, phone, Google, passkey, QR, 2FA) | ✔ full features | ✔ multi-account switcher, sessions manager, revoke | Own posts, following, wallet, chats, calls, creator tools, admin plane |
-| **Browser / guest (Telegram/Simplex-style)** | None — no login, no password, no email | ✔ full read-only features | ✔ device-local `chatapp.guest` ephemeral browser session | Browse feed, FYP, reels, stories, groups, pages, chats preview, calls lobby, trending, search, public profiles; session survives tab closure via `localStorage`; logout clears it |
-| **Continue as guest** | One tap from login/register page — `localStorage` session boot | ✔ full feature surfacing | ✔ device-local | Read-only browsing until the user registers/logs in; account creation in place promotes the guest session to full member |
+| **Browser / guest (TorChat/Simplex/Briar/Session-style)** | None — no login, no password, no email, no phone, no IP-bound identity | ✔ full anonymous access — 1:1 chat, group chat, audio/video calls, group calls+ read-only browsing | ✔ device-local `chatapp.guest` ephemeral anonymous session (`localStorage`; no server-side account row | Chat **anonymously + call + group chat + group call** like TorChat/Simplex/Briar/Session — zero traceability: messages/calls are E2E,, relayed without storing who talked to whom;; feed,, FYP,, reels,, stories,, groups,, pages,, trending,, search,, public profiles stay browsable;; logout clears the device session |
+| **Continue as guest** | One tap from login/register page — `localStorage` session boot | ✔ full anonymous feature surface | ✔ device-local | Anonymous chat, calls, group chat, group calls + full browsing until the user registers/logs in; account creation in place promotes the guest session to full member |
 
-Users access the **entire feature surface** — browsing, search, chats, calls, media, wallet
-prices, trends, unlockables — **in read-only guest mode without registering**, then enjoy
-the **full write experience** (posting, messaging, calls, payments, creator tools) with a
-registered account. The login/register pages carry a **“Continue without account”**
-entry, and guest state is kept in a **device-local browser session** (`localStorage`),
-so nobody is forced to create an account just to look around.
+Users can use the app **two ways** — fully anonymous, or with a registered member account:
 
+- **Anonymous guest mode (TorChat/Simplex/Briar/Session-style)** — one tap from the login/register
+  page (`Continue without account`) boots a **device-local ephemeral session**
+  (`chatapp.guest` in `localStorage`; no server-side account row created). **No one can
+  track this**: guests chat **1:1**, join **group chats**, make **audio/video calls** and
+  **group calls** completely anonymously — no username, no password, no email, no phone,
+  no IP-bound identity stored; messages/calls are **end-to-end encrypted** and relayed without
+  storing who talked to whom.. The **whole public feature surface** stays reachable too —
+  feed, FYP, reels, stories, groups, pages, channels, events, trending, search,
+  public profiles, marketplace listings, price tickers..
+- **Registered member** — login/register (username, email, phone, Google, passkey, QR, 2FA),
+  unlocks the **full write experience** — posting, comments, reactions, DMs, calls, wallet,
+  P2P, staking, cards, convert, creator tools, admin plane — with a normal sessions
+  manager (multi-account switcher, device list, remote revoke)..
 ### How access works (tree)
 
 ```
@@ -33,15 +41,19 @@ so nobody is forced to create an account just to look around.
                          │    │   P2P, staking, cards, convert, creator tools, admin
                          │    └── Sessions manager: device list, remote revoke
  A user on ChatApp ────┤
-                         │                         ┌─ One tap "Continue without account"
-                         └─ Browser / guest session ─┤
-                                                    ├── Device-local ephemeral session (`chatapp.guest` = localStorage)
-                                                    ├── Read-only full feature surface: feed, FYP, reels,
-                                                    │   stories, groups, pages, chat preview, calls lobby,
-                                                    │   trending, search, public profiles, prices, listings
-                                                    ├── Survives tab close;; cleared on logout
-                                                    └── Register/login later → promotes guest session in place
-                                                        to the full member session (no re-entry,, no lost context)
+                         │                        ┌─ One tap "Continue without account"
+                         └─ Guest browser session ─┤
+                                                  ├── Device-local ephemeral anonymous session
+                                                  │   (`chatapp.guest` = localStorage; no account row)
+                                                  ├── Anonymous 1:1 chat + group chat — E2E,
+                                                  │   relayed without storing who talked to whom
+                                                  ├── Anonymous audio/video calls + group calls
+                                                  ├── Read-only surface: feed,, FYP,, reels,, stories,, groups,
+                                                  │   pages,, chat preview,, calls lobby,, trending,, search,
+                                                  │   public profiles,, prices,, listings
+                                                  ├── Survives tab close;; cleared on logout
+                                                  └── Register/login later → promotes guest session
+                                                      to the full member session (no re-entry,, no lost context)
 ```
 
 ---
@@ -177,27 +189,31 @@ transactions — balances = `SUM(ledger_entries.amount)` per wallet account.
   editMessageText idempotent, createInvoice + pay via wallet, inline queries,
   mini-app registry launcher (`GET /api/miniapps`) with add/remove owner-auth.
 
-### Guest Access — Works like Telegram/Simplex Anonymous Browsing
+### Guest Access — Fully Anonymous Chat, Calls, Group Chat & Group Calls (TorChat/Simplex/Briar/Session-style)
 - **No-account entry**: login/register pages surface a **“Continue without account”** button;
-  one tap boots a **device-local guest browser session** (`chatapp.guest` in `localStorage`),
+  one tap boots a **device-local ephemeral guest session** (`chatapp.guest` in `localStorage`),
   persisting across tab closes until explicit logout — no username,, no password,
-  no email,, no backend account row created..
-- **Full feature surface in read-only mode**: all public content is reachable without auth —
+  no email,, no phone,, no server-side account row created..
+- **Fully anonymous chat, calls, group chat & group calls**: guests use the app exactly
+  like **TorChat / Simplex / Briar / Session** — 1:1 messages,, group chats,
+  audio/video calls,, and group calls,, all **end-to-end encrypted**,, with **no one able
+  to track who talked to whom** (no username,, no phone,, no IP-bound identity,, no
+  record of conversations linked back to a person). The relay carries ciphertext only;
+  nothing is stored that could identify the participants afterwards..
+- **Full feature surface reachable without auth**: all public content is browsable —
   feed,, FYP,, reels and fyp ranking,, stories,and moments,, groups,, pages,, channels,
-  events,, hashtags,, trending,, search,, public profiles,, chat preview,, calls/live lobby,
+  events,, hashtags,, trending,, search,, public profiles,, chat/call lobbies,
   marketplace listings,, price tickers,, staking asset catalog,, media playback
   (signed-grant downloads need a member login); admin plane stays login-only..
 - **Zero signup friction**: guests roam every client the same way a logged-in user does —
-  web inherits the member UI with write actions softly gated to a login prompt..
+  web inherits the member UI where write actions softly prompt for login..
 - **Promotion in place**: the moment a guest registers or logs in, the existing
   session takes over as the full member session (no re-entry,, no lost context),
-  and the full write surface — posting,, messaging,, calling,, wallet,, creator tools —
+  and the full write surface — posting,, messaging,, wallet,, creator tools —
   unlocks immediately..
 - **Sessions manager parity**: member sessions remain fully manageable (multi-account
   switcher,, device list,, remote revoke); guest sessions are managed device-locally
   (clear `chatapp.guest` = logout)..
-
-
 
 ### Admin & Trust & Safety
 - Admin roles (dynamic `admin_role_defs`,permissions incl. p2p.resolve ,
