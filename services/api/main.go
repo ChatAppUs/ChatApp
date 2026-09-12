@@ -637,6 +637,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/verify-password", app.requireAuth(app.handleVerifyPassword))
 	mux.HandleFunc("POST /api/me/security/challenges", app.requireAuth(app.handleCredentialChallenge))
 	mux.HandleFunc("POST /api/me/security/challenges/{kind}/verify", app.requireAuth(app.handleCredentialChallengeVerify))
+	mux.HandleFunc("POST /api/me/security/attestation", app.requireAuth(app.handleSecurityAttestation))
 	mux.HandleFunc("PUT /api/me/security", app.requireAuth(app.handleCredentialChange))
 	// FYP feature-store rollup (X) + group scale probe (admin)
 	mux.HandleFunc("GET /api/me/feature-vector", app.requireAuth(app.handleFeatureVector))
