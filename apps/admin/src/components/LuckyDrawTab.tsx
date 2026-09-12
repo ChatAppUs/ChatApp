@@ -31,7 +31,7 @@ interface Price {
   status: string;
 }
 
-export function LuckyDrawTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+export function LuckyDrawTab({ act }: { act: (fn: () => Promise<unknown>) => Promise<unknown> }) {
   const [draws, setDraws] = useState<Draw[]>([]);
   const [prices, setPrices] = useState<Price[]>([]);
   const [err, setErr] = useState("");
