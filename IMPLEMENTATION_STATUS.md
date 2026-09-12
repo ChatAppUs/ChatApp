@@ -29,7 +29,8 @@ The specifications describe a release program substantially broader than what ca
 
 | Check | Result |
 |---|---|
-| `python3 tests/parity_check.py` | Passed: 128 files, 481 registered routes, with web/admin/Android/iOS/extension references accounted for. |
+| `python3 tests/parity_check.py` | Passed: 128 files, 482 registered routes, with web/admin/Android/iOS/extension references accounted for. |
+| `python3 scripts/validate-feature-registry.py` | Passed: 17 registered P0/P1/P2 features and 7 required client/service layers. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Passed. |
 | `npm run build` in `apps/web` | Passed: all listed Next.js routes compiled successfully. |
 | `npm run build` in `apps/admin` | Passed: dashboard and all admin routes compiled successfully. |

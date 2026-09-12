@@ -25,6 +25,7 @@ jobs:
       - name: Parity and syntax validation
         run: |
           python tests/parity_check.py
+          python scripts/validate-feature-registry.py
           python -m compileall -q services/ml
           node --check apps/extension/security.js
           node --check apps/extension/options.js
