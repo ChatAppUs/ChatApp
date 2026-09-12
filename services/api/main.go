@@ -389,6 +389,7 @@ func main() {
 	mux.HandleFunc("GET /api/admin/moderation/blocked-hashes", app.requireAdmin("superadmin", "admin")(app.handleAdminListBlockedHashes))
 	mux.HandleFunc("DELETE /api/admin/moderation/block-hash/{id}", app.requireAdmin("superadmin", "admin")(app.handleAdminUnblockHash))
 	mux.HandleFunc("GET /api/admin/moderation/media", app.requireAdmin("superadmin", "admin")(app.handleAdminMediaModeration))
+	mux.HandleFunc("GET /api/admin/moderation/content-abuse", app.requireAdmin("superadmin", "admin")(app.handleAdminContentAbuse))
 	mux.HandleFunc("POST /api/admin/sanctions/import", app.requireAdmin("superadmin", "admin")(app.handleAdminImportSanctions))
 	mux.HandleFunc("GET /api/admin/sanctions/stats", app.requireAdmin("superadmin", "admin")(app.handleAdminSanctionsStats))
 	mux.HandleFunc("GET /api/admin/convert/rates/derived", app.requireAdmin("superadmin", "admin")(app.handleDerivedRates))
