@@ -122,18 +122,45 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var deletionScheduled *time.Time
 	var totpSecret *string
 	var totpEnabled bool
+	var failedAttempts int
+	var lockedUntil *time.Time
 	err := a.db.QueryRow(r.Context(),
-			`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled FROM users
+			`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled,
+			        failed_login_attempts, locked_until FROM users
 			 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
-			Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled)
-	if errors.Is(err, pgx.ErrNoRows) || !a.passwordVerify(req.Password, hash) {
-		writeErr(w, http.StatusUnauthorized, "invalid credentials")
-		return
-	}
-	if err != nil {
+			Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled,
+				&failedAttempts, &lockedUntil)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusInternalServerError, "login failed")
 		return
 	}
+	// Identity spec: 5 consecutive failures lock the account for 48 hours.
+	if lockedUntil != nil && lockedUntil.After(time.Now()) {
+		writeErr(w, http.StatusUnauthorized, "account locked for 48 hours after too many failed attempts")
+		return
+	}
+	if errors.Is(err, pgx.ErrNoRows) || !a.passwordVerify(req.Password, hash) {
+		// Record the failed attempt against the account (if it exists) and lock
+		// it for 48 hours once 5 consecutive failures accumulate.
+		if err == nil {
+			newCount := failedAttempts + 1
+			if newCount >= 5 {
+				_, _ = a.db.Exec(r.Context(),
+					`UPDATE users SET failed_login_attempts = $2, locked_until = now() + interval '48 hours', updated_at = now() WHERE id = $1`,
+					userID, newCount)
+			} else {
+				_, _ = a.db.Exec(r.Context(),
+					`UPDATE users SET failed_login_attempts = $2, updated_at = now() WHERE id = $1`,
+					userID, newCount)
+			}
+		}
+		writeErr(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	// Successful login resets the failure counter and clears any lockout.
+	_, _ = a.db.Exec(r.Context(),
+		`UPDATE users SET failed_login_attempts = 0, locked_until = NULL, updated_at = now() WHERE id = $1`,
+		userID)
 	if status == "suspended" && deletionScheduled != nil && deletionScheduled.After(time.Now()) {
 		_, _ = a.db.Exec(r.Context(), `UPDATE users SET status='active', deletion_requested_at=NULL, deletion_scheduled_at=NULL, updated_at=now() WHERE id=$1`, userID)
 		status = "active"
