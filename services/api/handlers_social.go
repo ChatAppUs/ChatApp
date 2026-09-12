@@ -240,6 +240,11 @@ func (a *App) handleCreatePost(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "post violates content policy")
 		return
 	}
+	// Content-level trust & safety: per-account duplicate / link-spam defense.
+	if ok, reason := a.contentWriteAllowed(r.Context(), uid, req.Body); !ok {
+		writeErr(w, http.StatusTooManyRequests, reason)
+		return
+	}
 	var mediaURLs []string
 	for _, m := range req.Media {
 		if strings.TrimSpace(m.URL) != "" {
@@ -720,6 +725,11 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	uid, postID := userIDFrom(r), r.PathValue("id")
 	if err := a.checkReplyPolicy(r.Context(), postID, uid, req.Body); err != nil {
 		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	// Content-level trust & safety: per-account duplicate / link-spam defense.
+	if ok, reason := a.contentWriteAllowed(r.Context(), uid, req.Body); !ok {
+		writeErr(w, http.StatusTooManyRequests, reason)
 		return
 	}
 	tx, err := a.db.Begin(r.Context())
