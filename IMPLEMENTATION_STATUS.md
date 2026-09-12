@@ -4,7 +4,7 @@ This status is derived from the five root specifications and the current source 
 
 ## Summary
 
-The repository contains an implemented multi-platform ChatApp product surface. The API registers **473 routes** across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, and privacy. The web application contains **82 routes/pages** and builds successfully with Next.js production compilation. The repository parity scanner reports no missing platform route references.
+The repository contains an implemented multi-platform ChatApp product surface. The API registers **481 routes** across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, and privacy. The web and admin applications build successfully with Next.js production compilation. The repository parity scanner reports no missing platform route references.
 
 The specifications describe a release program substantially broader than what can be proven by static inspection alone. Features are therefore marked **Implemented**, **Implemented with runtime validation pending**, or **Not proven complete** rather than being represented as complete merely because a route or page exists.
 
@@ -28,12 +28,16 @@ The specifications describe a release program substantially broader than what ca
 
 | Check | Result |
 |---|---|
-| `python3 tests/parity_check.py` | Passed: 127 files, 473 registered routes, with web/admin/Android/iOS/extension references accounted for. |
+| `python3 tests/parity_check.py` | Passed: 128 files, 481 registered routes, with web/admin/Android/iOS/extension references accounted for. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Passed. |
 | `npm run build` in `apps/web` | Passed: all listed Next.js routes compiled successfully. |
-| Go tests for `services/api` and `services/sfu` | Not run: Go is not installed in the execution environment. |
-| Rust tests for `services/authn` and `services/security` | Not run: Cargo is not installed in the execution environment. |
-| Python integration tests | Not completed: the environment lacks the `websockets` dependency and a running API/database fixture. |
+| `npm run build` in `apps/admin` | Passed: dashboard and all admin routes compiled successfully. |
+| Python ML compilation and extension Node syntax checks | Passed. |
+| Go tests for `services/api` and `services/sfu` | Not executable: Go is not installed in the execution environment. |
+| Rust tests for `services/authn` and `services/security` | Not executable: Cargo is not installed in the execution environment. |
+| Python integration tests | Not executable: `websockets` was installed, but no API/database fixture is running and the connection was refused. |
+| Android/iOS native builds | Not executable: Android Gradle wrapper, iOS Swift package manifest, and native toolchains are unavailable. |
+| Docker/PostgreSQL/provider end-to-end validation | Not executable: Docker, PostgreSQL client, configured database, ML, SMTP, and SMS services are unavailable in this checkout. |
 
 ## Definition used for marking
 

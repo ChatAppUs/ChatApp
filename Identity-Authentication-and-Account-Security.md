@@ -21,6 +21,10 @@ This status is maintained against the source tree on `main`. **Implemented** mea
 
 The repository must not claim the full specification is complete until the rows marked **Not complete** and **Not proven complete** have passed their required implementation and runtime validation.
 
+### Validation audit — 2026-09-12
+
+Static and frontend validation completed in this checkout: parity passed with **128 files and 481 registered routes**; the web and admin Next.js production builds passed; Python ML compilation passed; extension JavaScript syntax checks passed; and `git diff --check` passed. Full runtime certification was not possible because Go, Cargo, Docker, PostgreSQL, Android, and iOS toolchains/services are unavailable here, and integration tests cannot connect to a running API/database/provider fixture. These checks therefore must not be represented as complete production validation.
+
 ---
 
 ## 1. Non-Negotiable Platform Rules
