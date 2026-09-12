@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { passkeySupported, registerPasskey } from "@/lib/passkey";
 import AccountSafety from "@/components/AccountSafety";
 import ScreenTimePanel from "@/components/ScreenTime";
+import AccountDeletion from "@/components/AccountDeletion";
 
 type Passkey = {
   id: string;
@@ -349,6 +350,7 @@ export default function SettingsPage() {
       </div>
 
       <AccountSafety />
+      <AccountDeletion />
       <div className="card col">
         <h3 style={{ marginTop: 0 }}>Change password</h3>
         <p className="muted">Verify your current email, then provide a fresh KYC selfie for face-match and liveness attestation.</p>
