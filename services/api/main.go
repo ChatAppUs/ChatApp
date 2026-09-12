@@ -81,6 +81,7 @@ func main() {
 	app.startLuckyDrawSweeper()
 	app.startChainWatchers()
 	app.startPriceWorker()
+	app.startMeshEngine()
 
 	origins := map[string]bool{}
 	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
