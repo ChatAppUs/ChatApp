@@ -1,14 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, saveTokens, Tokens } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import GoogleSignIn from "@/components/GoogleSignIn";
 import QRLogin from "@/components/QRLogin";
+import CountryPicker from "@/components/CountryPicker";
 import { loginWithPasskey, passkeySupported } from "@/lib/passkey";
 import { startGuestSession } from "@/lib/api";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// Identity spec §2: unified smart input — one field auto-detects email vs phone
+// in real time (no toggle/switch/dropdown mode selector).
+function detectMode(value: string): "email" | "phone" | "unknown" {
+  const v = value.trim();
+  if (!v) return "unknown";
+  if (/^[+0-9][0-9()\-.\s]*$/.test(v) && /\d/.test(v)) return "phone";
+  if (v.includes("@") || /[a-zA-Z]/.test(v)) return "email";
+  return "phone";
+}
 
 export default function LoginPage() {
   const { t } = useI18n();
@@ -22,6 +35,27 @@ export default function LoginPage() {
   const [showQR, setShowQR] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [dial, setDial] = useState("+1");
+  const [countryISO, setCountryISO] = useState("US");
+  const [phoneLocal, setPhoneLocal] = useState("");
+
+  const mode = useMemo(() => detectMode(identifier), [identifier]);
+  const isPhone = mode === "phone";
+
+  // Auto-sync a typed international phone (with +…) into the dial + local fields.
+  const handleIdentifier = (raw: string) => {
+    if (/^\+[0-9]{1,15}$/.test(raw.replace(/[\s().\-]/g, ""))) {
+      const digits = raw.replace(/[\s().\-]/g, "");
+      for (const d of ["+1", "+44", "+91", "+86", "+49", "+33", "+81", "+7"]) {
+        if (digits.startsWith(d)) {
+          setDial(d);
+          setPhoneLocal(digits.slice(d.length));
+          break;
+        }
+      }
+    }
+    setIdentifier(raw);
+  };
 
   const passkeyLogin = async () => {
     setBusy(true);
@@ -62,12 +96,16 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     try {
+      // Identity spec §2: backend receives an explicit type flag (email/phone).
+      const finalIdentifier = isPhone
+        ? (phoneLocal ? `${dial}${phoneLocal.replace(/\D/g, "")}` : identifier.replace(/[\s().\-]/g, ""))
+        : identifier.trim();
       const tokens = await api<Tokens>(
         "/api/auth/login",
-        { method: "POST", body: JSON.stringify({ identifier, password, totp_code: totpCode }) },
+        { method: "POST", body: JSON.stringify({ identifier: finalIdentifier, type: isPhone ? "phone" : "email", password, totp_code: totpCode }) },
         false
       );
-      const username = identifier.includes("@") ? undefined : identifier;
+      const username = finalIdentifier.includes("@") ? undefined : finalIdentifier;
       saveTokens(tokens, username, rememberMe);
       router.push("/");
       router.refresh();
@@ -90,8 +128,35 @@ export default function LoginPage() {
       <form onSubmit={submit} className="col">
         <div>
           <label>{t("username")} / {t("email")} / {t("phone")}</label>
-          <input value={identifier} onChange={(e) => setIdentifier(e.target.value)} required />
+          <input
+            value={identifier}
+            onChange={(e) => handleIdentifier(e.target.value)}
+            placeholder="you@example.com  +41 55 555 2671"
+            inputMode={isPhone ? "tel" : "email"}
+            autoComplete="email"
+            required
+          />
+          <p className="muted" style={{ fontSize: 12 }}>
+            {isPhone ? "Phone mode — country flag applies automatically" : "Email mode — RFC-style validation applies"}
+          </p>
         </div>
+        {isPhone && (
+          <>
+            <CountryPicker value={dial} onChange={(d, iso) => { setDial(d); setCountryISO(iso); }} />
+            <div>
+              <label>{t("phone")} (local)</label>
+              <div className="row">
+                <span className="badge">{dial}</span>
+                <input
+                  value={phoneLocal}
+                  onChange={(e) => setPhoneLocal(e.target.value)}
+                  placeholder="4155552671"
+                  inputMode="tel"
+                />
+              </div>
+            </div>
+          </>
+        )}
         <div>
           <label>{t("password")}</label>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -163,6 +228,8 @@ export default function LoginPage() {
         <Link href="/forgot-password">{t("forgotPassword")}</Link>
         {" · "}
         <Link href="/register">{t("register")}</Link>
+        {" · "}
+        <Link href="/">{t("backToHome")}</Link>
       </p>
     </div>
   );
