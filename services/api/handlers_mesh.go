@@ -277,10 +277,16 @@ func (a *App) handleMeshStatus(w http.ResponseWriter, r *http.Request) {
 		`SELECT count(*) FROM mesh_packets WHERE state = 'delivered'`).Scan(&delivered)
 	_ = a.db.QueryRow(r.Context(),
 		`SELECT count(*) FROM mesh_packets WHERE state = 'expired'`).Scan(&expired)
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"mesh":      "enabled",
 		"queued":    queued,
 		"delivered": delivered,
 		"expired":   expired,
-	})
+	}
+	// Merge the native offline mesh engine status (local Wi-Fi/hotspot UDP
+	// transport, multi-hop routing, store-and-forward).
+	for k, v := range a.meshStatus() {
+		resp[k] = v
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
