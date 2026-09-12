@@ -243,6 +243,32 @@
       "backend": true,
       "database": true,
       "status": "IMPLEMENTED"
+    },
+    {
+      "id": "anonymous_guest",
+      "domain": "identity",
+      "priority": "P0",
+      "web": true,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
+      "backend": true,
+      "database": false,
+      "status": "IMPLEMENTED"
+    },
+    {
+      "id": "offline_mesh",
+      "domain": "communication",
+      "priority": "P1",
+      "web": true,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": false,
+      "backend": true,
+      "database": true,
+      "status": "IMPLEMENTED"
     }
   ]
 }
