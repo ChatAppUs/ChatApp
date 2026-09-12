@@ -27,6 +27,7 @@ type registerReq struct {
 	Password     string `json:"password"`
 	DisplayName  string `json:"display_name"`
 	Locale       string `json:"locale"`
+	ReferralCode string `json:"referral_code"`
 }
 
 func validPassword(p string) bool {
@@ -100,6 +101,16 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if req.Locale == "" {
 		req.Locale = "en"
 	}
+	// Identity spec §4.1: optional referral code. Resolve the referrer by their
+	// referral code (or username) and attribute the new account to them.
+	var referredBy *string
+	if rc := strings.TrimSpace(req.ReferralCode); rc != "" {
+		var rid string
+		if err := a.db.QueryRow(r.Context(),
+			`SELECT id FROM users WHERE referral_code=$1 OR username=$1`, rc).Scan(&rid); err == nil {
+			referredBy = &rid
+		}
+	}
 	hash, err := a.passwordHash(req.Password)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "hashing failed")
@@ -107,9 +118,9 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	var id string
 	err = a.db.QueryRow(r.Context(),
-		`INSERT INTO users (username, email, phone_e164, phone_country, password_hash, display_name, locale)
-		 VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), $5, $6, $7) RETURNING id`,
-		req.Username, req.Email, req.Phone, req.PhoneCountry, hash, req.DisplayName, req.Locale).Scan(&id)
+		`INSERT INTO users (username, email, phone_e164, phone_country, password_hash, display_name, locale, referred_by)
+		 VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), $5, $6, $7, $8) RETURNING id`,
+		req.Username, req.Email, req.Phone, req.PhoneCountry, hash, req.DisplayName, req.Locale, referredBy).Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
 			writeErr(w, http.StatusConflict, "username, email or phone already registered")
