@@ -69,6 +69,7 @@ export default function Nav() {
           <Link className="navlink" href="/convert">{t("convert")}</Link>
           <Link className="navlink" href="/p2p">{t("p2p")}</Link>
           <Link className="navlink" href="/staking">{t("staking")}</Link>
+          <Link className="navlink" href="/luckydraw">🎰</Link>
           <Link className="navlink" href="/ads">{t("ads")}</Link>
           <Link className="navlink" href="/premium">💎</Link>
           <Link className="navlink" href="/topics">🏷️</Link>
