@@ -59,6 +59,11 @@ fun PrivacyScreen(api: ApiClient, session: Session) {
         "deposits" to "Deposits", "kyc" to "KYC & verification", "system" to "System",
     )
     var totpCode by remember { mutableStateOf("") }
+    var securityOtp by remember { mutableStateOf("") }
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var selfieUrl by remember { mutableStateOf("") }
+    var securityStatus by remember { mutableStateOf("") }
     var scope by rememberCoroutineScope()
     val token = session.accessToken ?: ""
 
@@ -90,6 +95,30 @@ fun PrivacyScreen(api: ApiClient, session: Session) {
                 error = e.message
             }
         }
+    }
+
+    fun sendSecurityOtp() = scope.launch {
+        try {
+            val d = JSONObject(withContext(Dispatchers.IO) { api.sendCredentialChallenge("current_email", token = token) })
+            securityStatus = if (d.has("dev_code")) "Development OTP: ${d.getString("dev_code")}" else "Verification code sent to your current email."
+        } catch (e: Exception) { error = e.message }
+    }
+
+    fun changePasswordSecurely() = scope.launch {
+        try {
+            withContext(Dispatchers.IO) { api.verifyCredentialChallenge("current_email", securityOtp, token) }
+            withContext(Dispatchers.IO) { api.attestCredentialChange(selfieUrl, token) }
+            withContext(Dispatchers.IO) { api.changePassword(currentPassword, newPassword, token) }
+            securityStatus = "Password updated; sessions revoked and withdrawals frozen for 48 hours."
+            securityOtp = ""; currentPassword = ""; newPassword = ""; selfieUrl = ""
+        } catch (e: Exception) { error = e.message }
+    }
+
+    fun loadDeletionStatus() = scope.launch {
+        try {
+            val d = JSONObject(withContext(Dispatchers.IO) { api.deletionStatus(token) })
+            securityStatus = "Deletion status: ${d.optString("status", "unknown")}" + if (d.optBoolean("pending")) " (pending)" else ""
+        } catch (e: Exception) { error = e.message }
     }
 
     fun loadNotif() {
@@ -342,6 +371,22 @@ fun PrivacyScreen(api: ApiClient, session: Session) {
                 }
             }
 
+            item {
+                Text("Identity security", style = MaterialTheme.typography.titleMedium)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Credential changes require current-email OTP and a fresh server-verified selfie.", style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = { sendSecurityOtp() }) { Text("Send current-email OTP") }
+                        OutlinedTextField(value = securityOtp, onValueChange = { securityOtp = it }, label = { Text("Email OTP") }, singleLine = true)
+                        OutlinedTextField(value = currentPassword, onValueChange = { currentPassword = it }, label = { Text("Current password") }, singleLine = true)
+                        OutlinedTextField(value = newPassword, onValueChange = { newPassword = it }, label = { Text("New password") }, singleLine = true)
+                        OutlinedTextField(value = selfieUrl, onValueChange = { selfieUrl = it }, label = { Text("Fresh selfie URL") }, singleLine = true)
+                        Button(onClick = { changePasswordSecurely() }, enabled = securityOtp.isNotBlank() && currentPassword.isNotBlank() && newPassword.isNotBlank() && selfieUrl.isNotBlank()) { Text("Change password securely") }
+                        TextButton(onClick = { loadDeletionStatus() }) { Text("Check account-deletion status") }
+                        if (securityStatus.isNotBlank()) Text(securityStatus, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             item {
                 Text("Active sessions (${sessions.size})", style = MaterialTheme.typography.titleMedium)
                 Card(modifier = Modifier.fillMaxWidth()) {

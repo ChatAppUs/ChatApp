@@ -302,6 +302,11 @@ struct PrivacyView: View {
     @State private var locked = false
     @State private var phrase = ""
     @State private var totpCode = ""
+    @State private var securityOTP = ""
+    @State private var currentPassword = ""
+    @State private var newPassword = ""
+    @State private var selfieURL = ""
+    @State private var securityStatus = ""
     @State private var recoveryCodes: [String] = []
     @State private var notif = FeatureClient.NotifSettings()
     @State private var error: String?
@@ -323,7 +328,7 @@ struct PrivacyView: View {
         Toggle(label, isOn: Binding(
             get: { notif.setting(key) },
             set: { newValue in
-                Task { try? await client?.updateNotificationSetting(key,, enabled: newValue) }
+                Task { try? await client?.updateNotificationSetting(key, enabled: newValue) }
             }
         ))
     }
@@ -335,6 +340,35 @@ struct PrivacyView: View {
                 recoveryCodes = resp?.codes ?? []
                 error = nil
             } catch { error = errorMessage(error) }
+        }
+    }
+
+    func sendSecurityOTP() {
+        Task {
+            do { try await client?.sendCredentialChallenge(kind: "current_email"); securityStatus = "Verification code sent to your current email." }
+            catch { self.error = errorMessage(error) }
+        }
+    }
+
+    func changePasswordSecurely() {
+        Task {
+            do {
+                try await client?.verifyCredentialChallenge(kind: "current_email", code: securityOTP)
+                _ = try await client?.attestCredentialChange(selfieURL: selfieURL)
+                try await client?.changePassword(current: currentPassword, new: newPassword)
+                securityStatus = "Password updated; sessions revoked and withdrawals frozen for 48 hours."
+                securityOTP = ""; currentPassword = ""; newPassword = ""; selfieURL = ""
+            } catch { self.error = errorMessage(error) }
+        }
+    }
+
+    func loadDeletionStatus() {
+        Task {
+            do {
+                let data = try await client?.deletionStatus() ?? Data()
+                let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                securityStatus = "Deletion status: \(obj?["status"] as? String ?? "unknown")"
+            } catch { self.error = errorMessage(error) }
         }
     }
 
@@ -384,6 +418,19 @@ struct PrivacyView: View {
                         HStack { Text(f.phrase)
                             Button("Remove") { Task { try? await client?.removeFilter(f.phrase); load() } } }
                     }
+                }
+                Section("Identity security") {
+                    Text("Credential changes require current-email OTP and a fresh server-verified selfie.")
+                        .font(.caption).foregroundColor(.secondary)
+                    Button("Send current-email OTP", action: sendSecurityOTP)
+                    TextField("Email OTP", text: $securityOTP).keyboardType(.numberPad)
+                    SecureField("Current password", text: $currentPassword)
+                    SecureField("New password", text: $newPassword)
+                    TextField("Fresh selfie URL", text: $selfieURL)
+                    Button("Change password securely", action: changePasswordSecurely)
+                        .disabled(securityOTP.isEmpty || currentPassword.isEmpty || newPassword.isEmpty || selfieURL.isEmpty)
+                    Button("Check account-deletion status", action: loadDeletionStatus)
+                    if !securityStatus.isEmpty { Text(securityStatus).font(.caption) }
                 }
                 Section("Active sessions (\(sessions.count))") {
                     if sessions.isEmpty {
