@@ -48,6 +48,7 @@ const en: Dict = {
   creator: "Creator",
   ads: "Ads",
   login: "Log in",
+  rememberMe: "Remember me",
   logout: "Log out",
   register: "Create account",
   username: "Username",
