@@ -18,6 +18,8 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 | Creator analytics integration | `services/api/handlers_gap9.go`, `infra/db/025_gap_pack9.sql`, web `creator/page.tsx`, Android `MonetizeScreen.kt`, iOS `FeatureClient.swift`/`FeatureViews.swift` | Implemented: Web, Android, and iOS Creator Studio surfaces consume daily reach, impressions, watch time, follower growth, and top-sound insights |
 | LuckyDraw | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py` | Implemented: draws, ticket purchases on the double-entry ledger, audited winner selection with the unique-user rule, prize settlement, and admin lifecycle |
 | Professional analytics dashboard | `services/api/handlers_gap4.go`, `services/api/main.go`, `apps/web/src/app/analytics/page.tsx`, `apps/web/src/components/Nav.tsx` | Implemented: authenticated web dashboard consumes account posts, audience, engagement, seven-day shares, and earnings metrics |
+| Anonymous guest session | `services/api/handlers_guest.go`, `services/api/main.go` (`POST /api/auth/guest`), web `apps/web/src/lib/api.ts` (`startGuestSession`), login/register pages, `Nav.tsx` | Implemented: device-local ephemeral guest token (no account row) with a web `Continue without account` surface |
+| Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`) | Implemented (backend): device registration, encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status; native device transport pending |
 
 ---
 
@@ -1679,6 +1681,7 @@ BOT
 +-- Payments
 +-- Mini Apps
 +```
+```
 
 ---
 
