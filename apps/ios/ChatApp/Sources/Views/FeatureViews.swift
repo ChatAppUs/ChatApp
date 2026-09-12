@@ -174,6 +174,7 @@ struct MonetizeView: View {
     @State private var tiers: [FeatureClient.Tier] = []
     @State private var subs: [FeatureClient.Subscription] = []
     @State private var earnings: FeatureClient.Earnings?
+    @State private var insights: FeatureClient.CreatorInsights?
     @State private var title = ""
     @State private var price = ""
     @State private var benefits = ""
@@ -185,6 +186,7 @@ struct MonetizeView: View {
                 tiers = (try await client?.myTiers())?.tiers ?? []
                 subs = (try await client?.subscriptions())?.subscriptions ?? []
                 earnings = try await client?.earnings()
+                insights = try await client?.creatorInsights()
             } catch { self.error = errorMessage(error) }
         }
     }
@@ -225,8 +227,20 @@ struct MonetizeView: View {
                 if let e = earnings {
                     Section("Earnings") {
                         Text("Earned $\(e.earned, specifier: "%.2f") \(e.currency)")
-                        Text("Available $\(e.available, specifier: "%.2f") \u00b7 paid out $\(e.paid_out, specifier: "%.2f")")
+                        Text("Available $\(e.available, specifier: "%.2f") · paid out $\(e.paid_out, specifier: "%.2f")")
                             .font(.caption)
+                    }
+                }
+                if let insights {
+                    Section("Creator analytics") {
+                        Text("Reach \(insights.totals.reach) · impressions \(insights.totals.impressions)")
+                        Text("Watch time \(insights.totals.watch_time_s / 60) min · new followers \(insights.totals.new_followers)")
+                        Text("Top sound: \(insights.totals.top_sound.isEmpty ? "No sound data yet" : insights.totals.top_sound)")
+                            .font(.caption).foregroundColor(.secondary)
+                        ForEach(insights.daily) { day in
+                            Text("\(day.day): reach \(day.reach), impressions \(day.impressions), followers +\(day.new_followers)")
+                                .font(.caption)
+                        }
                     }
                 }
             }

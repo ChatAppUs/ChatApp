@@ -39,6 +39,11 @@ fun MonetizeScreen(api: ApiClient, session: Session) {
     var subs by remember { mutableStateOf(listOf<SubItem>()) }
     var earningsTotal by remember { mutableStateOf(0.0) }
     var earningsAvailable by remember { mutableStateOf(0.0) }
+    var insightReach by remember { mutableStateOf(0L) }
+    var insightImpressions by remember { mutableStateOf(0L) }
+    var insightWatchSeconds by remember { mutableStateOf(0L) }
+    var insightFollowers by remember { mutableStateOf(0L) }
+    var insightTopSound by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var benefits by remember { mutableStateOf("") }
@@ -70,6 +75,14 @@ fun MonetizeScreen(api: ApiClient, session: Session) {
                 val eObj = JSONObject(e)
                 earningsTotal = eObj.optDouble("earned", 0.0)
                 earningsAvailable = eObj.optDouble("available", 0.0)
+                val i = withContext(Dispatchers.IO) { api.get("/api/creator/insights?days=14", token) }
+                val iObj = JSONObject(i)
+                val totals = iObj.getJSONObject("totals")
+                insightReach = totals.optLong("reach")
+                insightImpressions = totals.optLong("impressions")
+                insightWatchSeconds = totals.optLong("watch_time_s")
+                insightFollowers = totals.optLong("new_followers")
+                insightTopSound = totals.optString("top_sound")
             } catch (e: Exception) {
                 error = e.message
             }
@@ -174,6 +187,16 @@ fun MonetizeScreen(api: ApiClient, session: Session) {
             item {
                 Text("Earnings: ${"$%.2f".format(earningsTotal)} USD (available ${"$%.2f".format(earningsAvailable)})",
                     style = MaterialTheme.typography.titleMedium)
+            }
+            item {
+                Text("Creator analytics", style = MaterialTheme.typography.titleMedium)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Reach $insightReach · impressions $insightImpressions")
+                        Text("Watch time ${insightWatchSeconds / 60} min · new followers $insightFollowers")
+                        Text("Top sound: ${insightTopSound.ifBlank { "No sound data yet" }}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
     }

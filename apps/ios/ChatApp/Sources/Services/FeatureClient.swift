@@ -71,6 +71,27 @@ struct FeatureClient {
         let currency: String
     }
 
+    struct InsightDay: Decodable, Identifiable {
+        let day: String
+        let reach: Int
+        let impressions: Int
+        let watch_time_s: Int
+        let new_followers: Int
+        let top_sound: String
+        var id: String { day }
+    }
+    struct InsightTotals: Decodable {
+        let reach: Int
+        let impressions: Int
+        let watch_time_s: Int
+        let new_followers: Int
+        let top_sound: String
+    }
+    struct CreatorInsights: Decodable {
+        let daily: [InsightDay]
+        let totals: InsightTotals
+    }
+
     struct Bot: Decodable {
         let id: String
         let username: String
@@ -172,6 +193,10 @@ struct FeatureClient {
 
     func earnings() async throws -> Earnings? {
         decoded(Earnings.self, from: try await api.get("/api/creator/earnings"))
+    }
+
+    func creatorInsights(days: Int = 14) async throws -> CreatorInsights? {
+        decoded(CreatorInsights.self, from: try await api.get("/api/creator/insights?days=\(days)"))
     }
 
     struct UserHit: Decodable { let id: String let username: String }
