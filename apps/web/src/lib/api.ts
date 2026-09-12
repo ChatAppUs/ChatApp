@@ -14,6 +14,7 @@ const ACCESS_KEY = "chatapp.access";
 const REFRESH_KEY = "chatapp.refresh";
 const USER_KEY = "chatapp.userId";
 const ACCOUNTS_KEY = "chatapp.accounts";
+const GUEST_KEY = "chatapp.guest";
 
 export interface Account {
   userId: string;
@@ -69,6 +70,7 @@ export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(USER_KEY);
+  clearGuestSession();
 }
 
 // Best-effort server-side logout: revokes the refresh token before local
@@ -91,6 +93,30 @@ export function getAccessToken(): string | null {
 
 export function getUserId(): string | null {
   return localStorage.getItem(USER_KEY);
+}
+
+export function isGuest(): boolean {
+  return localStorage.getItem(GUEST_KEY) === "1";
+}
+
+export function getGuestId(): string | null {
+  return localStorage.getItem(GUEST_KEY + ".id");
+}
+
+// Boot a device-local ephemeral guest session (TorChat/SimpleX/Session/Briar-style).
+// No server-side account row is created; the token is guest-scoped and lets the
+// client browse the public surface and use anonymous chat/calls where permitted.
+export async function startGuestSession(): Promise<Tokens> {
+  const t = await api<Tokens>("/api/auth/guest", { method: "POST" }, false);
+  localStorage.setItem(ACCESS_KEY, t.access_token);
+  localStorage.setItem(GUEST_KEY, "1");
+  if (t.user_id) localStorage.setItem(GUEST_KEY + ".id", t.user_id);
+  return t;
+}
+
+export function clearGuestSession() {
+  localStorage.removeItem(GUEST_KEY);
+  localStorage.removeItem(GUEST_KEY + ".id");
 }
 
 export class ApiError extends Error {
