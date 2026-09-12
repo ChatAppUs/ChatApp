@@ -109,6 +109,7 @@ func main() {
 	smsCheckLimiter := newRateLimiter(15, 5)
 	oauthLimiter := newRateLimiter(60, 20)
 	qrLimiter := newRateLimiter(20, 5)
+	guestLimiter := newRateLimiter(30, 10)
 
 	// public
 	mux.HandleFunc("GET /health", app.handleHealth)
@@ -135,6 +136,10 @@ func main() {
 	mux.HandleFunc("POST /api/auth/passkey/login/finish", oauthLimiter.limit(app.handlePasskeyLoginFinish))
 	mux.HandleFunc("POST /api/auth/qr/new", qrLimiter.limit(app.handleQRLoginNew))
 	mux.HandleFunc("GET /api/auth/qr/{token}", qrLimiter.limit(app.handleQRLoginStatus))
+
+	// anonymous guest session (TorChat/SimpleX/Session/Briar-style) — device-local
+	// ephemeral identity; no server-side account row is created
+	mux.HandleFunc("POST /api/auth/guest", guestLimiter.limit(app.handleGuestSession))
 
 	// cluster engine
 	mux.HandleFunc("POST /api/cluster/heartbeat", app.handleClusterHeartbeat)
@@ -733,6 +738,14 @@ func main() {
 	mux.HandleFunc("GET /api/groups/{id}/queue", app.requireAuth(app.handleListGroupPostQueue))
 	mux.HandleFunc("POST /api/groups/{id}/queue/{entryId}/review", app.requireAuth(app.handleReviewGroupPost))
 	mux.HandleFunc("POST /api/posts/{id}/quote", app.requireAuth(app.handleQuotePost))
+	// offline multi-hop device mesh (Briar-style store-and-forward)
+	mux.HandleFunc("POST /api/mesh/register", app.requireGuestOrAuth(app.handleMeshRegister))
+	mux.HandleFunc("POST /api/mesh/send", app.requireGuestOrAuth(app.handleMeshSend))
+	mux.HandleFunc("GET /api/mesh/poll", app.requireGuestOrAuth(app.handleMeshPoll))
+	mux.HandleFunc("POST /api/mesh/relay", app.requireGuestOrAuth(app.handleMeshRelay))
+	mux.HandleFunc("PUT /api/mesh/relay-policy", app.requireGuestOrAuth(app.handleMeshRelayPolicy))
+	mux.HandleFunc("GET /api/mesh/status", app.requireGuestOrAuth(app.handleMeshStatus))
+
 	// internal control plane (transcode worker; shared-secret bearer)
 	mux.HandleFunc("POST /internal/transcode/claim", app.requireInternal(app.handleTranscodeClaim))
 	mux.HandleFunc("POST /internal/transcode/complete", app.requireInternal(app.handleTranscodeComplete))
