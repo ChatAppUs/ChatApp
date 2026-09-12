@@ -4,6 +4,23 @@
 
 > **Global requirements.** No demo, no simulation, no stubs, no fake or mock data, no skeletons, no bugs, no broken files, no security vulnerabilities, no bypasses,and no cyber threats are permitted. All systems are fully dynamic, production-ready, scalable, secure,and implemented with complete real business logic. The light/dark theme switch must work on every page of every app.
 
+## Implementation status — audited 2026-09-12
+
+This status is maintained against the source tree on `main`. **Implemented** means that the API, persistence, and client integration are present in the repository. **Implemented with runtime validation pending** means that static code evidence exists but a configured database, external provider, or native toolchain is still required for end-to-end proof. **Not complete** means that the specification requires behavior that is not yet present and must not be represented as shipped.
+
+| Requirement area | Status | Source evidence | Remaining work |
+|---|---|---|---|
+| Unified email/phone authentication, registration, login, refresh, logout, reset, phone OTP, country catalog | Implemented with runtime validation pending | `services/api/handlers_auth.go`, `services/api/otp.go`, `services/api/data/countries.json`, web login/register/reset pages | Run database-backed flows and verify every native client. |
+| Password hashing, JWT, sessions, recovery codes, TOTP 2FA | Implemented with runtime validation pending | Argon2id/JWT helpers, `handlers_security.go`, `handlers_gap9.go`, `services/authn/`, session routes | Run Go/Rust security tests and authn-service delegation tests. |
+| Passkeys, Google OAuth, QR login, trusted recovery, app lock, screen time, data export | Implemented with runtime validation pending | `handlers_webauthn.go`, `handlers_oauth.go`, `handlers_qrlogin.go`, `handlers_accounts.go`, `handlers_gap8.go` | Verify provider credentials, WebAuthn ceremonies, and database behavior end to end. |
+| KYC submission, ML score threshold, sanctions check, admin review, financial KYC gates | Implemented with runtime validation pending | `handlers_wallet.go`, `handlers_features.go`, `handlers_crypto.go`, `handlers_p2p.go`, `handlers_staking.go`, `handlers_cards.go` | Run configured ML/sanctions/admin review tests. |
+| 48-hour withdrawal freeze after 2FA changes | Implemented | `infra/db/026_identity_security_lifecycle.sql`, `handlers_security.go`, `handlers_gap9.go`, `handlers_crypto.go` | Wire the same freeze atomically into email, phone, and password changes when those mutation APIs are added. |
+| Email/phone/password credential-change verification with OTP, KYC face match, and five-second liveness | Not complete | No complete server-side mutation flow currently exists for all required proofs. | Implement server-owned verification state and provider-backed liveness; never trust client boolean flags. |
+| Account deletion with email OTP, phone OTP, liveness, asset confirmation, 30-day cancellation, and permanent deletion | Not complete | Existing status/TTL lifecycle does not satisfy the complete deletion workflow. | Implement the verified request, cancellation-on-login, grace-period worker, and irreversible deletion process. |
+| Cross-platform identical feature parity and production operations | Not proven complete | Parity scanner passes route coverage, but native runtime, deployment, load, backup, and disaster-recovery proof is unavailable in this checkout. | Run configured cross-platform, load, security, observability, backup, and restore validation. |
+
+The repository must not claim the full specification is complete until the rows marked **Not complete** and **Not proven complete** have passed their required implementation and runtime validation.
+
 ---
 
 ## 1. Non-Negotiable Platform Rules
