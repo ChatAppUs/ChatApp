@@ -727,6 +727,7 @@ func main() {
 	mux.HandleFunc("GET /api/admin/reports", app.requireAdmin("superadmin", "moderator")(app.handleAdminListReports))
 	mux.HandleFunc("POST /api/admin/reports/{id}/resolve", app.requireAdmin("superadmin", "moderator")(app.handleAdminResolveReport))
 	mux.HandleFunc("GET /api/admin/kyc", app.requireAdmin("superadmin", "finance", "support")(app.handleAdminListKYC))
+	mux.HandleFunc("GET /api/admin/security/attestations", app.requireAdmin("superadmin", "support")(app.handleAdminSecurityAttestations))
 	mux.HandleFunc("POST /api/admin/kyc/{id}/review", app.requireAdmin("superadmin", "finance")(app.handleAdminReviewKYC))
 	mux.HandleFunc("GET /api/admin/ads", app.requireAdmin("superadmin", "ads_reviewer")(app.handleAdminListAds))
 	mux.HandleFunc("GET /api/admin/moments", app.requireAdmin("superadmin", "moderator")(app.handleAdminListMoments))

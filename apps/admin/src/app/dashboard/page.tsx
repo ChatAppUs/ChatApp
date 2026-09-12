@@ -70,8 +70,17 @@ interface PlatformToken {
   withdraw_fee: string;
   created_at: string;
 }
+interface SecurityAttestation {
+  id: string;
+  user_id: string;
+  username: string;
+  purpose: string;
+  score: number;
+  verified_at: string;
+  expires_at: string;
+}
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "security" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -81,6 +90,7 @@ export default function DashboardPage() {
   const [kycQueue, setKycQueue] = useState<KYCItem[]>([]);
   const [adQueue, setAdQueue] = useState<AdItem[]>([]);
   const [tokens, setTokens] = useState<PlatformToken[]>([]);
+  const [attestations, setAttestations] = useState<SecurityAttestation[]>([]);
   const [userQuery, setUserQuery] = useState("");
   const [tab, setTab] = useState<Tab>("stats");
   const [error, setError] = useState("");
@@ -94,18 +104,20 @@ export default function DashboardPage() {
     try {
       const s = await adminApi<Stats>("/api/admin/stats");
       setStats(s);
-      const [u, r, k, a, tk] = await Promise.allSettled([
+      const [u, r, k, a, tk, sa] = await Promise.allSettled([
         adminApi<{ users: AdminUser[] }>("/api/admin/users"),
         adminApi<{ reports: Report[] }>("/api/admin/reports"),
         adminApi<{ submissions: KYCItem[] }>("/api/admin/kyc"),
         adminApi<{ campaigns: AdItem[] }>("/api/admin/ads"),
         adminApi<{ tokens: PlatformToken[] }>("/api/admin/wallet/tokens"),
+        adminApi<{ attestations: SecurityAttestation[] }>("/api/admin/security/attestations"),
       ]);
       if (u.status === "fulfilled") setUsers(u.value.users);
       if (r.status === "fulfilled") setReports(r.value.reports);
       if (k.status === "fulfilled") setKycQueue(k.value.submissions);
       if (a.status === "fulfilled") setAdQueue(a.value.campaigns);
       if (tk.status === "fulfilled") setTokens(tk.value.tokens);
+      if (sa.status === "fulfilled") setAttestations(sa.value.attestations);
     } catch (e) {
       const err = e as Error & { status?: number };
       if (err.status === 401) logout();
@@ -133,7 +145,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "security", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -289,6 +301,22 @@ export default function DashboardPage() {
                 </tr>
               ))}
               {adQueue.length === 0 && <tr><td colSpan={4} className="muted">No pending campaigns</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "security" && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Credential security attestations</h3>
+          <p className="muted">Read-only audit of server-verified face-match/liveness attestations. Raw selfie media and biometric templates are never exposed here.</p>
+          <table className="table">
+            <thead><tr><th>user</th><th>purpose</th><th>score</th><th>verified</th><th>expires</th></tr></thead>
+            <tbody>
+              {attestations.map((a) => (
+                <tr key={a.id}><td>@{a.username}</td><td>{a.purpose}</td><td>{a.score.toFixed(2)}</td><td>{new Date(a.verified_at).toLocaleString()}</td><td>{new Date(a.expires_at).toLocaleString()}</td></tr>
+              ))}
+              {attestations.length === 0 && <tr><td colSpan={5} className="muted">No attestations recorded</td></tr>}
             </tbody>
           </table>
         </div>
