@@ -103,6 +103,8 @@ func main() {
 	mux.HandleFunc("GET /health", app.handleHealth)
 	mux.HandleFunc("GET /api/countries", app.handleCountries)
 	mux.HandleFunc("GET /api/me/deletion", app.requireAuth(app.handleDeletionStatus))
+	mux.HandleFunc("POST /api/me/deletion/challenges", app.requireAuth(app.handleDeletionChallenge))
+	mux.HandleFunc("POST /api/me/deletion/challenges/{kind}/verify", app.requireAuth(app.handleDeletionChallengeVerify))
 	mux.HandleFunc("POST /api/me/deletion", app.requireAuth(app.handleRequestDeletion))
 	mux.HandleFunc("DELETE /api/me/deletion", app.requireAuth(app.handleCancelDeletion))
 	mux.HandleFunc("POST /api/auth/register", registerLimiter.limit(app.handleRegister))

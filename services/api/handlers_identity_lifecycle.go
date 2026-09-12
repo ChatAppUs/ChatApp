@@ -53,6 +53,12 @@ func (a *App) handleRequestDeletion(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid password")
 		return
 	}
+	for _, kind := range []string{"email", "phone", "liveness"} {
+		if !a.deletionChallengeVerified(r.Context(), uid, kind) {
+			writeErr(w, http.StatusForbidden, kind+" verification required before account deletion")
+			return
+		}
+	}
 	if kyc != "verified" {
 		writeErr(w, http.StatusForbidden, "approved KYC verification is required before account deletion")
 		return
