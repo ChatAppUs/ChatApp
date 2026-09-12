@@ -150,3 +150,52 @@ func TestNodeSendDeliver(t *testing.T) {
 		}
 	}
 }
+
+// TestHopsForDevices verifies the hop budget grows with device count so the
+// mesh can span larger networks (coverage scales with device count).
+func TestHopsForDevices(t *testing.T) {
+	small := HopsForDevices(2)
+	mid := HopsForDevices(100)
+	large := HopsForDevices(500)
+	huge := HopsForDevices(10000)
+	if small < 8 {
+		t.Fatalf("small network hop budget too low: %d", small)
+	}
+	if !(mid > small) {
+		t.Fatalf("hop budget should grow with device count: small=%d mid=%d", small, mid)
+	}
+	if !(large > mid) {
+		t.Fatalf("hop budget should grow with device count: mid=%d large=%d", mid, large)
+	}
+	if !(huge > large) {
+		t.Fatalf("hop budget should keep growing: large=%d huge=%d", large, huge)
+	}
+	if huge > 1024 {
+		t.Fatalf("hop budget should be capped: %d", huge)
+	}
+}
+
+// TestDefaultMaxHops verifies the scalable default is used when a node does
+// not specify MaxHops, and that an explicit MaxHops is honored.
+func TestDefaultMaxHops(t *testing.T) {
+	key, _ := NewIdentityKey()
+	tr, err := NewUDPTransport(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := NewNode(NodeConfig{DeviceID: "dev-1", Key: &key, Transport: tr})
+	if n.maxHops != DefaultMaxHops {
+		t.Fatalf("expected default max hops %d, got %d", DefaultMaxHops, n.maxHops)
+	}
+	n.Stop()
+
+	tr2, err := NewUDPTransport(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n2 := NewNode(NodeConfig{DeviceID: "dev-2", Key: &key, Transport: tr2, MaxHops: 3})
+	if n2.maxHops != 3 {
+		t.Fatalf("expected explicit max hops 3, got %d", n2.maxHops)
+	}
+	n2.Stop()
+}
