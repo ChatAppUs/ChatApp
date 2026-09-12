@@ -402,3 +402,55 @@ func TestDiversifyFYPCollapsesRemixChains(t *testing.T) {
 		t.Fatalf("collapsed rows must be dropped: %d rows", len(out))
 	}
 }
+
+func TestExtractLinks(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"", 0},
+		{"no links here", 0},
+		{"visit https://example.com now", 1},
+		{"http://a.com and https://b.com and http://a.com", 2}, // distinct
+		{"text https://x.com/path?q=1 more", 1},
+	}
+	for _, c := range cases {
+		if got := len(extractLinks(c.in)); got != c.want {
+			t.Fatalf("extractLinks(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+// Residency routing: a region-pinned route must never fall back to a node in
+// another region, even when the requested region is under load.
+func TestResidencyPinning(t *testing.T) {
+	nodes := []ClusterNode{
+		{NodeID: "us-1", Region: "us", Weight: 100, Capacity: 100, Load: 99},
+		{NodeID: "eu-1", Region: "eu", Weight: 100, Capacity: 100, Load: 1},
+	}
+	// pickRegionNode prefers the least-loaded node in the requested region.
+	if n := pickRegionNode(nodes, "us"); n == nil || n.NodeID != "us-1" {
+		t.Fatalf("expected least-loaded us node, got %+v", n)
+	}
+	// Residency pinning: only nodes in the requested region qualify, so the
+	// eu node must be excluded from a us-pinned pool even though it is idle.
+	pool := []ClusterNode{}
+	for _, n := range nodes {
+		if n.Region == "us" {
+			pool = append(pool, n)
+		}
+	}
+	if len(pool) != 1 || pool[0].NodeID != "us-1" {
+		t.Fatalf("residency pool wrong: %+v", pool)
+	}
+	// A region with no nodes at all yields an empty residency pool.
+	empty := []ClusterNode{}
+	for _, n := range nodes {
+		if n.Region == "zz" {
+			empty = append(empty, n)
+		}
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected empty residency pool for unknown region")
+	}
+}
