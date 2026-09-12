@@ -189,12 +189,17 @@ func (a *App) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 
 	var kyc string
-	if err := a.db.QueryRow(r.Context(), `SELECT kyc_status FROM users WHERE id=$1`, uid).Scan(&kyc); err != nil {
+	var freezeUntil *time.Time
+	if err := a.db.QueryRow(r.Context(), `SELECT kyc_status, withdrawal_freeze_until FROM users WHERE id=$1`, uid).Scan(&kyc, &freezeUntil); err != nil {
 		writeErr(w, http.StatusInternalServerError, "withdrawal failed")
 		return
 	}
 	if kyc != "verified" {
 		writeErr(w, http.StatusForbidden, "KYC verification required before withdrawing")
+		return
+	}
+	if freezeUntil != nil && freezeUntil.After(time.Now()) {
+		writeErr(w, http.StatusForbidden, "withdrawals temporarily frozen after an account-security change")
 		return
 	}
 
