@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -71,6 +72,27 @@ func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if !validPassword(req.Password) {
 		writeErr(w, http.StatusBadRequest, "password must be 8+ chars with letters and digits")
 		return
+	}
+	// Identity spec: "Email/phone OTP verification is required" before account
+	// creation. The phone (or email) must have completed OTP verification first.
+	if req.Phone != "" {
+		var verified bool
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM phone_verifications WHERE phone_e164=$1 AND verified_at IS NOT NULL)`,
+			req.Phone).Scan(&verified)
+		if !verified {
+			writeErr(w, http.StatusForbidden, "phone OTP verification is required before registration")
+			return
+		}
+	} else if req.Email != "" {
+		var verified bool
+		_ = a.db.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM email_verifications WHERE email=$1 AND verified_at IS NOT NULL)`,
+			req.Email).Scan(&verified)
+		if !verified {
+			writeErr(w, http.StatusForbidden, "email OTP verification is required before registration")
+			return
+		}
 	}
 	if strings.TrimSpace(req.DisplayName) == "" {
 		req.DisplayName = req.Username
@@ -391,6 +413,81 @@ func (a *App) handlePhoneCheckCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid verification code")
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "verified"})
+}
+
+// ---- Email OTP verification (Identity spec: email OTP required before register) ----
+
+func (a *App) handleEmailSendCode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if !decodeJSON(w, r, &req) || !emailRe.MatchString(strings.ToLower(strings.TrimSpace(req.Email))) {
+		writeErr(w, http.StatusBadRequest, "valid email required")
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	// Resend cooldown: at most one code per 60s per email.
+	var recent bool
+	_ = a.db.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM email_verifications WHERE email=$1 AND created_at > now() - interval '60 seconds')`,
+		email).Scan(&recent)
+	if recent {
+		writeErr(w, http.StatusTooManyRequests, "please wait before requesting another code")
+		return
+	}
+	code, salt, hash, err := a.otpMake()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to generate code")
+		return
+	}
+	if _, err := a.db.Exec(r.Context(),
+		`INSERT INTO email_verifications (email, code_hash, salt, expires_at) VALUES ($1,$2,$3, now() + interval '10 minutes')`,
+		email, hash, salt); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to store code")
+		return
+	}
+	resp := map[string]string{"status": "code_sent"}
+	if a.smtp.Configured() {
+		if err := a.smtp.Send(email, "ChatApp email verification",
+			"Your ChatApp verification code is: "+code); err != nil {
+			writeErr(w, http.StatusBadGateway, "failed to send verification email")
+			return
+		}
+	} else if a.cfg.AppEnv == "development" {
+		resp["dev_code"] = code
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (a *App) handleEmailCheckCode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+		Code  string `json:"code"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	var id, wantHash, salt string
+	err := a.db.QueryRow(r.Context(),
+		`SELECT id, code_hash, COALESCE(salt,'') FROM email_verifications
+		 WHERE email=$1 AND verified_at IS NULL AND expires_at > now() AND attempts < 5
+		 ORDER BY created_at DESC LIMIT 1`, email).Scan(&id, &wantHash, &salt)
+	if err != nil {
+		_, _ = a.db.Exec(r.Context(),
+			`UPDATE email_verifications SET attempts = attempts + 1 WHERE email=$1 AND verified_at IS NULL`, email)
+		writeErr(w, http.StatusUnauthorized, "invalid verification code")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(a.otpHashOf(salt, req.Code)), []byte(wantHash)) != 1 {
+		_, _ = a.db.Exec(r.Context(),
+			`UPDATE email_verifications SET attempts = attempts + 1 WHERE id=$1`, id)
+		writeErr(w, http.StatusUnauthorized, "invalid verification code")
+		return
+	}
+	_, _ = a.db.Exec(r.Context(),
+		`UPDATE email_verifications SET verified_at=now() WHERE id=$1`, id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "verified"})
 }
 
