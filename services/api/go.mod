@@ -3,6 +3,7 @@ module github.com/chatappus/chatapp/services/api
 go 1.25.0
 
 require (
+	github.com/chatappus/chatapp/services/mesh v0.0.0-00010101000000-000000000000
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/redis/go-redis/v9 v9.7.3
@@ -19,3 +20,5 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
+
+replace github.com/chatappus/chatapp/services/mesh => ../mesh
