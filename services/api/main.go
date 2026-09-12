@@ -26,6 +26,16 @@ func (a *App) handleCountries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"countries": countries})
 }
 
+func (a *App) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := a.db.Ping(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "database": "unreachable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready", "database": "ok"})
+}
+
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -101,6 +111,7 @@ func main() {
 
 	// public
 	mux.HandleFunc("GET /health", app.handleHealth)
+	mux.HandleFunc("GET /ready", app.handleReadiness)
 	mux.HandleFunc("GET /api/countries", app.handleCountries)
 	mux.HandleFunc("GET /api/me/deletion", app.requireAuth(app.handleDeletionStatus))
 	mux.HandleFunc("POST /api/me/deletion/challenges", app.requireAuth(app.handleDeletionChallenge))

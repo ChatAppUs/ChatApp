@@ -1,0 +1,51 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static-and-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/admin/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python test dependency
+        run: python -m pip install websockets
+      - name: Parity and syntax validation
+        run: |
+          python tests/parity_check.py
+          python -m compileall -q services/ml
+          node --check apps/extension/security.js
+          node --check apps/extension/options.js
+          node --check apps/extension/background.js
+          git diff --check
+      - name: Build web
+        working-directory: apps/web
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Build admin
+        working-directory: apps/admin
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Validate migrations are numbered and non-empty
+        shell: bash
+        run: |
+          files=(infra/db/*.sql)
+          test "${#files[@]}" -gt 0
+          prev=0
+          for f in "${files[@]}"; do
+            n=${f##*/}; n=${n%%_*}
+            [[ "$n" =~ ^[0-9]+$ ]] || { echo "bad migration: $f"; exit 1; }
+            ((10#$n > prev)) || { echo "migration order error: $f"; exit 1; }
+            test -s "$f"
+            prev=$((10#$n))
+          done
