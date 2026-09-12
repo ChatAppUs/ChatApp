@@ -20,6 +20,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
 
   const passkeyLogin = async () => {
     setBusy(true);
@@ -66,7 +68,7 @@ export default function LoginPage() {
         false
       );
       const username = identifier.includes("@") ? undefined : identifier;
-      saveTokens(tokens, username);
+      saveTokens(tokens, username, rememberMe);
       router.push("/");
       router.refresh();
     } catch (err) {
@@ -92,8 +94,33 @@ export default function LoginPage() {
         </div>
         <div>
           <label>{t("password")}</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              title={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+          />
+          {t("rememberMe")}
+        </label>
         {needs2FA && (
           <div>
             <label>2FA code</label>
