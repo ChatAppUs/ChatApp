@@ -216,6 +216,11 @@ func (a *App) persistMessage(ctx context.Context, senderID, convID, body, mediaU
 	if strings.TrimSpace(body) == "" && mediaURL == "" {
 		return
 	}
+	// Content-level trust & safety: per-account duplicate / link-spam defense
+	// on the message write path (fail-open on DB errors).
+	if ok, _ := a.contentWriteAllowed(ctx, senderID, body); !ok {
+		return
+	}
 	switch kind {
 	case "", "text":
 		kind = "text"
