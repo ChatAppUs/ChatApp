@@ -1,3 +1,5 @@
+importScripts("security.js");
+
 // Background service worker: polls the notification endpoint once a minute
 // (chrome.alarms) and mirrors the unread count onto the toolbar badge.
 // Only active when the user has pasted a token on the Options page.
