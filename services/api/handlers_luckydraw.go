@@ -585,6 +585,35 @@ func (a *App) handleAdminLuckyDrawPriceApprove(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }
 
+// GET /api/admin/luckydraw/prices — all price records across draws.
+func (a *App) handleAdminLuckyDrawAllPrices(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.db.Query(r.Context(),
+		`SELECT p.id, p.draw_id, d.title AS label, p.price_usd::text AS amount_usd, p.status
+		   FROM lucky_draw_prices p
+		   JOIN lucky_draws d ON d.id = p.draw_id
+		   ORDER BY p.created_at DESC`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to load prices")
+		return
+	}
+	defer rows.Close()
+	type priceRow struct {
+		ID        string `json:"id"`
+		DrawID    string `json:"draw_id"`
+		Label     string `json:"label"`
+		AmountUSD string `json:"amount_usd"`
+		Status    string `json:"status"`
+	}
+	out := []priceRow{}
+	for rows.Next() {
+		var p priceRow
+		if err := rows.Scan(&p.ID, &p.DrawID, &p.Label, &p.AmountUSD, &p.Status); err == nil {
+			out = append(out, p)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"prices": out})
+}
+
 // GET /api/admin/luckydraw/{id}/prices — price history (audit).
 func (a *App) handleAdminLuckyDrawPrices(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),

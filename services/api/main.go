@@ -783,6 +783,7 @@ func main() {
 	mux.HandleFunc("POST /api/admin/luckydraw", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawCreate))
 	mux.HandleFunc("POST /api/admin/luckydraw/{id}/price", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawPriceDraft))
 	mux.HandleFunc("POST /api/admin/luckydraw/prices/{priceId}/approve", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawPriceApprove))
+	mux.HandleFunc("GET /api/admin/luckydraw/prices", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawAllPrices))
 	mux.HandleFunc("GET /api/admin/luckydraw/{id}/prices", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawPrices))
 	mux.HandleFunc("POST /api/admin/luckydraw/{id}/close", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawClose))
 	mux.HandleFunc("POST /api/admin/luckydraw/{id}/run", app.requireAdminPerm("luckydraw.manage")(app.handleAdminLuckyDrawRun))
