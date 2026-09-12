@@ -36,4 +36,26 @@
     document.getElementById("saved").textContent = "Saved.";
     setTimeout(() => (document.getElementById("saved").textContent = ""), 2000);
   });
+
+  const result = document.getElementById("securityResult");
+  const security = (fn) => async () => {
+    result.textContent = "";
+    try { result.textContent = await fn() || "Done."; }
+    catch (e) { result.textContent = e instanceof Error ? e.message : "Security request failed."; }
+  };
+  document.getElementById("sendSecurityOtp").addEventListener("click", security(async () => {
+    const d = await ChatAppSecurity.sendCredentialChallenge(apiUrl.value.trim(), accessToken.value.trim(), "current_email");
+    return d.dev_code ? `Development OTP: ${d.dev_code}` : "Verification code sent.";
+  }));
+  document.getElementById("changePassword").addEventListener("click", security(async () => {
+    const api = apiUrl.value.trim(); const token = accessToken.value.trim();
+    await ChatAppSecurity.verifyCredentialChallenge(api, token, "current_email", document.getElementById("securityOtp").value.trim());
+    await ChatAppSecurity.attestCredentialChange(api, token, document.getElementById("securitySelfieUrl").value.trim());
+    await ChatAppSecurity.changePassword(api, token, document.getElementById("securityCurrentPassword").value, document.getElementById("securityNewPassword").value);
+    return "Password updated; other sessions revoked and withdrawals frozen for 48 hours.";
+  }));
+  document.getElementById("deletionStatus").addEventListener("click", security(async () => {
+    const d = await ChatAppSecurity.deletionStatus(apiUrl.value.trim(), accessToken.value.trim());
+    return `Deletion status: ${d.status || "unknown"}${d.pending ? " (pending)" : ""}`;
+  }));
 })();

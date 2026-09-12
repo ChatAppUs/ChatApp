@@ -48,8 +48,20 @@
       <button id="save" class="primary">Save</button>
       <span id="saved"></span>
     </div>
+    <hr>
+    <h3>Identity security</h3>
+    <div class="hint">Credential changes require a current-email OTP and a fresh selfie verified by the server-side KYC service.</div>
+    <button id="sendSecurityOtp">Send current-email OTP</button>
+    <input id="securityOtp" placeholder="Current-email OTP" inputmode="numeric" maxlength="6">
+    <input id="securityCurrentPassword" type="password" placeholder="Current password">
+    <input id="securityNewPassword" type="password" placeholder="New password (8+ chars, letters and digits)">
+    <input id="securitySelfieUrl" placeholder="Fresh selfie URL from secure upload">
+    <button id="changePassword" class="primary">Change password securely</button>
+    <button id="deletionStatus">Check account-deletion status</button>
+    <div id="securityResult" class="hint"></div>
   </section>
   <script src="common.js"></script>
+  <script src="security.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
