@@ -231,10 +231,14 @@ func (a *App) handleDisable2FAWithRecovery(w http.ResponseWriter, r *http.Reques
 	}
 	uid := string(uidBytes)
 	if _, err := a.db.Exec(r.Context(),
-		`UPDATE users SET totp_enabled=false, totp_secret=NULL, updated_at=now() WHERE id=$1`, uid); err != nil {
+			`UPDATE users SET totp_enabled=false, totp_secret=NULL, updated_at=now() WHERE id=$1`, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
 
+	}
+	if err := a.freezeWithdrawals(r.Context(), uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to apply security cooldown")
+		return
 	}
 	_, _ = a.db.Exec(r.Context(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid)
 	a.cache.del(r.Context(), "2fa:recover:"+req.Claim)

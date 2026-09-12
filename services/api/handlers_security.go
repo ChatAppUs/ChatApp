@@ -179,6 +179,18 @@ func (a *App) verifyRecoveryCode(uid string, code string) bool {
 	return err == nil && res.RowsAffected() == 1
 }
 
+// freezeWithdrawals records the security cooldown required after a sensitive
+// account change. The greatest deadline wins, so concurrent changes cannot
+// shorten an existing freeze.
+func (a *App) freezeWithdrawals(ctx context.Context, uid string) error {
+	_, err := a.db.Exec(ctx, `
+		UPDATE users
+		SET withdrawal_freeze_until = GREATEST(COALESCE(withdrawal_freeze_until, now()), now() + interval '48 hours'),
+		    updated_at = now()
+		WHERE id=$1`, uid)
+	return err
+}
+
 func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	secret, err := a.generateTOTP()
@@ -217,8 +229,12 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := a.db.Exec(r.Context(),
-		`UPDATE users SET totp_enabled=true, updated_at=now() WHERE id=$1`, uid); err != nil {
+			`UPDATE users SET totp_enabled=true, updated_at=now() WHERE id=$1`, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to enable 2FA")
+		return
+	}
+	if err := a.freezeWithdrawals(r.Context(), uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to apply security cooldown")
 		return
 	}
 	raw, gerr := a.mintRecoveryCodes(uid)
@@ -252,8 +268,15 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = a.db.Exec(r.Context(),
 		`DELETE FROM recovery_codes WHERE user_id=$1`, uid)
-	_, _ = a.db.Exec(r.Context(),
-		`UPDATE users SET totp_secret=NULL, totp_enabled=false, updated_at=now() WHERE id=$1`, uid)
+	if _, err := a.db.Exec(r.Context(),
+			`UPDATE users SET totp_secret=NULL, totp_enabled=false, updated_at=now() WHERE id=$1`, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
+		return
+	}
+	if err := a.freezeWithdrawals(r.Context(), uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to apply security cooldown")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
 }
 
