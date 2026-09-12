@@ -26,6 +26,25 @@ class ApiClient(private val baseUrl: String) {
     fun delete(path: String, body: String = "{}", token: String? = null): String =
         execute(newRequest(path, token).delete(body.toRequestBody(jsonMedia)).build())
 
+    fun sendCredentialChallenge(kind: String, destination: String = "", token: String): String =
+        post("/api/me/security/challenges", org.json.JSONObject().put("kind", kind).put("destination", destination).toString(), token)
+
+    fun verifyCredentialChallenge(kind: String, code: String, token: String): String =
+        post("/api/me/security/challenges/$kind/verify", org.json.JSONObject().put("code", code).toString(), token)
+
+    fun attestCredentialChange(selfieUrl: String, token: String): String =
+        post("/api/me/security/attestation", org.json.JSONObject().put("selfie_url", selfieUrl).toString(), token)
+
+    fun changePassword(currentPassword: String, newPassword: String, token: String): String =
+        put("/api/me/security", org.json.JSONObject().put("operation", "password")
+            .put("current_password", currentPassword).put("new_password", newPassword).toString(), token)
+
+    fun deletionStatus(token: String): String = get("/api/me/deletion", token)
+
+    fun requestDeletion(password: String, assetsWithdrawn: Boolean, token: String): String =
+        post("/api/me/deletion", org.json.JSONObject().put("password", password)
+            .put("assets_withdrawn", assetsWithdrawn).toString(), token)
+
     // Signed-grant media upload matching the web flow: fetch a short-lived
     // upload token from the Go API, then POST the raw bytes to the C++ media
     // edge. Returns the absolute media URL.

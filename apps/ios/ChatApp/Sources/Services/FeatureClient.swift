@@ -311,6 +311,32 @@ struct FeatureClient {
     func updateNotificationSetting(_ key: String, enabled: Bool) async throws {
         _ = try await api.put("/api/me/notification-settings/\(key)", body: ["enabled": enabled])
     }
+
+    func sendCredentialChallenge(kind: String, destination: String = "") async throws {
+        _ = try await api.post("/api/me/security/challenges", body: ["kind": kind, "destination": destination])
+    }
+
+    func verifyCredentialChallenge(kind: String, code: String) async throws {
+        _ = try await api.post("/api/me/security/challenges/\(kind)/verify", body: ["code": code])
+    }
+
+    struct SecurityResult: Decodable { let status: String }
+    func attestCredentialChange(selfieURL: String) async throws -> SecurityResult {
+        decoded(SecurityResult.self, from: try await api.post("/api/me/security/attestation", body: ["selfie_url": selfieURL]))
+            ?? SecurityResult(status: "attested")
+    }
+
+    func changePassword(current: String, new: String) async throws {
+        _ = try await api.put("/api/me/security", body: ["operation": "password", "current_password": current, "new_password": new])
+    }
+
+    func deletionStatus() async throws -> Data {
+        try await api.get("/api/me/deletion")
+    }
+
+    func requestDeletion(password: String, assetsWithdrawn: Bool) async throws {
+        _ = try await api.post("/api/me/deletion", body: ["password": password, "assets_withdrawn": assetsWithdrawn])
+    }
 }
 
 private struct RecoveryRemaining: Decodable { let remaining: Int }
