@@ -36,17 +36,24 @@ function archiveAccount(a: Account) {
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify([...all, a]));
 }
 
-export function saveTokens(t: Tokens, username?: string) {
-  localStorage.setItem(ACCESS_KEY, t.access_token);
-  localStorage.setItem(REFRESH_KEY, t.refresh_token);
+// Identity spec "Remember Me": when rememberMe is true the session persists in
+// localStorage (survives tab/browser close, backed by the 30-day refresh token);
+// when false the session lives in sessionStorage and is cleared when the tab
+// closes. Reads fall back across both stores so an existing session is honored.
+export function saveTokens(t: Tokens, username?: string, rememberMe = true) {
+  const store = rememberMe ? localStorage : sessionStorage;
+  store.setItem(ACCESS_KEY, t.access_token);
+  store.setItem(REFRESH_KEY, t.refresh_token);
   if (t.user_id) {
-    localStorage.setItem(USER_KEY, t.user_id);
-    archiveAccount({
-      userId: t.user_id,
-      username,
-      access: t.access_token,
-      refresh: t.refresh_token,
-    });
+    store.setItem(USER_KEY, t.user_id);
+    if (rememberMe) {
+      archiveAccount({
+        userId: t.user_id,
+        username,
+        access: t.access_token,
+        refresh: t.refresh_token,
+      });
+    }
   }
 }
 
@@ -88,11 +95,11 @@ export function serverLogout(): Promise<void> {
 }
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_KEY);
+  return localStorage.getItem(ACCESS_KEY) ?? sessionStorage.getItem(ACCESS_KEY);
 }
 
 export function getUserId(): string | null {
-  return localStorage.getItem(USER_KEY);
+  return localStorage.getItem(USER_KEY) ?? sessionStorage.getItem(USER_KEY);
 }
 
 export function isGuest(): boolean {
