@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -39,7 +40,10 @@ func (a *App) createDeletionChallenge(ctx context.Context, uid, kind string) (st
 // codes are delivered through configured gateways. Development responses may
 // expose a code only when the existing development mode explicitly permits it.
 func (a *App) handleDeletionChallenge(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Kind string `json:"kind"` }
+	var req struct {
+		Kind      string `json:"kind"`
+		SelfieURL string `json:"selfie_url"`
+	}
 	if !decodeJSON(w, r, &req) || (req.Kind != "email" && req.Kind != "phone" && req.Kind != "liveness") {
 		writeErr(w, http.StatusBadRequest, "kind must be email, phone, or liveness")
 		return
@@ -78,6 +82,48 @@ func (a *App) handleDeletionChallenge(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadGateway, "failed to send phone verification")
 			return
 		}
+	}
+	if req.Kind == "liveness" {
+		if strings.TrimSpace(req.SelfieURL) == "" {
+			writeErr(w, http.StatusBadRequest, "fresh selfie_url required for liveness verification")
+			return
+		}
+		var docURL, fullName, docType, docNumber string
+		if err := a.db.QueryRow(r.Context(), `
+			SELECT doc_image_url, full_name, doc_type, doc_number
+			FROM kyc_submissions WHERE user_id=$1 AND status='verified'
+			ORDER BY reviewed_at DESC NULLS LAST, created_at DESC LIMIT 1`, uid).
+			Scan(&docURL, &fullName, &docType, &docNumber); err != nil || docURL == "" {
+			writeErr(w, http.StatusForbidden, "verified KYC document is required for liveness verification")
+			return
+		}
+		score, rawChecks := a.mlKYCVerify(r.Context(), kycVerifyRequest{
+			FullName: fullName, DocType: docType, DocNumber: docNumber,
+			DocImageURL: docURL, SelfieURL: req.SelfieURL,
+		})
+		var checks map[string]any
+		_ = json.Unmarshal(rawChecks, &checks)
+		if score < 0.75 || checks["face_match_ok"] != true || checks["selfie_decodable"] != true {
+			writeErr(w, http.StatusUnauthorized, "liveness or face-match verification failed")
+			return
+		}
+		// The ML service is the server-side verifier. Store a short-lived
+		// verified challenge; no client-supplied boolean can bypass this gate.
+		_, _, err := a.createDeletionChallenge(r.Context(), uid, "liveness")
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to record liveness verification")
+			return
+		}
+		if _, err := a.db.Exec(r.Context(), `
+			UPDATE deletion_verification_challenges SET verified_at=now()
+			WHERE id=(SELECT id FROM deletion_verification_challenges
+			          WHERE user_id=$1 AND kind='liveness' AND verified_at IS NULL
+			          ORDER BY created_at DESC LIMIT 1)`, uid); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to record liveness verification")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "liveness_verified", "score": score})
+		return
 	}
 	out := map[string]string{"status": "challenge_created"}
 	if req.Kind == "liveness" {
