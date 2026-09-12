@@ -23,6 +23,7 @@ type App struct {
 	wsLimiter *rateLimiter // per-user WS send token bucket
 
 	vapidKey *ecdsa.PrivateKey
+	mesh     *meshEngine
 }
 
 func connectDB(ctx context.Context, url string) (*pgxpool.Pool, error) {
