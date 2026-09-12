@@ -4,6 +4,13 @@ package mesh
 // store-and-forward together. A node can run as a member device or a pure
 // relay. It discovers peers, sends/receives encrypted packets, forwards
 // multi-hop, and delivers to the application layer.
+//
+// Scaling: the mesh is designed to grow without a fixed diameter. As devices
+// join, coverage and reachable distance grow with the network. The packet TTL
+// (max hops) is therefore configurable per node and defaults to a value that
+// scales with the expected network size rather than a small fixed constant.
+// Set NodeConfig.MaxHops to bound the diameter for a known topology, or leave
+// it zero to use the scalable default (see scale.go).
 
 import (
 	"sync"
@@ -23,6 +30,7 @@ type Node struct {
 	routes    *RouteTable
 	queue     *Queue
 	handler   Handler
+	maxHops   int
 
 	beaconSeq int64
 	stop      chan struct{}
@@ -36,6 +44,10 @@ type NodeConfig struct {
 	Kind      string
 	Transport Transport
 	Handler   Handler
+	// MaxHops bounds the packet TTL (mesh diameter). Zero uses the scalable
+	// default (DefaultMaxHops), which grows with the expected network size so
+	// coverage extends as devices increase.
+	MaxHops int
 }
 
 // NewNode creates a mesh node. The transport's inbound callback is wired to
@@ -43,6 +55,10 @@ type NodeConfig struct {
 func NewNode(cfg NodeConfig) *Node {
 	if cfg.Kind == "" {
 		cfg.Kind = "member"
+	}
+	maxHops := cfg.MaxHops
+	if maxHops <= 0 {
+		maxHops = DefaultMaxHops
 	}
 	n := &Node{
 		DeviceID:  cfg.DeviceID,
@@ -52,6 +68,7 @@ func NewNode(cfg NodeConfig) *Node {
 		routes:    NewRouteTable(),
 		queue:     NewQueue(1000, 7*24*time.Hour),
 		handler:   cfg.Handler,
+		maxHops:   maxHops,
 		stop:      make(chan struct{}),
 	}
 	// Wire the transport's inbound callback to this node.
@@ -122,7 +139,7 @@ func (n *Node) HandleInbound(addr string, data []byte) {
 
 // Send encrypts and enqueues a packet for a destination.
 func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, error) {
-	p := NewPacket(kind, n.DeviceID, dst, 8)
+	p := NewPacket(kind, n.DeviceID, dst, n.maxHops)
 	ct, nonce, err := Encrypt(n.Key, plaintext)
 	if err != nil {
 		return "", err
@@ -136,7 +153,7 @@ func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, erro
 
 // SendGroup encrypts and enqueues a group message (broadcast to group id).
 func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (string, error) {
-	p := NewPacket(kind, n.DeviceID, "", 8)
+	p := NewPacket(kind, n.DeviceID, "", n.maxHops)
 	p.GroupID = groupID
 	ct, nonce, err := Encrypt(n.Key, plaintext)
 	if err != nil {
