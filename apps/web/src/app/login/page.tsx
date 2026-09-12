@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import GoogleSignIn from "@/components/GoogleSignIn";
 import QRLogin from "@/components/QRLogin";
 import { loginWithPasskey, passkeySupported } from "@/lib/passkey";
+import { startGuestSession } from "@/lib/api";
 
 export default function LoginPage() {
   const { t } = useI18n();
@@ -35,6 +36,20 @@ export default function LoginPage() {
       } else {
         setError(msg);
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueAsGuest = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await startGuestSession();
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("error"));
     } finally {
       setBusy(false);
     }
@@ -110,6 +125,12 @@ export default function LoginPage() {
           {showQR ? "Hide QR code" : "📱 Log in by QR code"}
         </button>
         {showQR && <QRLogin />}
+      </div>
+      <div className="col" style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+        <button className="secondary" onClick={continueAsGuest} disabled={busy}>
+          {t("continueWithoutAccount")}
+        </button>
+        <p className="muted" style={{ fontSize: 12 }}>{t("guestHint")}</p>
       </div>
       <p className="muted">
         <Link href="/forgot-password">{t("forgotPassword")}</Link>
