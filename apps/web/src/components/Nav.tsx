@@ -8,6 +8,7 @@ import {
   clearTokens,
   getAccessToken,
   getUserId,
+  isGuest,
   listAccounts,
   serverLogout,
   switchAccount,
@@ -18,10 +19,12 @@ export default function Nav() {
   const { t, locale, setLocale } = useI18n();
   const router = useRouter();
   const [authed, setAuthed] = useState(false);
+  const [guest, setGuest] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
 
   useEffect(() => {
     setAuthed(!!getAccessToken());
+    setGuest(isGuest());
     setAccounts(listAccounts());
   }, []);
 
@@ -30,6 +33,7 @@ export default function Nav() {
       clearTokens();
       const rest = listAccounts();
       setAuthed(false);
+      setGuest(false);
       setAccounts(rest);
       if (rest.length > 0 && switchAccount(rest[0].userId)) {
         router.refresh();
@@ -84,6 +88,9 @@ export default function Nav() {
           <Link className="navlink" href="/scan">▦</Link>
           <Link className="navlink" href="/settings">⚙</Link>
         </>
+      )}
+      {guest && !authed && (
+        <span className="badge" title={t("guestHint")}>{t("guestActive")}</span>
       )}
       <div className="spacer" />
       <button
