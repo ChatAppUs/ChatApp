@@ -35,6 +35,10 @@ export default function SettingsPage() {
   const [recoveryLeft, setRecoveryLeft] = useState<number | null>(null);
   const [verifyCode, setVerifyCode] = useState("");
   const [disableCode, setDisableCode] = useState("");
+  const [securityCurrentPassword, setSecurityCurrentPassword] = useState("");
+  const [securityNewPassword, setSecurityNewPassword] = useState("");
+  const [securityOtp, setSecurityOtp] = useState("");
+  const [securitySelfieUrl, setSecuritySelfieUrl] = useState("");
   const [notif, setNotif] = useState<Record<string, boolean>>({});
   const NOTIF_LABELS: Record<string, string> = {
     messages: "Direct messages", groups: "Group chats", calls: "Calls",
@@ -165,6 +169,34 @@ export default function SettingsPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "invalid code");
     }
+  };
+
+  const sendSecurityOtp = async () => {
+    setError("");
+    try {
+      const d = await api<{ dev_code?: string }>("/api/me/security/challenges", {
+        method: "POST", body: JSON.stringify({ kind: "current_email" }),
+      });
+      setStatus(d.dev_code ? `Development OTP: ${d.dev_code}` : "A verification code was sent to your current email.");
+    } catch (e) { setError(e instanceof Error ? e.message : "could not send verification code"); }
+  };
+
+  const changePassword = async () => {
+    setError("");
+    try {
+      await api("/api/me/security/challenges/current_email/verify", {
+        method: "POST", body: JSON.stringify({ code: securityOtp }),
+      });
+      await api("/api/me/security/attestation", {
+        method: "POST", body: JSON.stringify({ selfie_url: securitySelfieUrl }),
+      });
+      await api("/api/me/security", {
+        method: "PUT",
+        body: JSON.stringify({ operation: "password", current_password: securityCurrentPassword, new_password: securityNewPassword }),
+      });
+      setSecurityCurrentPassword(""); setSecurityNewPassword(""); setSecurityOtp(""); setSecuritySelfieUrl("");
+      setStatus("Password updated. All other sessions were revoked and withdrawals are frozen for 48 hours.");
+    } catch (e) { setError(e instanceof Error ? e.message : "password change failed"); }
   };
 
   return (
@@ -317,6 +349,18 @@ export default function SettingsPage() {
       </div>
 
       <AccountSafety />
+      <div className="card col">
+        <h3 style={{ marginTop: 0 }}>Change password</h3>
+        <p className="muted">Verify your current email, then provide a fresh KYC selfie for face-match and liveness attestation.</p>
+        <div className="row">
+          <button onClick={sendSecurityOtp}>Send email OTP</button>
+          <input value={securityOtp} onChange={(e) => setSecurityOtp(e.target.value)} placeholder="Email OTP" inputMode="numeric" maxLength={6} />
+        </div>
+        <input type="password" value={securityCurrentPassword} onChange={(e) => setSecurityCurrentPassword(e.target.value)} placeholder="Current password" />
+        <input type="password" value={securityNewPassword} onChange={(e) => setSecurityNewPassword(e.target.value)} placeholder="New password (8+ chars, letters and digits)" minLength={8} />
+        <input value={securitySelfieUrl} onChange={(e) => setSecuritySelfieUrl(e.target.value)} placeholder="Fresh selfie URL from secure media upload" />
+        <button onClick={changePassword} disabled={!securityOtp || !securityCurrentPassword || !securityNewPassword || !securitySelfieUrl}>Change password securely</button>
+      </div>
       <ScreenTimePanel />
     </div>
   );
