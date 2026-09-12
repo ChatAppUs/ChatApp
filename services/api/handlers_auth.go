@@ -119,12 +119,13 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimSpace(req.Identifier)
 	var userID, hash, status string
+	var deletionScheduled *time.Time
 	var totpSecret *string
 	var totpEnabled bool
 	err := a.db.QueryRow(r.Context(),
-		`SELECT id, password_hash, status, totp_secret, totp_enabled FROM users
-		 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
-		Scan(&userID, &hash, &status, &totpSecret, &totpEnabled)
+			`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled FROM users
+			 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
+			Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled)
 	if errors.Is(err, pgx.ErrNoRows) || !a.passwordVerify(req.Password, hash) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -132,6 +133,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "login failed")
 		return
+	}
+	if status == "suspended" && deletionScheduled != nil && deletionScheduled.After(time.Now()) {
+		_, _ = a.db.Exec(r.Context(), `UPDATE users SET status='active', deletion_requested_at=NULL, deletion_scheduled_at=NULL, updated_at=now() WHERE id=$1`, userID)
+		status = "active"
 	}
 	if status != "active" {
 		writeErr(w, http.StatusForbidden, "account is "+status)

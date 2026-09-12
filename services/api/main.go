@@ -66,6 +66,7 @@ func main() {
 	app.otp = NewOTPService(app, cfg.AppEnv == "development")
 	app.startDigestWorker()
 	app.startAccountTTLWorker()
+	app.startDeletionWorker()
 	app.startPremiumWorker()
 	app.startChainWatchers()
 	app.startPriceWorker()
@@ -101,6 +102,9 @@ func main() {
 	// public
 	mux.HandleFunc("GET /health", app.handleHealth)
 	mux.HandleFunc("GET /api/countries", app.handleCountries)
+	mux.HandleFunc("GET /api/me/deletion", app.requireAuth(app.handleDeletionStatus))
+	mux.HandleFunc("POST /api/me/deletion", app.requireAuth(app.handleRequestDeletion))
+	mux.HandleFunc("DELETE /api/me/deletion", app.requireAuth(app.handleCancelDeletion))
 	mux.HandleFunc("POST /api/auth/register", registerLimiter.limit(app.handleRegister))
 	mux.HandleFunc("POST /api/auth/login", loginLimiter.limit(app.handleLogin))
 	mux.HandleFunc("POST /api/admin/login", loginLimiter.limit(app.handleAdminLogin))
