@@ -33,6 +33,7 @@ export default function RegisterPage() {
   const [phoneLocal, setPhoneLocal] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const mode = useMemo(() => detectMode(form.identifier), [form.identifier]);
   const isPhone = mode === "phone";
@@ -146,7 +147,25 @@ export default function RegisterPage() {
         )}
         <div>
           <label>{t("password")}</label>
-          <input type="password" value={form.password} onChange={set("password")} required minLength={8} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={form.password}
+              onChange={set("password")}
+              required
+              minLength={8}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              title={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
         </div>
         {error && <div className="error-text">{error}</div>}
         <button type="submit" disabled={busy || !identifierValid}>{busy ? t("loading") : t("register")}</button>
