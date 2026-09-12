@@ -130,6 +130,8 @@ func main() {
 	mux.HandleFunc("POST /api/auth/reset-password", resetLimiter.limit(app.handleResetPassword))
 	mux.HandleFunc("POST /api/auth/phone/send-code", smsSendLimiter.limit(app.handlePhoneSendCode))
 	mux.HandleFunc("POST /api/auth/phone/check-code", smsCheckLimiter.limit(app.handlePhoneCheckCode))
+	mux.HandleFunc("POST /api/auth/email/send-code", smsSendLimiter.limit(app.handleEmailSendCode))
+	mux.HandleFunc("POST /api/auth/email/check-code", smsCheckLimiter.limit(app.handleEmailCheckCode))
 
 	// federated identity, passkeys, QR login
 	mux.HandleFunc("POST /api/auth/google", oauthLimiter.limit(app.handleGoogleAuth))
