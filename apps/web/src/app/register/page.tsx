@@ -19,6 +19,20 @@ function detectMode(value: string): "email" | "phone" | "unknown" {
   return "phone";
 }
 
+// Identity spec §4.1: password strength indicator (Red Weak / Yellow Medium / Green Strong).
+function passwordStrength(pw: string): { score: number; label: "weak" | "medium" | "strong" } {
+  if (!pw) return { score: 0, label: "weak" };
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (pw.length >= 12) s++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
+  if (/\d/.test(pw)) s++;
+  if (/[^A-Za-z0-9]/.test(pw)) s++;
+  if (s <= 2) return { score: s, label: "weak" };
+  if (s <= 3) return { score: s, label: "medium" };
+  return { score: s, label: "strong" };
+}
+
 export default function RegisterPage() {
   const { t } = useI18n();
   const router = useRouter();
@@ -27,6 +41,8 @@ export default function RegisterPage() {
     display_name: "",
     identifier: "",
     password: "",
+    confirmPassword: "",
+    referral: "",
   });
   const [dial, setDial] = useState("+1");
   const [countryISO, setCountryISO] = useState("US");
@@ -34,10 +50,21 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  // OTP verification step (Identity spec §4: "Email/phone OTP verification is required").
+  const [step, setStep] = useState<"details" | "otp">("details");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
 
   const mode = useMemo(() => detectMode(form.identifier), [form.identifier]);
   const isPhone = mode === "phone";
   const identifierValid = mode === "unknown" ? false : isPhone ? phoneLocal.length >= 7 : EMAIL_RE.test(form.identifier);
+  const strength = useMemo(() => passwordStrength(form.password), [form.password]);
+  const passwordsMatch = form.password === form.confirmPassword;
+  const canSendOtp = identifierValid && !otpSent;
+  const canVerifyOtp = otpCode.length === 6 && !otpVerified;
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [k]: e.target.value });
@@ -71,10 +98,63 @@ export default function RegisterPage() {
     }
   };
 
+  // Identity spec §4: send the 6-digit OTP to the email or phone before account creation.
+  const sendOtp = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const phone = isPhone ? (phoneLocal ? `${dial}${phoneLocal.replace(/\D/g, "")}` : form.identifier.replace(/[\s().\-]/g, "")) : "";
+      const email = isPhone ? "" : form.identifier.toLowerCase();
+      const path = isPhone ? "/api/auth/phone/send-code" : "/api/auth/email/send-code";
+      const body = isPhone ? { phone } : { email };
+      await api(path, { method: "POST", body: JSON.stringify(body) }, false);
+      setOtpSent(true);
+      setStep("otp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Identity spec §4: verify the OTP; the backend marks the contact verified.
+  const verifyOtp = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const phone = isPhone ? (phoneLocal ? `${dial}${phoneLocal.replace(/\D/g, "")}` : form.identifier.replace(/[\s().\-]/g, "")) : "";
+      const email = isPhone ? "" : form.identifier.toLowerCase();
+      const path = isPhone ? "/api/auth/phone/check-code" : "/api/auth/email/check-code";
+      const body = isPhone ? { phone, code: otpCode } : { email, code: otpCode };
+      await api(path, { method: "POST", body: JSON.stringify(body) }, false);
+      setOtpVerified(true);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("otpInvalid"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setBusy(true);
     setError("");
+    if (!passwordsMatch) {
+      setError(t("passwordMismatch"));
+      setBusy(false);
+      return;
+    }
+    if (!agreeTerms) {
+      setError(t("termsRequired"));
+      setBusy(false);
+      return;
+    }
+    if (!otpVerified) {
+      setError(t("otpRequired"));
+      setBusy(false);
+      return;
+    }
     try {
       const phone = isPhone ? (phoneLocal ? `${dial}${phoneLocal.replace(/\D/g, "")}` : form.identifier.replace(/[\s().\-]/g, "")) : "";
       const tokens = await api<Tokens>(
@@ -88,6 +168,7 @@ export default function RegisterPage() {
             phone,
             phone_country: countryISO,
             password: form.password,
+            referral_code: form.referral.trim() || undefined,
           }),
         },
         false
@@ -145,6 +226,39 @@ export default function RegisterPage() {
             </div>
           </>
         )}
+
+        {/* Identity spec §4: OTP verification step */}
+        <div className="card" style={{ border: "1px solid var(--border)", padding: 12 }}>
+          <h4 style={{ margin: 0 }}>{t("otpVerification")}</h4>
+          {!otpSent ? (
+            <button type="button" className="secondary" onClick={sendOtp} disabled={busy || !canSendOtp}>
+              {t("sendCode")}
+            </button>
+          ) : (
+            <>
+              <p className="muted" style={{ fontSize: 12 }}>{t("otpSent")}</p>
+              <div className="row">
+                <input
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  placeholder={t("code")}
+                  maxLength={6}
+                  inputMode="numeric"
+                  disabled={otpVerified}
+                  style={{ flex: 1 }}
+                />
+                <button type="button" className="secondary" onClick={verifyOtp} disabled={busy || !canVerifyOtp}>
+                  {t("verifyCode")}
+                </button>
+              </div>
+              {otpVerified && <p className="success-text" style={{ fontSize: 12 }}>✓ Verified</p>}
+              <button type="button" className="secondary small" onClick={sendOtp} disabled={busy}>
+                {t("otpResend")}
+              </button>
+            </>
+          )}
+        </div>
+
         <div>
           <label>{t("password")}</label>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -166,9 +280,60 @@ export default function RegisterPage() {
               {showPassword ? "🙈" : "👁️"}
             </button>
           </div>
+          {form.password && (
+            <div style={{ marginTop: 6 }}>
+              <span className="muted" style={{ fontSize: 12 }}>{t("passwordStrength")}: </span>
+              <span
+                className="badge"
+                style={{
+                  background:
+                    strength.label === "strong" ? "var(--success, #2e7d32)" :
+                    strength.label === "medium" ? "#f9a825" : "#c62828",
+                  color: "#fff",
+                }}
+              >
+                {t(strength.label)}
+              </span>
+            </div>
+          )}
         </div>
+        <div>
+          <label>{t("confirmPassword")}</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type={showConfirm ? "text" : "password"}
+              value={form.confirmPassword}
+              onChange={set("confirmPassword")}
+              required
+              minLength={8}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShowConfirm((v) => !v)}
+              aria-label={showConfirm ? "Hide password" : "Show password"}
+              title={showConfirm ? "Hide password" : "Show password"}
+            >
+              {showConfirm ? "🙈" : "👁️"}
+            </button>
+          </div>
+          {form.confirmPassword && !passwordsMatch && (
+            <p className="error-text" style={{ fontSize: 12 }}>{t("passwordMismatch")}</p>
+          )}
+        </div>
+        <div>
+          <label>{t("referralCode")}</label>
+          <input value={form.referral} onChange={set("referral")} placeholder="CHATAPP-XXXX" />
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+          <input type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} />
+          {t("agreeToTerms")}
+        </label>
         {error && <div className="error-text">{error}</div>}
-        <button type="submit" disabled={busy || !identifierValid}>{busy ? t("loading") : t("register")}</button>
+        <button type="submit" disabled={busy || !identifierValid || !otpVerified || !passwordsMatch || !agreeTerms}>
+          {busy ? t("loading") : t("register")}
+        </button>
       </form>
       <div style={{ marginTop: 12 }}>
         <GoogleSignIn />
@@ -181,6 +346,8 @@ export default function RegisterPage() {
       </div>
       <p className="muted">
         <Link href="/login">{t("login")}</Link>
+        {" · "}
+        <Link href="/">{t("backToHome")}</Link>
       </p>
     </div>
   );
