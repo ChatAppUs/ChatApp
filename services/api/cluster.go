@@ -183,8 +183,15 @@ func (a *App) handleClusterHeartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// GET /api/cluster/route?region=xx&key=conversation-id — client bootstrap:
-// which node should this client talk to.
+// GET /api/cluster/route?region=xx&key=conversation-id&residency=1 — client
+// bootstrap: which node should this client talk to.
+//
+// Data residency: when residency=1 is set, the route is pinned to the
+// requested region and never falls back to a node in another region. This is
+// the enforcement point for jurisdiction / data-residency requirements — a
+// user whose data must stay in region "eu" is never routed to a "us" node,
+// even under load. Without residency=1 the previous best-effort behavior
+// (prefer region, fall back globally) is preserved for latency routing.
 func (a *App) handleClusterRoute(w http.ResponseWriter, r *http.Request) {
 	nodes, err := a.healthyNodes(r.Context())
 	if err != nil {
@@ -202,8 +209,30 @@ func (a *App) handleClusterRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	region := r.URL.Query().Get("region")
 	key := r.URL.Query().Get("key")
+	residency := r.URL.Query().Get("residency") == "1"
 	var node *ClusterNode
-	if key != "" {
+	if residency && region != "" {
+		// Strict data residency: only nodes in the requested region qualify.
+		pool := []ClusterNode{}
+		for _, n := range nodes {
+			if n.Region == region {
+				pool = append(pool, n)
+			}
+		}
+		if len(pool) == 0 {
+			writeErr(w, http.StatusServiceUnavailable, "no capacity in required region")
+			return
+		}
+		if key != "" {
+			node = rendezvousPick(pool, key)
+		} else {
+			node = pickRegionNode(pool, region)
+		}
+		if node == nil {
+			writeErr(w, http.StatusServiceUnavailable, "no capacity in required region")
+			return
+		}
+	} else if key != "" {
 		node = rendezvousPick(nodes, key)
 	} else {
 		node = pickRegionNode(nodes, region)
@@ -215,7 +244,7 @@ func (a *App) handleClusterRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"node_id": node.NodeID, "region": node.Region,
 		"api_url": node.APIURL, "media_url": node.MediaURL,
-		"shard_of": key, "nodes": len(nodes),
+		"shard_of": key, "nodes": len(nodes), "residency_pinned": residency,
 	})
 }
 
