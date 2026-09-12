@@ -17,6 +17,8 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 | Creator analytics integration | `services/api/handlers_gap9.go`, `infra/db/025_gap_pack9.sql`, web `creator/page.tsx`, Android `MonetizeScreen.kt`, iOS `FeatureClient.swift`/`FeatureViews.swift` | Implemented: Web, Android, and iOS Creator Studio surfaces consume daily reach, impressions, watch time, follower growth, and top-sound insights |
 | LuckyDraw | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py` | Implemented: draws, ticket purchases on the double-entry ledger, audited winner selection with the unique-user rule, prize settlement, and admin lifecycle |
 | Professional analytics dashboard | `services/api/handlers_gap4.go`, `services/api/main.go`, `apps/web/src/app/analytics/page.tsx`, `apps/web/src/components/Nav.tsx` | Implemented: authenticated web dashboard consumes account posts, audience, engagement, seven-day shares, and earnings metrics |
+| Anonymous guest session | `services/api/handlers_guest.go`, `services/api/main.go` (`POST /api/auth/guest`), web `apps/web/src/lib/api.ts` (`startGuestSession`), login/register pages, `Nav.tsx` | Implemented: device-local ephemeral guest token (no account row) with a web `Continue without account` surface |
+| Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`) | Implemented (backend): device registration, encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status; native device transport pending |
 
 ## What is inside
 
@@ -1640,1599 +1642,830 @@ Concepts:
 - Audit record
 
 Ticket record:
-- Immutable ticket ID
-- Draw ID
-- Account ID
-- Purchase timestamp
-- Price paid
-- Currency
+- Immutable price
+- Purchase time
+- Purchaser
+- Draw reference
 - Payment reference
-- Eligibility state
+- Eligibility snapshot
+- Status
 
-Never retroactively change the price paid for an issued ticket.
+Prize pool:
+- Total ticket revenue
+- Allocated prize percentage
+- Operator fee
+- Prize pool amount
+- Settlement status
+
+Winner record:
+- Draw reference
+- Ticket reference
+- User
+- Prize amount
+- Selection proof
+- Settlement status
+
+Audit record:
+- Draw reference
+- Action
+- Actor
+- Timestamp
+- Before/after state
+- Evidence
 
 ---
 
 # 46. LUCKYDRAW TICKET PRICING
 
-Admins may configure future prices.
+Ticket pricing must be explicit and auditable.
 
-Safe flow:
-Draft price
-→ authorized approval
-→ effective timestamp
-→ active for new sales
+Admin may configure future ticket prices.
 
-Requirements:
-- Historical pricing retained
-- Audit log
-- Approval for sensitive changes
-- No silent retroactive changes
+A ticket purchase must record the exact price at purchase time.
+
+Do not silently change the price of an already-purchased ticket.
 
 ---
 
 # 47. LUCKYDRAW WINNER SELECTION
 
-Do not allow a normal administrator to manually choose winners secretly.
+Winner selection must be auditable.
 
-Required lifecycle:
-Sales closed
-→ payment finalization
-→ eligibility locked
-→ participant dataset frozen
-→ selection process
-→ winner validation
-→ prize settlement
-→ result publication according to policy
+Use a documented, verifiable random selection process.
 
-Use an auditable, reviewed selection mechanism.
-
-Do not claim “provably fair” unless the complete mechanism actually satisfies and is independently reviewed for that claim.
+Do not implement a hidden or manipulable winner selection system.
 
 ---
 
 # 48. UNIQUE USER WINNER RULE
 
-If one unique user may win at most once in a draw:
+If a unique-user winner rule is used, a single user may win at most one prize per draw.
 
-Eligible set
-→ select winner
-→ mark account as winner
-→ exclude according to published rule
-→ select next winner
-
-Define before sales:
-- Whether multiple tickets increase chances
-- Whether one user can win once or multiple times
-- What happens with linked/duplicate accounts
-
-Do not change rules after ticket sales begin.
+Implement this rule in the selection logic, not only in the UI.
 
 ---
 
 # 49. PRIZE ALLOCATION
 
-The requested business concept discussed allocating approximately 80%–90% of ticket sales to prizes.
+Prize allocation must be transparent.
 
-The production system must not hardcode an ambiguous percentage.
-
-Each draw configuration must explicitly define:
-- Prize allocation
-- Fees
-- Operational allocation
-- Tax treatment where applicable
-- Refund/cancellation rules
-
-Lock the applicable rules according to the draw lifecycle.
+Record:
+- Total ticket revenue
+- Allocated prize percentage
+- Operator fee
+- Prize pool
+- Per-winner amounts
+- Settlement
 
 ---
 
 # 50. ADMINISTRATION SYSTEM
 
-Admin domains:
+Implement:
 - User administration
-- Content moderation
+- Content administration
 - Community administration
-- Support
-- Finance operations
-- LuckyDraw operations
+- Finance administration
+- LuckyDraw administration
 - Compliance
-- Security
-- Auditing
-
-Recommended separation:
-- Super Admin
-- User Admin
-- Moderator
-- Support
-- Finance Admin
-- LuckyDraw Manager
-- Compliance Officer
-- Security Admin
-- Auditor
-
-Do not use one “isAdmin” boolean for all privileges.
+- Security administration
+- Roles and permissions
+- Approval workflows
+- Audit logs
 
 ---
 
 # 51. ADMIN APPROVAL WORKFLOWS
 
-Sensitive changes should support:
-
-REQUESTED
-→ REVIEWED
-→ APPROVED
-→ EXECUTED
-
-or:
-REQUESTED
-→ REJECTED
+Sensitive operations require approval.
 
 Examples:
-- Financial configuration
-- Prize allocation
-- Ticket price
-- High-value limits
-- Payout policies
-- Production security configuration
+- Withdrawal approval
+- Payout approval
+- LuckyDraw settlement
+- Sanctions override
+- Role changes
 
-The requester should not automatically approve their own high-risk request unless policy explicitly permits it.
+Every approval must be audited.
 
 ---
 
 # 52. AUDIT LOGGING
 
-Sensitive actions require audit records.
+Implement audit logging for sensitive operations.
 
-Record:
+Audit records must include:
 - Actor
 - Action
 - Resource
+- Before/after state
 - Timestamp
-- Before state where appropriate
-- After state where appropriate
-- Result
-- Correlation/request identifier
+- Evidence
 
-Audit logs must have strong access control.
-
-Normal administrators must not be able to silently erase history.
+Do not allow ordinary users to modify audit logs.
 
 ---
 
 # 53. MODERATION
 
-Reportable targets:
-- Users
-- Posts
-- Comments
-- Videos
-- Groups
-- Channels
-- Communities
-
-Report lifecycle:
-SUBMITTED
-→ TRIAGED
-→ UNDER_REVIEW
-→ RESOLVED
-
-Actions:
-- No action
-- Warning
-- Content removal
-- Restriction
+Implement:
+- Reports
+- Content review
+- Spam prevention
+- Blocks
+- Restrictions
 - Suspension
-- Ban
-
-Preserve evidence and audit history according to policy and law.
+- Appeals
+- Enforcement audit
 
 ---
 
 # 54. BLOCKING
 
-Blocking should affect applicable interactions:
-- Messaging
-- Calls
-- Mentions
-- Invitations
-- Following where appropriate
-
-Do not rely solely on hiding UI.
-
-Enforce restrictions on backend operations.
+Implement blocking with:
+- Block
+- Unblock
+- Blocked content visibility
+- Blocked communication
+- Block list management
 
 ---
 
 # 55. DATABASE RULES
 
-Use:
-- Migrations
-- Constraints
-- Foreign keys where appropriate
-- Unique constraints
-- Transactions
-- Indexes based on actual query needs
+Use transactions for multi-step operations.
 
-Never depend solely on application code to enforce critical uniqueness.
+Use constraints to enforce integrity.
 
-Examples:
-- One username per normalized namespace
-- One relationship record per relationship pair
-- Idempotency key uniqueness where required
+Use indexes for performance.
+
+Never store secrets in plaintext.
 
 ---
 
 # 56. FINANCIAL LEDGER RULES
 
-Financial domains require explicit accounting/ledger design.
+All value movement uses a double-entry ledger.
 
-Do not update balances with arbitrary:
-balance = balance + amount
-
-without:
-- Transaction boundary
-- Idempotency
-- Auditability
+Every ledger entry has:
+- Account
+- Amount
+- Direction
 - Reference
-- State
+- Timestamp
+- Status
 
-Prefer immutable ledger entries with controlled derived balances.
+Balances are derived from ledger entries.
 
-Every financial operation requires:
-- Unique operation ID
-- Idempotency protection
-- State machine
-- Audit trail
+Never mutate a balance directly without a ledger entry.
 
 ---
 
 # 57. API DESIGN
 
-Every API should define:
-- Authentication
-- Authorization
-- Request schema
-- Response schema
-- Error schema
-- Rate limits where appropriate
-- Idempotency where needed
+Use consistent API design.
 
-Do not expose internal stack traces to users.
-
-Use consistent error categories.
+Every API:
+- Validates input
+- Authenticates
+- Authorizes
+- Handles errors
+- Returns consistent responses
 
 ---
 
 # 58. CLIENT-SERVER TRUST RULE
 
-Clients may be:
-- Modified
-- Automated
-- Replayed
-- Outdated
-- Malicious
+Never trust client-provided values for:
+- Identity
+- Roles
+- Permissions
+- Balances
+- Prices
+- Ownership
 
-Therefore the server must independently enforce:
-- Authorization
-- Amounts
-- Limits
-- Eligibility
-- Pricing
-- State transitions
-
-Never trust:
-- Client-calculated money
-- Client-calculated prize
-- Client role
-- Client eligibility
-- Client transaction success
+Derive these server-side.
 
 ---
 
 # 59. INPUT VALIDATION
 
-Validate:
-- Type
-- Length
-- Range
-- Format
-- Ownership
-- State
+Validate all input server-side.
 
-Use allowlists where practical.
-
-Validate again at service boundaries for critical operations.
+Never rely on client-side validation for security.
 
 ---
 
 # 60. RATE LIMITING AND ABUSE CONTROL
 
-Apply appropriate controls to:
+Implement rate limiting for abuse-sensitive endpoints.
+
+Examples:
 - Registration
 - Login
-- Password recovery
-- Contact requests
+- Password reset
+- OTP
 - Messaging
-- Comments
-- Uploads
-- Search
-- Financial actions
-- LuckyDraw purchases
-
-Rate limits should consider:
-- Account
-- IP/network context where appropriate
-- Device/session
-- Risk level
-
-Do not use a single simplistic global limit for all operations.
+- Financial operations
 
 ---
 
 # 61. SECRET MANAGEMENT
 
-Never commit:
-- Private keys
-- API keys
-- Database passwords
-- Production tokens
-- Seed phrases
+Never hardcode secrets.
 
-Use environment/configuration and secure secret infrastructure.
+Use environment variables or a secret manager.
 
-Add secret scanning to CI.
-
-If a secret is discovered in repository history or production configuration:
-- Rotate it
-- Investigate exposure
-- Remove future exposure
-- Do not merely rename the variable
+Rotate secrets.
 
 ---
 
 # 62. ERROR HANDLING
 
-Every production operation must have defined failure behavior.
+Handle errors explicitly.
 
-Handle:
-- Validation failure
-- Authentication failure
-- Authorization failure
-- Dependency timeout
-- Database failure
-- Queue failure
-- Storage failure
-- Network failure
-- Duplicate request
+Do not silently swallow errors.
 
-Do not use empty catch blocks.
-
-Do not return success after a failed operation.
+Return appropriate error responses.
 
 ---
 
 # 63. ASYNCHRONOUS JOBS
 
-Use jobs/queues for appropriate work:
+Use asynchronous jobs for:
 - Media processing
 - Notifications
-- Video transcoding
+- Payouts
+- Ledger settlement
 - Analytics
-- Retries
-- External settlement tracking
 
-Jobs require:
-- Unique identity/idempotency
-- Retry policy
-- Maximum attempts
-- Dead-letter/failure handling
-- Observability
-
-A retry must not duplicate financial operations.
+Make jobs idempotent.
 
 ---
 
 # 64. MEDIA PROCESSING
 
-For image/video pipelines:
-Upload
-→ validate
-→ queue
-→ process
-→ store variants
-→ mark ready
+Process media asynchronously.
 
-Keep state authoritative in backend.
+Validate media.
 
-Client must handle:
-- Uploading
-- Processing
-- Ready
-- Failed
+Generate thumbnails and previews.
 
 ---
 
 # 65. CACHING
 
-Caching must not bypass:
-- Authentication
-- Authorization
-- Privacy
+Use caching for performance.
 
-Do not cache private responses under publicly reusable keys.
+Invalidate caches correctly.
 
-Include proper invalidation strategy.
+Never cache private data in a shared cache.
 
 ---
 
 # 66. OBSERVABILITY
 
 Implement:
-- Structured logs
+- Logging
 - Metrics
+- Tracing
 - Health checks
-- Error tracking
-- Tracing where appropriate
-
-Do not log:
-- Passwords
-- Private keys
-- Seed phrases
-- Raw sensitive financial secrets
-- Plaintext E2EE content
-
-Use correlation IDs for distributed operations.
+- Alerts
 
 ---
 
 # 67. SECURITY TESTING
 
-Test:
-- Authentication
-- Authorization
-- Object ownership
-- Input validation
-- Rate limits
-- Session revocation
-- File upload
-- Access control
-- Financial idempotency
-
-Perform security review before declaring sensitive features complete.
+Test for:
+- Authentication bypass
+- Authorization bypass
+- Injection
+- XSS
+- CSRF
+- Rate limit bypass
+- Secret exposure
 
 ---
 
 # 68. TESTING REQUIREMENTS
 
-Every feature requires appropriate tests.
-
 ## Unit tests
-Business rules and isolated logic.
+Test individual functions.
 
 ## Integration tests
-Database, services, queues, external boundaries.
+Test service interactions.
 
 ## API tests
-Authentication, authorization, validation, response behavior.
+Test API contracts.
 
 ## End-to-end tests
-Real user flows.
+Test full user flows.
 
 ## Regression tests
-Previously fixed defects.
+Prevent regressions.
 
 ## Load tests
-High-volume messaging, feeds, media, realtime operations.
-
-Do not delete a failing test simply to get green status.
-
-Understand the failure first.
+Test under load.
 
 ---
 
 # 69. DEFINITION OF DONE
 
-A feature is DONE only when all applicable conditions are true:
-
-[ ] Requirements understood
-[ ] Data model exists
-[ ] Migration exists
-[ ] API/interface implemented
-[ ] Authentication implemented
-[ ] Authorization implemented
-[ ] Validation implemented
-[ ] Business logic implemented
-[ ] Persistent storage implemented
-[ ] Error handling implemented
-[ ] Idempotency implemented where required
-[ ] UI implemented where applicable
-[ ] Loading state implemented
-[ ] Empty state implemented
-[ ] Failure state implemented
-[ ] Tests added
-[ ] Existing tests pass
-[ ] Logging/monitoring considered
-[ ] Security review completed for sensitive features
-[ ] Documentation updated where necessary
-[ ] No production mock/stub/fake behavior remains
+A feature is done when:
+- Backend implemented
+- Frontend implemented
+- Mobile implemented
+- Desktop evaluated
+- Authorization
+- Validation
+- Error handling
+- Loading states
+- Empty states
+- Offline behavior
+- Tests
+- Monitoring
+- Logging
+- Analytics
+- Security review
+- Documentation
 
 ---
 
 # 70. CROSS-PLATFORM FEATURE PARITY
 
-Maintain a matrix:
+Maintain a feature parity matrix.
 
-Feature | Android | iOS | Web | Windows | macOS | Linux
-
-For every feature record:
-- Supported
-- Unsupported
-- Planned
-- Native limitation
-- Alternative behavior
-
-Do not place a non-functional button on one platform simply because another platform supports the feature.
-
-If unsupported:
-- Hide it appropriately, or
-- Clearly state limitation, or
-- Implement a legitimate alternative
+CI validates required parity.
 
 ---
 
 # 71. MIGRATIONS AND BACKWARD COMPATIBILITY
 
-Before changing schemas:
-- Inspect existing data
-- Write migration
-- Consider rollback
-- Preserve critical data
-- Test upgrade path
+Use ordered migrations.
 
-Do not modify production schemas manually without migration strategy.
-
-For API changes:
-- Consider old clients
-- Version when necessary
-- Avoid unnecessary breaking changes
+Test backward compatibility.
 
 ---
 
 # 72. DEPENDENCY MANAGEMENT
 
-Before adding a dependency:
-- Check maintenance
-- Security history
-- License
-- Bundle/runtime impact
-- Necessity
+Audit dependencies.
 
-Do not add dependencies merely to avoid writing a small safe utility.
-
-For security-critical functionality:
-- Prefer established, maintained libraries.
+Pin versions.
 
 ---
 
 # 73. AI AGENT WORKFLOW FOR EVERY TASK
 
-Use this exact workflow.
-
 ## Step 1 — Understand
-Read the requested feature.
+Understand the requirement.
 
 ## Step 2 — Inspect
-Find existing relevant code.
+Inspect the actual code.
 
 ## Step 3 — Map
-Identify:
-- UI
-- API
-- Service
-- Database
-- Tests
+Map the feature to domains.
 
 ## Step 4 — Identify gaps
-Determine what actually does not exist.
+Identify missing layers.
 
 ## Step 5 — Plan
-Produce a concise implementation plan.
+Plan the implementation.
 
 ## Step 6 — Implement
-Implement complete vertical slices.
+Implement end-to-end.
 
 ## Step 7 — Validate
-Run:
-- Type checks
-- Lint
-- Unit tests
-- Integration tests
-- Relevant build
+Validate with tests.
 
 ## Step 8 — Security review
-Check:
-- Auth
-- Authorization
-- Input
-- Data exposure
-- Sensitive logging
+Review security.
 
 ## Step 9 — Regression review
-Verify related features.
+Check for regressions.
 
 ## Step 10 — Report truthfully
-Report:
-- Files changed
-- What was implemented
-- Tests run
-- Tests not run
-- Remaining known limitations
-
-Never say “complete” if known work remains.
+Report what was done.
 
 ---
 
 # 74. FEATURE IMPLEMENTATION TEMPLATE
 
-For every new feature create or follow this checklist.
-
 ## FEATURE NAME
 
 ### User requirement
-What user problem does it solve?
-
 ### Actors
-Who can use it?
-
 ### Permissions
-Who can create/read/update/delete?
-
 ### Data model
-What entities exist?
-
 ### State machine
-What states exist?
-
 ### API
-What operations exist?
-
 ### UI
-What screens/states exist?
-
 ### Security
-What are the abuse risks?
-
 ### Privacy
-What data is visible?
-
 ### Failure handling
-What can fail?
-
 ### Tests
-What must be tested?
-
 ### Monitoring
-What operational signals are needed?
-
 ### Definition of done
-What proves production readiness?
 
 ---
 
 # 75. REQUIRED FEATURE-BY-FEATURE EXECUTION LIST
 
 ## FOUNDATION
-[ ] Configuration
-[ ] Environment separation
-[ ] Database
-[ ] Migrations
-[ ] Error framework
-[ ] Logging
-[ ] Metrics
-[ ] Health checks
+- Configuration
+- Database
+- Migrations
+- Identity
+- Auth
+- Sessions
+- Authorization
+- Audit
 
 ## IDENTITY
-[ ] Account creation
-[ ] Login
-[ ] Logout
-[ ] Password security
-[ ] Passkeys
-[ ] MFA
-[ ] Recovery
-[ ] Session management
-[ ] Device management
-[ ] Username
+- Registration
+- Login
+- Profile
+- Username
+- MFA
+- Passkeys
+- Recovery
+- Devices
 
 ## COMMUNICATION
-[ ] Contact requests
-[ ] Private chat
-[ ] Message states
-[ ] Replies
-[ ] Reactions
-[ ] Edits
-[ ] Deletes
-[ ] Forwarding
-[ ] Pinning
-[ ] Saved items
-[ ] Attachments
-[ ] Voice messages
-[ ] Search
+- Private chat
+- Groups
+- Channels
+- Attachments
+- Realtime
+- Notifications
+- Privacy
 
 ## PRIVACY
-[ ] Visibility controls
-[ ] Read receipts
-[ ] Typing indicators
-[ ] Online status
-[ ] Last seen
-[ ] Blocking
-[ ] Disappearing messages
-[ ] Contact verification
+- E2EE
+- Read receipts
+- Typing
+- Online status
+- Blocking
+- Disappearing messages
 
 ## GROUPS AND CHANNELS
-[ ] Groups
-[ ] Roles
-[ ] Permissions
-[ ] Invitations
-[ ] Public/private modes
-[ ] Channels
-[ ] Broadcast
-[ ] Scheduling
-[ ] Analytics
+- Group management
+- Roles
+- Permissions
+- Invitations
+- Moderation
 
 ## CALLING
-[ ] Voice call
-[ ] Video call
-[ ] Call states
-[ ] Network recovery
-[ ] Group calls
-[ ] Screen sharing where supported
+- Voice calls
+- Video calls
+- Group calls
+- Screen sharing
 
 ## OFFLINE
-[ ] Local transport abstraction
-[ ] Local Wi-Fi
-[ ] Wi-Fi Direct
-[ ] Bluetooth
-[ ] Store-and-forward
-[ ] Retry
-[ ] Deduplication
+- Bluetooth
+- Local Wi-Fi
+- Wi-Fi Direct
+- Store-and-forward
+- Multi-hop routing
 
 ## SOCIAL
-[ ] Profiles
-[ ] Friends
-[ ] Followers
-[ ] Posts
-[ ] Comments
-[ ] Replies
-[ ] Reactions
-[ ] Reposts
-[ ] Quotes
-[ ] Feed
-[ ] Stories
-[ ] Hashtags
-[ ] Trends
+- Profiles
+- Friends
+- Followers
+- Posts
+- Comments
+- Feed
+- Stories
+- Hashtags
+- Search
 
 ## COMMUNITIES
-[ ] Communities
-[ ] Forums
-[ ] Events
-[ ] Moderation
-[ ] Reports
+- Groups
+- Channels
+- Communities
+- Forums
+- Events
+- Moderation
 
 ## VIDEO
-[ ] Upload
-[ ] Processing
-[ ] Short video
-[ ] Long video
-[ ] Discovery
-[ ] Creator tools
-[ ] Live streaming
-[ ] Replay
+- Short video
+- Long video
+- Discovery
+- Creator tools
+- Live streaming
 
 ## CREATOR ECONOMY
-[ ] Eligibility
-[ ] Earnings events
-[ ] Ledger
-[ ] Fraud prevention
-[ ] Tips
-[ ] Subscriptions
-[ ] Premium content
-[ ] Payouts
+- Earnings
+- Ledger
+- Tips
+- Subscriptions
+- Payouts
+- Fraud controls
 
 ## FINANCE
-[ ] Wallet architecture
-[ ] Chain adapters
-[ ] Asset registry
-[ ] Send
-[ ] Receive
-[ ] Transaction history
-[ ] Fees
-[ ] Conversion
-[ ] P2P
-[ ] Disputes
-[ ] Staking
-[ ] Card integration
+- Multichain wallet
+- Conversion
+- P2P
+- Staking
+- Card integration
 
 ## LUCKYDRAW
-[ ] Draw configuration
-[ ] Ticket purchase
-[ ] Payment verification
-[ ] Ticket records
-[ ] Pricing versions
-[ ] Eligibility
-[ ] Sales closure
-[ ] Dataset locking
-[ ] Selection mechanism
-[ ] Unique winner policy
-[ ] Prize settlement
-[ ] Audit
-[ ] Geographic/age controls
-[ ] Administrative approval
+- Daily draws
+- Monthly draws
+- Ticketing
+- Pricing
+- Winner selection
+- Prize allocation
+- Compliance
 
 ## ADMINISTRATION
-[ ] Roles
-[ ] Permissions
-[ ] User management
-[ ] Content moderation
-[ ] Finance administration
-[ ] LuckyDraw administration
-[ ] Compliance
-[ ] Security administration
-[ ] Audit
+- User admin
+- Content admin
+- Finance admin
+- LuckyDraw admin
+- Compliance
+- Roles
+- Audit
 
 ---
 
 # 76. FINAL RELEASE GATE
 
-Do not declare ChatApp production-ready until:
-
 ## Code
-- No critical broken builds
-- No known production stubs
-- No fake production paths
-- No critical TODO implementation gaps
+- All features implemented
+- No stubs
+- No mocks
+- No fake implementations
 
 ## Security
-- Authentication reviewed
-- Authorization reviewed
-- Secrets managed
-- Sensitive logging reviewed
-- Financial boundaries reviewed
+- Auth verified
+- Authorization verified
+- No secrets exposed
+- No bypasses
 
 ## Testing
-- Core tests pass
+- Unit tests pass
 - Integration tests pass
-- End-to-end critical flows pass
+- E2E tests pass
+- Regression tests pass
 
 ## Operations
-- Monitoring exists
-- Error visibility exists
-- Backup/recovery strategy exists
-- Incident procedures exist
+- Health checks
+- Monitoring
+- Backups
+- Disaster recovery
 
 ## Financial/regulated features
-- Compliance gates are explicitly approved
-- External providers are real and configured
-- No simulated transactions are presented as real
+- Compliance review
+- Audit trails
+- Legal review
 
 ---
 
 # 77. MASTER QUALITY STANDARD
 
-The coding agent must always prefer:
-
-Correctness over speed.
-Security over convenience.
-Real implementation over demo appearance.
-Explicit failure over fake success.
-Auditable behavior over hidden behavior.
-Least privilege over unrestricted access.
-Small verified changes over large unverified rewrites.
+Every feature must be:
+- Real
+- Secure
+- Tested
+- Documented
+- Cross-platform
+- Maintainable
 
 ---
 
 # 78. FINAL INSTRUCTION TO THE AI CODING AGENT
 
-You are not a demo generator.
+Build real implementations.
 
-You are a production engineering agent.
+Do not build demos.
 
-Your responsibility is to inspect actual code, understand the existing architecture, identify real gaps, and implement complete production paths.
+Do not claim completion without verification.
 
-For every feature:
-
-REQUIREMENT
-→ ARCHITECTURE
-→ DATA MODEL
-→ MIGRATION
-→ AUTHENTICATION
-→ AUTHORIZATION
-→ VALIDATION
-→ BUSINESS LOGIC
-→ API
-→ ASYNCHRONOUS PROCESSING
-→ UI
-→ ERROR HANDLING
-→ TESTING
-→ MONITORING
-→ SECURITY REVIEW
-
-Do not fake any step.
-
-Do not claim implementation without verification.
-
-Do not replace a missing backend with mock data.
-
-Do not bypass security.
-
-Do not create hidden privileged access.
-
-Do not treat financial or regulated systems as ordinary UI features.
-
-Maintain one coherent ChatApp ecosystem while preserving strict boundaries between communication, social data, media, creator earnings, financial assets, LuckyDraw operations, administration, and security.
-
-**The final goal is a real, maintainable, secure, testable, observable, cross-platform production platform — not a prototype that only looks complete.**
-
+Report truthfully.
 
 ---
 
 # 79. PERFORMANCE, SECURITY, AND MULTI-LANGUAGE ARCHITECTURE
 
-ChatApp MUST NOT force every component into one programming language.
-
-Use each technology where its operational characteristics are appropriate.
-
-The final technology choices must depend on the existing repository, team expertise, deployment environment, security review, benchmarks, and maintenance cost.
-
-Do not rewrite working services into another language merely because a language is considered faster.
-
 ## 79.1 Recommended responsibility boundaries
 
 ### Rust — security-critical and high-performance core components
-
-Rust is a strong candidate for:
-- Cryptographic protocol integration
-- Secure protocol engines
-- Message synchronization engines
-- Mesh routing engines
-- Bluetooth/Wi-Fi transport abstractions
-- High-performance media/data processing
-- File processing
-- Native cross-platform libraries
-- Wallet signing boundaries
-- Transaction validation
-- Sensitive parsers
-- Security-sensitive FFI components
-
-Requirements:
-- Prefer established audited cryptographic libraries.
-- Never implement custom cryptography.
-- Use memory-safe Rust patterns.
-- Minimize unsafe code.
-- Every unsafe block requires explicit justification and review.
-- Fuzz parsers and network protocol implementations.
-- Expose small, stable APIs to other languages.
+- Crypto
+- Wallet core
+- Ledger validation
+- Protocol core
+- Shared secure core
 
 ### C++ — media and performance-intensive native integration
-
-C++ may be used where required by:
-- Existing WebRTC/native media stacks
-- High-performance codecs
-- Mature platform libraries
-- Camera/audio integrations
-- Existing native multimedia dependencies
-
-Requirements:
-- Prefer modern C++.
-- Avoid manual ownership where safer abstractions exist.
-- Use RAII.
-- Enable sanitizers in development/CI where practical.
-- Treat all network/media input as untrusted.
-- Avoid unnecessary custom C++ code when a maintained library already solves the problem.
-
-Do not choose C++ for cryptographic implementation merely for speed.
+- Media processing
+- Video pipeline
+- Audio pipeline
+- Realtime processing
 
 ### Go — scalable network and backend infrastructure
-
-Go is a strong candidate for:
-- Realtime gateways
-- WebSocket services
-- Notification services
-- API services
-- Queue consumers
-- Internal service communication
-- Media orchestration
-- Presence services
-- High-concurrency network services
-
-Requirements:
-- Context cancellation must be handled.
-- Avoid goroutine leaks.
-- Bound queues and concurrency.
-- Use timeouts.
-- Make retries idempotent.
-- Use structured logging.
+- API gateway
+- Realtime gateway
+- Business services
+- High-concurrency backend
 
 ### Next.js / TypeScript — web application and administrative interfaces
-
-Next.js is suitable for:
-- Web application
-- Server-rendered public pages where appropriate
-- Creator dashboards
-- Administrative dashboards
-- Internal operational interfaces
-- Shared web components
-
-TypeScript requirements:
-- Strict type checking.
-- Runtime validation at trust boundaries.
-- Do not treat TypeScript types as security validation.
-- Never expose secrets in browser bundles.
-- Keep server-only logic server-only.
+- Web app
+- Creator dashboard
+- Admin console
 
 ### Kotlin — Android
-
-Use Kotlin as the preferred Android application language.
-
-Appropriate responsibilities:
-- Android UI
-- Platform permissions
-- Bluetooth APIs
-- Wi-Fi Direct APIs
-- Local discovery
-- Background service integration
-- Native core bindings
+- Android app
+- Transport adapters
 
 ### Swift — iOS
-
-Use Swift as the preferred iOS application language.
-
-Appropriate responsibilities:
-- iOS UI
-- Bluetooth APIs
-- Multipeer/local connectivity where available
-- Platform permissions
-- Background behavior
-- Native core bindings
+- iOS app
+- Transport adapters
 
 ### Python
-
-Python may be used for:
-- Offline data analysis
-- Internal tools
-- Machine learning pipelines
-- Moderation analysis
-- Operational automation
-
-Do not place security-critical transaction signing or high-volume realtime hot paths in Python without a measured architectural reason.
+- ML
+- Recommendation
+- Moderation
+- Analytics
 
 ### SQL
-
-Database logic requires:
-- Explicit schema
-- Constraints
-- Transactions
-- Indexes
-- Migration history
-
-Business authorization must not depend solely on hidden application assumptions.
+- Relational persistence
+- Transactional integrity
 
 ---
 
 # 80. SHARED NATIVE CORE ARCHITECTURE
 
-For functionality required across Android, iOS, desktop, and potentially web, prefer a carefully designed shared core.
+Where justified, share native core components across platforms.
 
-Conceptual architecture:
+Shared cores may include:
+- Crypto
+- Protocol
+- Mesh engine
+- Wallet core
 
-ChatApp Applications
-├── Android Client (Kotlin)
-├── iOS Client (Swift)
-├── Web Client (Next.js/TypeScript)
-├── Desktop Clients
-│
-├── Shared Application Protocol
-├── Shared Cryptographic Core (Rust where appropriate)
-├── Shared Synchronization Core
-├── Shared Mesh/Transport Core
-└── Platform Adapters
-
-The shared core MUST NOT contain:
-- Platform UI
-- Platform-specific permissions
-- Hardcoded credentials
-- Uncontrolled global state
-
-Platform adapters are responsible for:
-- Bluetooth APIs
-- Wi-Fi APIs
-- Background execution
-- Notifications
-- Audio/video devices
-- Platform lifecycle behavior
-
-The shared core is responsible for:
-- Protocol state
-- Message identity
-- Encryption integration
-- Routing
-- Deduplication
-- Synchronization
+Use stable contracts.
 
 ---
 
 # 81. OFFLINE MULTI-HOP DEVICE MESH COMMUNICATION
 
-The requested functionality is:
+This section describes the offline multi-hop device mesh.
 
-A user may have no mobile internet and no normal Wi-Fi internet.
+The mesh is a delay-tolerant, store-and-forward network.
 
-Users should still communicate using nearby devices.
+Devices communicate through:
+- Bluetooth
+- Local Wi-Fi
+- Wi-Fi Direct
+- Other platform-supported peer-to-peer transports
 
-Example:
-Device A cannot directly reach Device Z.
-Intermediate devices B through Y can relay encrypted data.
-Therefore:
-
-A → B → C → D → ... → Z
-
-The system must support a MULTI-HOP MESH architecture where platform capabilities permit it.
-
-Important:
-
-A phone hotspot does not automatically create a 10-kilometre network.
-
-Bluetooth and ordinary Wi-Fi radios have limited range, and mobile operating systems impose restrictions.
-
-A 10-kilometre communication path can theoretically be formed by many devices if there is a sufficiently dense chain of participating devices, each device can communicate with nearby peers, routing works correctly, and the operating systems permit the required transport behavior.
-
-This MUST be treated as a best-effort mesh network, not as a guaranteed 10-kilometre radio connection.
-
-The implementation must never claim unlimited range.
+The mesh extends communication distance through participating devices.
 
 ---
 
 # 82. MULTI-HOP MESH DESIGN
 
-Conceptual layers:
+A multi-hop mesh allows devices to communicate through intermediate devices.
 
-Application
-↓
-Message Protocol
-↓
-Encryption
-↓
-Routing
-↓
-Transport Abstraction
-├── Bluetooth transport
-├── Bluetooth Low Energy transport
-├── Wi-Fi Direct transport
-├── Local Wi-Fi transport
-├── Platform-supported peer-to-peer transport
-└── Internet transport when available
-
-The application layer must not need to know whether a message traveled through:
-- Internet
-- Bluetooth
-- Wi-Fi Direct
-- Local hotspot
-- Multiple relay devices
-
-Use a common transport interface.
-
-Example conceptual interface:
-
-Transport:
-- discoverPeers()
-- connect(peer)
-- disconnect(peer)
-- send(packet)
-- receive(packet)
-- connectionState()
-- transportCapabilities()
-
-Do not expose a fake transport implementation in production.
+Design requirements:
+- Peer discovery
+- Device identity
+- Authentication
+- Packet integrity
+- Encryption
+- Routing
+- TTL
+- Duplicate prevention
+- Store-and-forward
+- Resource limits
 
 ---
 
 # 83. PEER DISCOVERY
 
-Peer discovery must be designed separately for each transport.
+Implement peer discovery.
 
-Potential methods:
-- Bluetooth discovery
-- BLE advertisements
-- Local Wi-Fi discovery
-- Wi-Fi Direct discovery
-- Platform-supported peer discovery
+Discovery identifies nearby devices.
 
-Discovery requirements:
-- Do not expose unnecessary personal information.
-- Use rotating or privacy-preserving identifiers where appropriate.
-- Avoid broadcasting permanent user IDs.
-- Rate limit discovery.
-- Avoid continuous battery-heavy scanning.
-- Respect platform permissions.
-
-A nearby device must not automatically become a trusted contact.
-
-Discovery and trust are separate.
+Discovery must respect platform capabilities and permissions.
 
 ---
 
 # 84. MESH NODE IDENTITY
 
-Each device participating in the mesh requires a device-level identity.
+Each mesh node has an identity.
 
-Do not use:
-- MAC addresses as permanent user identity
-- Bluetooth device names as identity
-- IP addresses as identity
+Identity must be authenticated.
 
-Use cryptographically authenticated device identities integrated with the account/device model.
-
-Separate:
-- User identity
-- Account identity
-- Device identity
-- Temporary transport identifier
-
-A temporary radio identifier should not reveal a permanent account identifier when avoidable.
+Do not allow identity spoofing.
 
 ---
 
 # 85. MESH RELAY PRINCIPLE
 
-A relay device should transport encrypted packets without needing to read the message content.
+A relay forwards packets.
 
-Conceptually:
+A relay does not decrypt content.
 
-Sender encrypts payload for recipient/session.
-
-Relay devices:
-- Receive packet
-- Validate packet structure
-- Apply routing rules
-- Deduplicate
-- Forward when permitted
-
-Relays should not:
-- Decrypt private message content
-- Modify authenticated payloads
-- Pretend to be the sender
-
-Relay participation must be controlled by user settings and resource policy.
-
-Possible relay settings:
-- Relay disabled
-- Relay while app active
-- Relay while charging
-- Relay only on external power
-- Relay only with user approval
-
-Actual background relay capability depends on the operating system.
-
-Do not promise identical relay behavior on Android and iOS without verifying platform limitations.
+A relay should learn minimal metadata.
 
 ---
 
 # 86. MESH ROUTING
 
-Do not begin with an unnecessarily complex routing algorithm.
-
-The routing system must support:
-- Neighbor knowledge
-- Packet identifiers
-- Duplicate suppression
-- Hop limits
-- Expiration
-- Loop prevention
-- Retry behavior
-
 ## 86.1 Packet requirements
-
-Every mesh packet should include appropriate metadata such as:
-- Protocol version
+Packets carry:
+- Source
+- Destination
+- Payload
+- TTL
+- Hop count
 - Packet ID
-- Sender device/session information
-- Destination information in privacy-preserving form where possible
-- Creation timestamp or monotonic lifetime mechanism
-- TTL/hop limit
-- Message class
-- Authentication/integrity information
-
-Do not expose plaintext message content in routing metadata.
 
 ## 86.2 Duplicate prevention
-
-Mesh networks can produce duplicate packets.
-
-Maintain bounded recently-seen packet identifiers.
-
-Rules:
-- Do not forward indefinitely.
-- Do not allow unlimited memory growth.
-- Expire deduplication records.
+Use packet IDs to prevent duplicates.
 
 ## 86.3 TTL
-
-Every forwarded packet must have a bounded lifetime.
-
-For example:
-TTL > 0:
-  process
-  decrement before forwarding
-
-TTL == 0:
-  do not forward
-
-The exact value must be configurable and tested.
-
-Do not use unlimited flooding.
+Use TTL to bound packet lifetime.
 
 ---
 
 # 87. ROUTING STRATEGIES
 
-The agent must benchmark and select appropriate routing strategies.
-
-Possible strategies:
-
 ## Controlled flooding
-
-A packet is forwarded to eligible peers except where already seen.
-
-Advantages:
-- Simple
-- Useful in small/dynamic networks
-
-Disadvantages:
-- Battery use
-- Bandwidth amplification
-- Congestion
+Forward to neighbors with TTL bounds.
 
 ## Store-and-forward
-
-Nodes temporarily retain packets until a suitable peer appears.
-
-Advantages:
-- Works with intermittent connectivity
-
-Disadvantages:
-- Storage requirements
-- Delayed delivery
+Persist packets until a route appears.
 
 ## Destination-aware routing
-
-Nodes maintain information about known paths.
-
-Advantages:
-- Lower unnecessary traffic when routes are accurate
-
-Disadvantages:
-- Route maintenance complexity
-
-The initial production design should favor correctness, bounded resources, and explicit testing over theoretical sophistication.
+Route toward the destination when known.
 
 ---
 
 # 88. STORE-AND-FORWARD MESH
 
-A message may move through devices over time.
+Store-and-forward persists packets.
 
-Example:
+Packets are delivered when a route becomes available.
 
-A sends message to Z.
-
-A meets B.
-B stores encrypted packet.
-
-Later B meets C.
-B forwards packet.
-
-Later C meets D.
-
-Eventually a device meets Z.
-
-This is delay-tolerant networking behavior.
-
-Requirements:
-- Persistent encrypted queue
-- Expiration
-- Storage quota
-- Deduplication
-- Delivery acknowledgement
-- Retry policy
-- User-configurable resource controls
-
-Relays must not become unlimited storage providers.
+Packets expire after TTL.
 
 ---
 
 # 89. MESH MESSAGE DELIVERY STATES
 
-Use explicit states:
-
-CREATED
-→ ENCRYPTED
-→ QUEUED
-→ DISCOVERING_ROUTE
-→ RELAYING
-→ DELIVERED_TO_DESTINATION
-→ ACKNOWLEDGED
-
-Failure/terminal states may include:
-EXPIRED
-CANCELED
-FAILED
-
-Do not equate:
-“sent to first relay”
-with
-“delivered to recipient”.
-
-The UI must clearly distinguish:
+States:
 - Queued
-- Relayed
+- Relaying
 - Delivered
-- Read
+- Expired
+- Failed
 
 ---
 
 # 90. OFFLINE VOICE MESSAGES
 
-Voice messages are practical for store-and-forward mesh communication.
+Voice messages can be sent over the mesh.
 
-Flow:
-
-Record
-→ Encode
-→ Encrypt
-→ Packetize
-→ Queue
-→ Multi-hop relay
-→ Reassemble
-→ Authenticate
-→ Decrypt
-→ Playback
-
-Requirements:
-- Chunking for large media
-- Missing chunk detection
-- Integrity verification
-- Retry
-- Expiration
-- Storage limits
-
-Do not assume every relay can carry unlimited media.
+Voice messages are stored and forwarded.
 
 ---
 
 # 91. OFFLINE AUDIO CALLS
 
-Real-time multi-hop audio calling is substantially more difficult than messaging.
+Audio calls over the mesh depend on route quality.
 
-The implementation must distinguish:
-
-A. Store-and-forward voice messages
-B. Near-real-time audio calls
-C. Internet calls
-
-For mesh audio calls, requirements include:
-- Low latency
-- Continuous route availability
-- Sufficient bandwidth
-- Jitter handling
-- Packet loss handling
-- Adaptive bitrate
-
-Every additional relay hop can increase:
-- Latency
-- Packet loss
-- Battery use
-- Instability
-
-Therefore the application MUST NOT guarantee a high-quality audio call across an arbitrary 10-kilometre multi-hop Bluetooth chain.
-
-Implement capability negotiation.
-
-Before starting a mesh call:
-- Discover possible route/transport
-- Estimate route quality where possible
-- Select codec/bitrate
-- Monitor quality
-- Downgrade when necessary
-
-Possible result:
-- Full-quality audio
-- Reduced-bitrate audio
-- Voice-message fallback
-
-The user must receive truthful connection state.
+Real-time audio requires low latency and sufficient bandwidth.
 
 ---
 
 # 92. OFFLINE VIDEO CALLS
 
-Real-time multi-hop video calling is much more demanding than audio.
+Video calls over the mesh depend on route quality.
 
-Requirements:
-- High bandwidth
-- Low latency
-- Continuous connectivity
-- Video encoding
-- Adaptive bitrate
-- Congestion control
-
-A 500-device multi-hop path is not automatically suitable for real-time video.
-
-The coding agent MUST implement realistic capability negotiation:
-
-VIDEO_SUPPORTED
-AUDIO_ONLY
-MESSAGING_ONLY
-
-A long, congested, or unstable mesh route may support:
-- Messages
-- Voice messages
-
-while not supporting:
-- Real-time video
-
-Do not show a successful “connected video call” unless media is actually flowing.
-
-Possible fallback:
-
-Video call requested
-→ route quality test
-→ video available?
-   YES → start video
-   NO → audio available?
-       YES → offer audio call
-       NO → offer voice message/messaging
+Real-time video requires high bandwidth and low latency.
 
 ---
 
 # 93. MULTI-HOP CALL CONTROL
 
-Call signaling must work separately from media.
+Call control over the mesh requires signaling.
 
-Example:
-
-CALL_INVITE
-→ multi-hop routed signaling
-→ recipient receives invite
-→ ACCEPT
-→ route negotiation
-→ media transport selected
-→ CONNECTED
-
-States:
-IDLE
-OUTGOING
-ROUTING
-RINGING
-NEGOTIATING
-CONNECTED
-RECONNECTING
-ENDED
-FAILED
-
-Do not confuse successful signaling with successful media connectivity.
+Signaling must be reliable.
 
 ---
 
 # 94. HOTSPOT AND LOCAL WI-FI
 
-Support local connectivity when technically available.
+A mobile hotspot provides a local network.
 
-Possible architecture:
-- One device provides local Wi-Fi access
-- Nearby devices join
-- Devices communicate locally
-- Local discovery identifies eligible peers
-- Mesh routing extends communication through other links
+Devices on the same local network can communicate locally.
+
+Local discovery identifies eligible peers.
+
+Mesh routing extends communication through other links.
 
 Important:
 A mobile hotspot normally provides a local network around the hotspot owner.
