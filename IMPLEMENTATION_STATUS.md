@@ -41,7 +41,8 @@ The specifications describe a release program substantially broader than what ca
 | Python ML compilation and extension Node syntax checks | Passed. |
 | Compose YAML, backup script, and CI workflow syntax validation | Passed: Compose parses, `scripts/backup-restore.sh` passes `bash -n`, and `.github/workflows/validate.yml` is present with parity/build/migration checks. |
 | API readiness and Compose dependency wiring | Implemented: `/health` remains liveness, `/ready` checks database readiness, and web/admin wait for API health in Compose. |
-| Go tests for `services/api`, `services/sfu`, and `services/mesh` | Not executable: Go is not installed in the execution environment. |
+| Go tests for `services/mesh` | Passed: `go build`, `go vet`, and `go test` all pass for the native offline mesh transport engine (crypto, packet, transport, routing, store-and-forward, node, messages). |
+| Go tests for `services/api` and `services/sfu` | Not executable: Go is not installed in the execution environment. |
 | Rust tests for `services/authn` and `services/security` | Not executable: Cargo is not installed in the execution environment. |
 | Python integration tests | Not executable: `websockets` was installed, but no API/database fixture is running and the connection was refused. |
 | Android/iOS native builds | Not executable: Android Gradle wrapper, iOS Swift package manifest, and native toolchains are unavailable. |
