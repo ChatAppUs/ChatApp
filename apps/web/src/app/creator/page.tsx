@@ -19,9 +19,15 @@ interface Payout {
   created_at: string;
 }
 
+interface CreatorInsights {
+  daily: Array<{ day: string; reach: number; impressions: number; watch_time_s: number; new_followers: number; top_sound: string }>;
+  totals: { reach: number; impressions: number; watch_time_s: number; new_followers: number; top_sound: string };
+}
+
 export default function CreatorPage() {
   const [earnings, setEarnings] = useState<Earnings | null>(null);
   const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [insights, setInsights] = useState<CreatorInsights | null>(null);
   const [amount, setAmount] = useState("");
   const [destination, setDestination] = useState("");
   const [error, setError] = useState("");
@@ -31,6 +37,9 @@ export default function CreatorPage() {
     api<Earnings>("/api/creator/earnings").then(setEarnings).catch(() => {});
     api<{ payouts: Payout[] }>("/api/creator/payouts")
       .then((d) => setPayouts(d.payouts))
+      .catch(() => {});
+    api<CreatorInsights>("/api/creator/insights?days=14")
+      .then(setInsights)
       .catch(() => {});
   }, []);
 
@@ -67,6 +76,31 @@ export default function CreatorPage() {
         <p className="muted">
           Earnings accrue from views on your posts and reels. KYC verification is required before payouts.
         </p>
+      </div>
+      <div className="card col">
+        <h3 style={{ marginTop: 0 }}>Reach and engagement</h3>
+        {insights ? (
+          <>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <span className="badge">Reach: {insights.totals.reach.toLocaleString()}</span>
+              <span className="badge">Impressions: {insights.totals.impressions.toLocaleString()}</span>
+              <span className="badge">Watch time: {Math.round(insights.totals.watch_time_s / 60)} min</span>
+              <span className="badge green">New followers: {insights.totals.new_followers.toLocaleString()}</span>
+            </div>
+            <p className="muted">Top sound: {insights.totals.top_sound || "No sound data yet"}</p>
+            <div className="col" style={{ gap: 6 }}>
+              {insights.daily.map((row) => (
+                <div key={row.day} className="row" style={{ fontSize: 13 }}>
+                  <span>{new Date(row.day).toLocaleDateString()}</span>
+                  <span className="muted">reach {row.reach.toLocaleString()} · impressions {row.impressions.toLocaleString()} · followers +{row.new_followers.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+            {insights.daily.length === 0 && <span className="muted">Analytics will appear after your content receives activity.</span>}
+          </>
+        ) : (
+          <span className="muted">Loading analytics…</span>
+        )}
       </div>
       <div className="card col">
         <h3 style={{ marginTop: 0 }}>Request payout</h3>

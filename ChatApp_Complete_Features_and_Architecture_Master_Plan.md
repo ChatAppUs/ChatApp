@@ -15,6 +15,7 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 | Feature registry and cross-platform parity | `feature-registry.json`, `scripts/validate-feature-registry.py`, `tests/parity_check.py` | Implemented and statically validated |
 | CI and production safeguards | `.github/workflows/validate.yml`, `/health`, `/ready`, `docker-compose.yml`, `scripts/backup-restore.sh` | Implemented and syntax-validated |
 | Client and service feature surface | `apps/`, `services/`, `infra/db/` | Implemented source coverage; runtime environments required for final certification |
+| Creator analytics integration | `services/api/handlers_gap9.go`, `infra/db/025_gap_pack9.sql`, `apps/web/src/app/creator/page.tsx` | Implemented: Creator Studio consumes daily reach, impressions, watch time, follower growth, and top-sound insights |
 
 ---
 
