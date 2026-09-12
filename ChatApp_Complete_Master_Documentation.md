@@ -15,6 +15,7 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 | CI and production safeguards | `.github/workflows/validate.yml`, `/health`, `/ready`, `docker-compose.yml`, `scripts/backup-restore.sh` | Implemented and syntax-validated |
 | Client and service feature surface | `apps/`, `services/`, `infra/db/` | Implemented source coverage; runtime environments required for final certification |
 | Creator analytics integration | `services/api/handlers_gap9.go`, `infra/db/025_gap_pack9.sql`, web `creator/page.tsx`, Android `MonetizeScreen.kt`, iOS `FeatureClient.swift`/`FeatureViews.swift` | Implemented: Web, Android, and iOS Creator Studio surfaces consume daily reach, impressions, watch time, follower growth, and top-sound insights |
+| LuckyDraw | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py` | Implemented: draws, ticket purchases on the double-entry ledger, audited winner selection with the unique-user rule, prize settlement, and admin lifecycle |
 | Professional analytics dashboard | `services/api/handlers_gap4.go`, `services/api/main.go`, `apps/web/src/app/analytics/page.tsx`, `apps/web/src/components/Nav.tsx` | Implemented: authenticated web dashboard consumes account posts, audience, engagement, seven-day shares, and earnings metrics |
 
 ## What is inside
