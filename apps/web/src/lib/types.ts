@@ -370,3 +370,34 @@ export interface TokenPrice {
   source: string | null;
   fetched_at: string | null;
 }
+
+export interface LuckyDraw {
+  id: string;
+  title: string;
+  frequency: string;
+  sales_open_at: string;
+  sales_close_at: string;
+  status: string;
+  ticket_price_usd: string;
+  prize_alloc_pct: string;
+  operator_fee_pct: string;
+  max_tickets_per_user: number;
+  unique_winner: boolean;
+  min_age: number;
+  allowed_countries: string[];
+  disabled: boolean;
+  prize_pool: string;
+  winner_count: number;
+  tickets_sold: number;
+  my_tickets?: number;
+}
+
+export interface LuckyDrawTicket {
+  id: string;
+  draw_title: string;
+  ticket_number: string;
+  price_usd: string;
+  created_at: string;
+  frequency: string;
+  draw_status: string;
+}
