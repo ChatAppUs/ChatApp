@@ -15,8 +15,8 @@ import urllib.error
 
 import websockets
 
-BASE = "http://localhost:8080"
-WS = "ws://localhost:8080"
+BASE = os.environ.get("CHATAPP_BASE", "http://localhost:8080")
+WS = os.environ.get("CHATAPP_WS", "ws://localhost:8080")
 passed = failed = 0
 
 

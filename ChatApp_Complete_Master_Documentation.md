@@ -9,6 +9,33 @@
 
 The repository implementation is tracked by `feature-registry.json`, validated by `scripts/validate-feature-registry.py`, and enforced in `.github/workflows/validate.yml`. The registry covers the documented P0/P1/P2 platform surfaces across Web, Android, iOS, Desktop, Extension, Backend, and Database. Repository parity, web/admin production builds, ML compilation, extension syntax, migration ordering, API readiness wiring, and backup-script syntax are validated in this checkout. Provider-backed, real-device, load, disaster-recovery, and production deployment tests require their configured environments and are not claimed as executed here.
 
+### Third audit pass — 2026-09-13: six specified feature areas were missing, now implemented
+
+The 129-section specification was re-walked against the source tree. Six specified surfaces had
+**no implementation** (zero routes, tables or client references) and are now implemented on the
+backend and in the web client — parity route count 506 → **536**, migrations 35 → **36** (210 tables):
+
+- **Forums / communities** (§75 item 24) — `infra/db/036_platform_gaps.sql`,
+  `services/api/handlers_forums.go`, `apps/web/src/app/forums/page.tsx`
+- **ChatApp Pulse** (X/Twitter-class public conversation) — `services/api/handlers_pulse.go`
+  (+ `startPulseTrendWorker`), `apps/web/src/app/pulse/**`
+- **Live shopping** — `services/api/handlers_shopping.go`,
+  `apps/web/src/app/live-shop/page.tsx`
+- **AI dubbing / AI clips** — `services/api/handlers_ai.go`,
+  `services/ml/creator_assistant.py` (`/dub`, `/clips`), `apps/web/src/app/ai-studio/page.tsx`
+- **In-app AI assistant** — `services/api/handlers_ai.go`,
+  `services/ml/creator_assistant.py` (`/assistant`), `apps/web/src/app/assistant/page.tsx`
+
+**Implemented:** backend logic, persistence and web UI for all six, verified by
+`tests/platform_gaps_test.py` (**76/76 checks passed** against live PostgreSQL and a running API).
+
+**Partially implemented:** native Android/iOS/desktop/extension screens for these six are **not
+implemented** (`feature-registry.json` status `PARTIAL`).
+
+**Not implemented:** native Bluetooth/Wi-Fi Direct mesh transport; production deployment
+validation. AI outputs additionally require their provider models to be configured — without
+them the endpoints report unavailability honestly instead of fabricating results.
+
 | Status area | Repository evidence | Current result |
 |---|---|---|
 | Feature registry and cross-platform parity | `feature-registry.json`, `scripts/validate-feature-registry.py`, `tests/parity_check.py` | Implemented and statically validated |

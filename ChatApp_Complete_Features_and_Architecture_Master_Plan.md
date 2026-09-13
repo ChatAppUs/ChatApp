@@ -10,6 +10,33 @@
 
 The repository implementation is tracked by `feature-registry.json`, validated by `scripts/validate-feature-registry.py`, and enforced in `.github/workflows/validate.yml`. The registry covers the documented P0/P1/P2 platform surfaces across Web, Android, iOS, Desktop, Extension, Backend, and Database. Repository parity, web/admin production builds, ML compilation, extension syntax, migration ordering, API readiness wiring, and backup-script syntax are validated in this checkout. Provider-backed, real-device, load, disaster-recovery, and production deployment tests require their configured environments and are not claimed as executed here.
 
+### Third audit pass — 2026-09-13: six specified feature areas were missing, now implemented
+
+This pass cross-checked every requirement against the executable source tree and found six
+feature areas described in this plan that had **no implementation at all** — zero routes, zero
+tables, zero client references. All six are now implemented on the backend and in the web client
+(parity route count 506 → **536**; migrations 35 → **36**, 210 tables):
+
+| Section in this plan | Feature | Status now | Evidence |
+|---|---|---|---|
+| §30 (+ master documentation §75 item 24) | Forums / communities | **Implemented** (backend + web) | `infra/db/036_platform_gaps.sql`, `services/api/handlers_forums.go`, `apps/web/src/app/forums/page.tsx` |
+| §32 | ChatApp Pulse (X/Twitter-class) | **Implemented** (backend + web) | `036_platform_gaps.sql`, `services/api/handlers_pulse.go` (+ trend worker), `apps/web/src/app/pulse/**` |
+| §20 | Live shopping | **Implemented** (backend + web) | `036_platform_gaps.sql`, `services/api/handlers_shopping.go`, `apps/web/src/app/live-shop/page.tsx` |
+| §23 | AI dubbing | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/dub`), `apps/web/src/app/ai-studio/page.tsx` |
+| §23 | AI clip generation | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/clips`), `apps/web/src/app/ai-studio/page.tsx` |
+| §38 | In-app AI assistant | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/assistant`), `apps/web/src/app/assistant/page.tsx` |
+
+**Partially implemented:** all six are backend + web only. Android, iOS, desktop and extension
+screens are **not implemented**, recorded as `PARTIAL` in `feature-registry.json`.
+
+**Provider-dependent:** AI dubbing, clip analysis and assistant replies return real output only
+when `WHISPER_MODEL`, `TRANSLATE_MODEL`, `TTS_MODEL` and `ASSISTANT_MODEL` are configured.
+Without them the endpoints correctly report unavailability with a reason — nothing is faked.
+Clip-candidate scoring and the assistant's data lookups work without any model.
+
+**Not implemented anywhere:** native Bluetooth/Wi-Fi Direct mesh transport, and production
+deployment validation. See `IMPLEMENTATION_STATUS.md` for the full ledger.
+
 | Status area | Repository evidence | Current result |
 |---|---|---|
 | Feature registry and cross-platform parity | `feature-registry.json`, `scripts/validate-feature-registry.py`, `tests/parity_check.py` | Implemented and statically validated |

@@ -30,9 +30,31 @@ def dbq(sql):
 
 
 def register(name):
+    """Register an account through the real email-OTP gate.
+
+    The Identity spec requires a verified email/phone before account creation,
+    so the helper completes the actual `send-code` → `check-code` flow using the
+    development-returned code (the OTP engine is self-built; no mock).
+    """
+    email = f"{name}@test.dev"
     for attempt in range(6):
+        s, r = req("POST", "/api/auth/email/send-code", {"email": email})
+        if s == 429:  # resend cooldown — wait it out
+            time.sleep(12)
+            continue
+        if s != 200:
+            check(f"register email otp send {name}", False, f"{s} {r}")
+            return None
+        code = r.get("dev_code")
+        if not code:
+            check(f"register email otp dev_code {name}", False, f"{s} {r}")
+            return None
+        s, r = req("POST", "/api/auth/email/check-code", {"email": email, "code": code})
+        if s != 200:
+            check(f"register email otp verify {name}", False, f"{s} {r}")
+            return None
         s, r = req("POST", "/api/auth/register", {
-            "username": name, "email": f"{name}@test.dev", "password": "Passw0rd!123",
+            "username": name, "email": email, "password": "Passw0rd!123",
             "country_code": "US"})
         if s == 429:
             time.sleep(12)

@@ -201,6 +201,44 @@ transactions — balances = `SUM(ledger_entries.amount)` per wallet account.
 
 
 
+### Forums (communities)
+- Forum create/list/get-by-slug/search, public/private/secret visibility, moderator table
+- Topics (+pin, +lock, +post_count, last-activity ordering), threaded posts (+parent_id,
+  moderator/author delete), locked-topic write guard — migration `036_platform_gaps.sql`,
+  `services/api/handlers_forums.go`, web `apps/web/src/app/forums/page.tsx`
+
+### ChatApp Pulse (public conversation)
+- Short posts, threads (recursive CTE), quotes, reposts, `#topics` (Postgres `TEXT[]` + GIN),
+  local feed by region, global/local trends computed from real 24h post volume,
+  curated lists (+members), per-user timeline, author delete
+- `services/api/handlers_pulse.go`, `services/api/handlers_pulse.go` trend worker
+  (`startPulseTrendWorker`), web `apps/web/src/app/pulse/page.tsx` and
+  `apps/web/src/app/pulse/thread/[id]/page.tsx`
+
+### Live Shopping
+- Seller product listing (+price/discount/inventory validation), room product carousel,
+  one-active-pin-per-room pin/unpin, room coupons with atomic use-count claim and
+  max-uses enforcement, real checkout (inventory decremented under `FOR UPDATE`,
+  buyer/seller/treasury settled on the double-entry ledger in one transaction,
+  5% platform fee), live purchase analytics (orders, units, gross, fees, per-product,
+  coupon usage) — `services/api/handlers_shopping.go`, web `apps/web/src/app/live-shop/page.tsx`
+
+### AI creator tools & assistant
+- **AI dubbing**: ASR → translation → TTS pipeline with honest availability
+  (`available:false` + reason, never a fabricated artifact), per-media+target
+  idempotency, mandatory AI-dubbing labelling
+- **AI clips**: deterministic clip-candidate scoring over real ASR segments
+  (speech density weighted highest, comfortable speaking-rate band, sentence
+  completeness), non-overlapping greedy selection, explicit per-clip human
+  approval gate before publish
+- **AI assistant**: conversations + persisted message history, grounded context
+  from prior turns, ML-backed replies with a truthful local fallback over real
+  user data, and **proposals that require explicit human approval** before
+  applying (never auto-applied)
+- `services/api/handlers_ai.go`, `services/ml/creator_assistant.py`
+  (`/dub`, `/clips`, `/assistant`), web `apps/web/src/app/ai-studio/page.tsx`,
+  `apps/web/src/app/assistant/page.tsx`
+
 ### Bots, Mini Apps & Platform
 - Bots (create/manage via `POST /api/bots`, per-bot token, getMe/getChat/
   editMessageText idempotent, createInvoice + pay via wallet, inline queries,
@@ -297,9 +335,54 @@ python tests/counters_test.py && python tests/sfu_turn_test.py && python tests/p
 
 Verified full sweep: integration **153/153**, features **72/72**, finance **44/44**,
 gaps **92**, gaps2 **70**, gaps3 **82**, gaps4 **96**, gaps5 **39**, gaps6 **91**,
-gaps7 **85**, gaps8 **32**, gaps9 **15**, gaps10 **8**, staking **56**, authn **14**,
+gaps7 **85**, gaps8 **32**, gaps9 **15**, gaps10 **8**, **platform-gaps (forums, Pulse, live
+shopping, AI dubbing, AI clips, AI assistant)**, staking **56**, authn **14**,
 counters **12**, sfu-turn **19**, parity **OK**; `go test ./...` OK; web `next build` OK;
 admin `tsc` OK; all C++ + Rust services build OK.
+
+## Implementation audit addendum — 2026-09-13, third pass (platform gap features)
+
+The third audit cross-checked every requirement in the five root specifications against
+the executable source tree and found six feature areas that were specified but had **no
+implementation anywhere** — zero routes, zero tables, and zero client references across
+web, Android and iOS:
+
+| Gap (spec section) | Status now | Implementation |
+|---|---|---|
+| Forums / communities (master plan §30, master documentation §75 item 24) | **Implemented**, backend + web | `infra/db/036_platform_gaps.sql`, `services/api/handlers_forums.go`, `apps/web/src/app/forums/page.tsx` |
+| ChatApp Pulse (master plan §32) | **Implemented**, backend + web | `036_platform_gaps.sql`, `services/api/handlers_pulse.go` (+ `startPulseTrendWorker`), `apps/web/src/app/pulse/page.tsx`, `apps/web/src/app/pulse/thread/[id]/page.tsx` |
+| Live shopping (master plan §20) | **Implemented**, backend + web | `036_platform_gaps.sql`, `services/api/handlers_shopping.go`, `apps/web/src/app/live-shop/page.tsx` |
+| AI dubbing (master plan §23) | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/dub`), `apps/web/src/app/ai-studio/page.tsx` |
+| AI clip generation (master plan §23) | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/clips`), `apps/web/src/app/ai-studio/page.tsx` |
+| AI assistant (master plan §38) | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/assistant`), `apps/web/src/app/assistant/page.tsx` |
+
+These six areas are registered in `feature-registry.json` with `web: true`, `backend: true`,
+`database: true` and **`android/ios/desktop/extension: false`** — native-client parity for
+them is **not implemented** and is recorded honestly as `PARTIAL` rather than claimed as
+complete. `tests/platform_gaps_test.py` exercises the whole set against a live database.
+
+**Honest-availability contract (no fabricated AI output).** Dubbing, clip analysis and
+assistant replies are provider-backed. When the backing model is unconfigured, the ML
+service returns `available:false` with the reason, the API persists that truthful state,
+and the web UI displays the reason. No audio URL, transcript, clip or reply is ever
+invented. Two of the three capabilities still do real work without a model: clip
+candidates are scored deterministically over real ASR segments, and the assistant falls
+back to answers computed from the caller's actual data (balance, unread notifications,
+trending topics) while stating that no language model is configured.
+
+**Safety properties implemented.** Forums resolves moderator rights server-side from the
+forum owner and `forum_moderators` table (never client input). The assistant may only
+*propose* actions; a separate explicit human approval flips `assistant_actions.status`,
+and the conditional `UPDATE ... WHERE status='proposed'` makes double-decide a 409.
+AI clips likewise require per-clip human approval before `published` becomes true. Live
+shopping locks the product row (`FOR UPDATE`) so inventory cannot oversell, claims coupon
+uses atomically, and moves buyer/seller/treasury entries on the double-entry ledger in the
+same transaction as the order — the three entries sum to zero.
+
+**Still not implemented (unchanged by this pass):** native Android/iOS/desktop/extension
+screens for the six new features; Bluetooth/Wi-Fi Direct native mesh transport;
+production deployment validation; and every environment-dependent gate already listed in
+the addenda above.
 
 ## Implementation audit addendum — 2026-09-13
 

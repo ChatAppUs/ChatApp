@@ -4,7 +4,7 @@ This status is derived from the five root specifications and the current source 
 
 ## Summary
 
-The repository contains an implemented multi-platform ChatApp product surface. The API registers **506 routes** across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, and privacy. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
+The repository contains an implemented multi-platform ChatApp product surface. The API registers **536 routes** (the parity-scan figure; the router source contains 632 `HandleFunc` registrations including non-`/api` endpoints) across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, privacy, forums, Pulse, live shopping, and AI creator/assistant tools. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
 
 The specifications describe a release program substantially broader than what can be proven by static inspection alone. Features are therefore marked **Implemented**, **Implemented with runtime validation pending**, or **Not proven complete** rather than being represented as complete merely because a route or page exists.
 
@@ -26,15 +26,21 @@ The specifications describe a release program substantially broader than what ca
 | LuckyDraw (draws, tickets, audited winner selection, prize settlement) | Implemented with runtime validation pending | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py`, and `feature-registry.json` (20 features). User plane lists draws, buys tickets from internal USD on the double-entry ledger, and lists my tickets/winners; admin plane creates draws, opens/closes sales, runs audited selection with the unique-user winner rule, settles prizes, disables draws, and audits. | Run database-backed draw lifecycle with seeded tickets and ML/admin review. |
 | Professional analytics dashboard | Implemented | `GET /api/me/analytics` is consumed by authenticated web `apps/web/src/app/analytics/page.tsx`, linked from `apps/web/src/components/Nav.tsx`, and displays posts, followers, likes, comments, views, seven-day shares, and earnings. | Run database-backed dashboard flow with seeded account activity. |
 | Offline mesh and native shared-core architecture | Implemented (backend store-and-forward + native Go mesh engine); native device transport pending | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, and `services/api/main.go` implement device registration, encrypted store-and-forward packet enqueue/dedup, poll-based delivery, one-hop relay with TTL/hop accounting, relay consent policy, and mesh status — all wired as `/api/mesh/*` routes. The native offline mesh transport engine in `services/mesh/` (`crypto.go`, `packet.go`, `transport.go`, `routing.go`, `storeforward.go`, `node.go`, `messages.go`, `main.go`, `go.mod`, `go.sum`, and `mesh_test.go`) provides authenticated encryption (NaCl secretbox), local Wi-Fi/hotspot UDP transport with presence-beacon discovery, multi-hop routing with TTL and duplicate suppression, a delay-tolerant store-and-forward queue, and 1:1/group/voice/call-signaling payloads. Real Bluetooth/Wi-Fi Direct/multipath device transport still requires native-device validation. | Validate native Bluetooth/Wi-Fi Direct/multipath behavior on real devices before marking the full mesh surface complete. |
-| Anonymous guest session (TorChat/SimpleX/Session/Briar-style) | Implemented | `services/api/handlers_guest.go` and `services/api/main.go` wire `POST /api/auth/guest` to mint a device-local ephemeral guest-scoped token (no server-side account row). Web `apps/web/src/lib/api.ts` (`startGuestSession`), login/register pages (`Continue without account`), and `Nav.tsx` (guest badge) expose the no-account browse/chat/call surface. | Validate anonymous chat/call flows against a running deployment. |
+| Forums (communities with topics, threaded posts, moderators) | Implemented (backend + web); native clients pending | `infra/db/036_platform_gaps.sql` (`forums`, `forum_moderators`, `forum_topics`, `forum_posts`), `services/api/handlers_forums.go` (create/list/get-by-slug/search, topic create/list with pinned-first ordering, threaded reply with `parent_id`, moderator pin/lock resolved server-side, locked-topic write guard, author/moderator delete), web `apps/web/src/app/forums/page.tsx`, `tests/platform_gaps_test.py`. | Add Android/iOS/desktop/extension screens; `feature-registry.json` records them as not implemented and the feature as PARTIAL. |
+| ChatApp Pulse (short posts, threads, quotes, reposts, topics, trends, lists) | Implemented (backend + web); native clients pending | `036_platform_gaps.sql` (`pulse_posts` with `parent_id`/`quote_of`/`repost_of`/`TEXT[] topics`, `pulse_topics`, `pulse_trends`, `pulse_lists`, `pulse_list_members`), `services/api/handlers_pulse.go` (recursive-CTE threads with chronological/relevant ordering, server-side hashtag extraction, global/local feeds, trends computed from real 24-hour post volume, curated lists, per-user timeline, author delete), `startPulseTrendWorker`, web `apps/web/src/app/pulse/page.tsx` and `pulse/thread/[id]/page.tsx`. | Native clients pending; feature recorded PARTIAL. |
+| Live shopping (product pins, coupons, real checkout, analytics) | Implemented (backend + web); native clients pending | `036_platform_gaps.sql` (`live_products`, `live_product_pins`, `live_coupons`, `live_orders`), `services/api/handlers_shopping.go` (seller-only listing/pin/unpin, one active pin per room, coupon minting restricted to room sellers with atomic use-count claim and max-uses enforcement, checkout that locks the product row `FOR UPDATE`, settles buyer/seller/treasury on the double-entry ledger in the same transaction, charges a 5% platform fee, and computes per-product and per-coupon analytics), web `apps/web/src/app/live-shop/page.tsx`. | Native clients pending; feature recorded PARTIAL. |
+| AI dubbing, AI clip generation, in-app AI assistant | Implemented (backend + web + ML functions); provider models required for output | `036_platform_gaps.sql` (`media_dubs`, `ai_clip_jobs`, `ai_clips`, `assistant_conversations`, `assistant_messages`, `assistant_actions`), `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/dub`, `/clips`, `/assistant`), web `apps/web/src/app/ai-studio/page.tsx` and `apps/web/src/app/assistant/page.tsx`. Honest-availability contract: with no model configured the endpoints return `available:false` plus the reason, the API persists that state, and no audio, transcript, clip or reply is fabricated. Clip candidates are scored deterministically over real ASR segments; the assistant falls back to answers computed from the caller's real data. Assistant actions and AI clips require explicit human approval (conditional `UPDATE ... WHERE status='proposed'`); proposals are never auto-applied. | Configure `WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL` to produce real output; native clients pending; feature recorded PARTIAL. |
 | Operations, observability, load, disaster recovery, and production deployment | Not proven complete | Docker and service configuration exist, but production behavior depends on deployment-specific secrets, databases, providers, and toolchains. | Execute deployment, load, security, observability, backup, and restore validation in a configured environment. |
 
 ## Validation performed in this checkout
 
 | Check | Result |
 |---|---|
-| `python3 tests/parity_check.py` | Passed: 132 files, 506 registered routes, with web/admin/Android/iOS/extension references accounted for. |
-| `python3 scripts/validate-feature-registry.py` | Passed: 20 registered P0/P1/P2 features and 7 required client/service layers. |
+| `python3 tests/parity_check.py` | **Passed (re-verified 2026-09-13): 138 files, 536 registered routes** (132 files / 506 routes before this pass), with web/admin/Android/iOS/extension references accounted for. |
+| `python3 scripts/validate-feature-registry.py` | **Passed (re-verified 2026-09-13): 26 registered P0/P1/P2 features** and 7 required client/service layers. |
+| **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 36 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
+| `python3 tests/gaps10_test.py` (regression) | **Executed 2026-09-13: 8/8 passed** after the `register()` email-OTP fix. |
+| `go build` + `go vet` + `go test ./...` for `services/api` | **Passed 2026-09-13** with Go 1.25, including the 39 new routes. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Reproducible from the committed `apps/web/package-lock.json`; full install/build requires the Node toolchain. |
 | `npm run build` in `apps/web` | CI-enforced: all listed Next.js routes must compile successfully. |
 | `npm run build` in `apps/admin` | CI-enforced: dashboard and all admin routes must compile successfully. |
@@ -42,15 +48,42 @@ The specifications describe a release program substantially broader than what ca
 | Compose YAML, backup script, and CI workflow syntax validation | Passed: Compose parses, `scripts/backup-restore.sh` passes `bash -n`, and `.github/workflows/validate.yml` is present with parity/build/migration checks. |
 | API readiness and Compose dependency wiring | Implemented: `/health` remains liveness, `/ready` checks database readiness, and web/admin wait for API health in Compose. |
 | Go tests for `services/mesh` | CI-enforced: `go build`, `go vet`, and `go test` run for the native offline mesh transport engine (crypto, packet, transport, routing, store-and-forward, node, messages). |
-| Go tests for `services/api` and `services/sfu` | CI-enforced: `go build`, `go vet`, and `go test` run for `services/api` (506-route control plane) and `services/sfu` (Pion group-call/live SFU). |
+| Go tests for `services/api` and `services/sfu` | CI-enforced: `go build`, `go vet`, and `go test` run for `services/api` (536-route control plane) and `services/sfu` (Pion group-call/live SFU). |
 | Rust tests for `services/authn` and `services/security` | CI-enforced: `cargo test --locked` runs for both authn and security services. |
-| Python integration tests | Not executable: `websockets` was installed, but no API/database fixture is running and the connection was refused. |
+| Python integration tests | Now executable in the audit environment: PostgreSQL 15 was installed, all migrations were applied, the API was started, and `tests/platform_gaps_test.py` passed 76/76. Other suites still require their own fixtures/providers. |
 | Android/iOS native builds | Not executable: Android Gradle wrapper, iOS Swift package manifest, and native toolchains are unavailable. |
-| Docker/PostgreSQL/provider end-to-end validation | Not executable: Docker, PostgreSQL client, configured database, ML, SMTP, and SMS services are unavailable in this checkout. |
+| Docker/PostgreSQL/provider end-to-end validation | Partially executed in the audit environment: PostgreSQL 15 + full migration set + live API were stood up and the platform-gaps suite passed 76/76. Docker, ML, SMTP, SMS provider, and production-deployment validation remain outstanding. |
 
 ## Definition used for marking
 
 A route, screen, or migration is evidence that an implementation path exists. It is not, by itself, evidence that the feature is production-complete. A feature is marked complete only when its API, authorization, validation, persistence, UI where applicable, error handling, and relevant runtime tests can be verified together.
+
+## Audit addendum — 2026-09-13 (third pass): platform gap features
+
+A third audit cross-checked every requirement in the five root specifications against the
+executable source tree and found six feature areas that were specified but had **no
+implementation anywhere** — zero routes, zero tables, zero client references across web,
+Android and iOS. All six are now implemented on the backend and surfaced in the web client:
+Forums (master plan §30 / master documentation §75 item 24), ChatApp Pulse (master plan §32),
+Live Shopping (master plan §20), AI dubbing (master plan §23), AI clip generation
+(master plan §23) and the AI assistant (master plan §38). Native-client screens for these six
+remain **not implemented**, and `feature-registry.json` records that honestly
+(`web/backend/database: true`, `android/ios/desktop/extension: false`, status `PARTIAL`).
+
+Two additional defects were found and fixed during this pass:
+
+1. **IPv6 login/registration returned HTTP 500.** `clientIP()` sliced the remote address at
+   the last colon, so an IPv6 client (`[::1]:53210`) produced `[::1]`, which Postgres rejects
+   as an `inet` value when writing `sessions.ip`. Every registration, login and refresh from
+   an IPv6 client failed. Replaced with `net.SplitHostPort` plus an `inet`-safe normaliser
+   that yields `NULL` for anything unparseable.
+2. **`register()` in the shared test helper did not complete the email-OTP gate**, so every
+   suite that reuses it silently failed account creation. The helper now performs the real
+   `send-code` → `check-code` flow using the development-returned code (no mock).
+
+**Still not implemented (unchanged by this pass):** native Android/iOS/desktop/extension
+screens for the six new features; Bluetooth/Wi-Fi Direct native mesh transport; production
+deployment validation; and every environment-dependent gate already listed above.
 
 ## Files checked
 

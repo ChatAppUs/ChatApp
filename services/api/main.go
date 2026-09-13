@@ -82,6 +82,7 @@ func main() {
 	app.startChainWatchers()
 	app.startPriceWorker()
 	app.startMeshEngine()
+	app.startPulseTrendWorker()
 
 	origins := map[string]bool{}
 	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {
@@ -825,6 +826,53 @@ func main() {
 	mux.HandleFunc("DELETE /api/admin/wallet/tokens/{id}", app.requireAdmin("superadmin")(app.handleAdminDeleteToken))
 	mux.HandleFunc("GET /api/admin/payouts", app.requireAdmin("superadmin", "finance")(app.handleAdminListPayouts))
 	mux.HandleFunc("POST /api/admin/payouts/{id}/review", app.requireAdmin("superadmin", "finance")(app.handleAdminReviewPayout))
+
+	// ---- Forums (master plan §30 / master documentation §75 item 24) ----
+	mux.HandleFunc("POST /api/forums", app.requireAuth(app.handleForumCreate))
+	mux.HandleFunc("GET /api/forums", app.requireAuth(app.handleForumList))
+	mux.HandleFunc("GET /api/forums/search", app.requireAuth(app.handleForumSearch))
+	mux.HandleFunc("GET /api/forums/{slug}", app.requireAuth(app.handleForumGet))
+	mux.HandleFunc("POST /api/forums/{id}/topics", app.requireAuth(app.handleForumTopicCreate))
+	mux.HandleFunc("GET /api/forums/{id}/topics", app.requireAuth(app.handleForumTopicList))
+	mux.HandleFunc("POST /api/forums/topics/{topicId}/posts", app.requireAuth(app.handleForumPostCreate))
+	mux.HandleFunc("GET /api/forums/topics/{topicId}/posts", app.requireAuth(app.handleForumPostList))
+	mux.HandleFunc("PUT /api/forums/topics/{topicId}/pin", app.requireAuth(app.handleForumTopicPin))
+	mux.HandleFunc("PUT /api/forums/topics/{topicId}/lock", app.requireAuth(app.handleForumTopicLock))
+	mux.HandleFunc("DELETE /api/forums/posts/{postId}", app.requireAuth(app.handleForumPostDelete))
+
+	// ---- ChatApp Pulse (master plan §32) ----
+	mux.HandleFunc("POST /api/pulse/posts", app.requireAuth(app.handlePulseCreate))
+	mux.HandleFunc("GET /api/pulse/posts", app.requireAuth(app.handlePulseFeed))
+	mux.HandleFunc("GET /api/pulse/posts/{id}/thread", app.requireAuth(app.handlePulseThread))
+	mux.HandleFunc("DELETE /api/pulse/posts/{id}", app.requireAuth(app.handlePulseDelete))
+	mux.HandleFunc("GET /api/pulse/trends", app.requireAuth(app.handlePulseTrends))
+	mux.HandleFunc("GET /api/pulse/topics", app.requireAuth(app.handlePulseTopicList))
+	mux.HandleFunc("GET /api/pulse/users/{id}", app.requireAuth(app.handlePulseUserTimeline))
+	mux.HandleFunc("POST /api/pulse/lists", app.requireAuth(app.handlePulseListCreate))
+	mux.HandleFunc("GET /api/pulse/lists", app.requireAuth(app.handlePulseListMine))
+	mux.HandleFunc("PUT /api/pulse/lists/{id}/members/{uid}", app.requireAuth(app.handlePulseListAdd))
+	mux.HandleFunc("DELETE /api/pulse/lists/{id}/members/{uid}", app.requireAuth(app.handlePulseListRemove))
+
+	// ---- Live Shopping (master plan §20) ----
+	mux.HandleFunc("POST /api/live-rooms/{roomId}/products", app.requireAuth(app.handleLiveProductCreate))
+	mux.HandleFunc("GET /api/live-rooms/{roomId}/products", app.requireAuth(app.handleLiveProductList))
+	mux.HandleFunc("POST /api/live-rooms/{roomId}/pin", app.requireAuth(app.handleLiveProductPin))
+	mux.HandleFunc("DELETE /api/live-rooms/{roomId}/pin", app.requireAuth(app.handleLiveProductUnpin))
+	mux.HandleFunc("POST /api/live-rooms/{roomId}/coupons", app.requireAuth(app.handleLiveCouponCreate))
+	mux.HandleFunc("POST /api/live-rooms/{roomId}/checkout", app.requireAuth(app.handleLiveCheckout))
+	mux.HandleFunc("GET /api/live-rooms/{roomId}/live-purchases", app.requireAuth(app.handleLivePurchaseAnalytics))
+
+	// ---- AI creator tools + assistant (master plan §23, §38) ----
+	mux.HandleFunc("POST /api/ai/dub", app.requireAuth(app.handleAiDub))
+	mux.HandleFunc("GET /api/ai/dubs", app.requireAuth(app.handleAiDubList))
+	mux.HandleFunc("POST /api/ai/clips/analyze", app.requireAuth(app.handleAiClipAnalyze))
+	mux.HandleFunc("GET /api/ai/clips", app.requireAuth(app.handleAiClipList))
+	mux.HandleFunc("POST /api/ai/clips/{clipId}/approve", app.requireAuth(app.handleAiClipApprove))
+	mux.HandleFunc("POST /api/assistant/conversations", app.requireAuth(app.handleAssistantConvCreate))
+	mux.HandleFunc("GET /api/assistant/conversations", app.requireAuth(app.handleAssistantConvList))
+	mux.HandleFunc("POST /api/assistant/conversations/{id}/messages", app.requireAuth(app.handleAssistantMessage))
+	mux.HandleFunc("GET /api/assistant/actions", app.requireAuth(app.handleAssistantActionList))
+	mux.HandleFunc("POST /api/assistant/actions/{id}/decide", app.requireAuth(app.handleAssistantActionDecide))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

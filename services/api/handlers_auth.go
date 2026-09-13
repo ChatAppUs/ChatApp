@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -589,11 +590,35 @@ func (a *App) getUser(ctx context.Context, id string) (*publicUser, error) {
 
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
+		if ip := normalizeIP(strings.TrimSpace(strings.Split(xff, ",")[0])); ip != "" {
+			return ip
+		}
 	}
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i > 0 {
-		return host[:i]
+	// net.SplitHostPort handles IPv6 correctly: for "[::1]:53210" it returns
+	// "::1". Slicing on the last colon instead yields "[::1]", which Postgres
+	// rejects as an inet value and which broke every login/registration from an
+	// IPv6 client. Anything unparseable becomes "" so the caller stores NULL
+	// rather than an invalid inet.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return normalizeIP(host)
 	}
-	return host
+	return normalizeIP(r.RemoteAddr)
+}
+
+// normalizeIP strips IPv6 brackets/zone and returns "" when the value is not a
+// valid IP address, so it can be bound to a Postgres inet column as NULL.
+func normalizeIP(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	// Trim an IPv6 zone ("fe80::1%eth0") and any surrounding brackets.
+	if i := strings.Index(s, "%"); i > 0 {
+		s = s[:i]
+	}
+	s = strings.Trim(s, "[]")
+	if net.ParseIP(s) == nil {
+		return ""
+	}
+	return s
 }

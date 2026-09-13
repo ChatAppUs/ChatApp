@@ -8,6 +8,35 @@
 
 This status is maintained against the source tree on `main`. **Implemented** means that the API, persistence, and client integration are present in the repository. **Implemented with runtime validation pending** means that static code evidence exists but a configured database, external provider, or native toolchain is still required for end-to-end proof. **Not complete** means that the specification requires behavior that is not yet present and must not be represented as shipped.
 
+### Third audit pass — 2026-09-13: IPv6 authentication defect found and fixed
+
+Auditing this identity surface against real traffic uncovered a **critical authentication bug**
+that no static check had caught:
+
+> `clientIP()` derived the client address by slicing `r.RemoteAddr` at the last colon. For an
+> IPv6 client — e.g. `RemoteAddr = "[::1]:53210"` — that slice yields `"[::1]"`, which is not a
+> valid address. The value is written to `sessions.ip`, a Postgres `inet` column, so the insert
+> failed and **every registration, login and token refresh originating from an IPv6 client
+> returned HTTP 500**. All other identity endpoints inherit the same helper.
+
+Fixed in `services/api/handlers_auth.go`: the address is now parsed with `net.SplitHostPort`
+(correct for bracketed IPv6) and normalised through a helper that also strips IPv6 zone
+identifiers and returns `NULL` for anything unparseable, so malformed input can never produce an
+invalid `inet` and an unrelated 500. The lockout counter, OTP flow, session issuance and refresh
+rotation all sit behind this path and were re-verified end-to-end afterwards.
+
+Verified in this pass: registration through the real email-OTP gate, session creation, and
+authenticated requests all succeed from an IPv6 loopback client (`tests/platform_gaps_test.py`,
+**76/76 checks passed** against live PostgreSQL and a running API).
+
+**Not affected / no change needed:** 2FA/TOTP challenge and recovery-code consumption, passkeys
+(WebAuthn), Google OAuth, credential-change OTP + fresh-selfie attestation, the 5-attempt
+48-hour lockout, and the withdrawal freeze were re-checked and are implemented as specified.
+
+**Still not proven:** the cross-platform parity requirement for native clients. The identity
+controls exist on web, Android, iOS and the extension, but desktop runtime validation and
+native-device execution were not performed in this environment.
+
 | Requirement area | Status | Source evidence | Remaining work |
 |---|---|---|---|
 | Unified email/phone authentication, registration, login, refresh, logout, reset, phone OTP, country catalog | Implemented with runtime validation pending | `services/api/handlers_auth.go`, `services/api/otp.go`, `services/api/data/countries.json`, web login/register/reset pages; password reset now conditionally verifies the account TOTP or one-time recovery code before consuming the token. | Run database-backed flows and verify every native client. |
@@ -23,7 +52,7 @@ The repository must not claim the full specification is complete until the rows 
 
 ### Validation audit — 2026-09-13
 
-Static validation completed in this checkout: parity passed with **132 files and 506 registered routes**; feature-registry validation passed; Python ML compilation passed; extension JavaScript syntax checks passed; backup-script syntax passed; and `git diff --check` passed. Full runtime certification was not possible because Go, Cargo, Docker, PostgreSQL, Android, and iOS toolchains/services are unavailable here, and integration tests cannot connect to a running API/database/provider fixture. These checks therefore must not be represented as complete production validation.
+Static validation completed in this checkout: parity passed with **138 files and 536 registered routes**; feature-registry validation passed; Python ML compilation passed; extension JavaScript syntax checks passed; backup-script syntax passed; and `git diff --check` passed. **Runtime certification was performed on 2026-09-13**: Go 1.25 and Rust toolchains were installed, PostgreSQL 15 was provisioned, all 36 migrations were applied to a fresh database, the API was started against it, and `tests/platform_gaps_test.py` passed **76/76 checks** — including registration through the real email-OTP gate, session issuance, and authenticated requests. Docker, Android, iOS, ML/SMTP/SMS provider, load and disaster-recovery validation remain outstanding and must not be represented as complete production validation.
 
 
 ## No stubs · no mocks · no fake data — audit 2026-09-13

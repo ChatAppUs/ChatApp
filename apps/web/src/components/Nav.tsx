@@ -65,6 +65,11 @@ export default function Nav() {
           <Link className="navlink" href="/bookmarks">★</Link>
           <Link className="navlink" href="/creator">{t("creator")}</Link>
           <Link className="navlink" href="/analytics">Analytics</Link>
+          <Link className="navlink" href="/pulse">Pulse</Link>
+          <Link className="navlink" href="/forums">Forums</Link>
+          <Link className="navlink" href="/live-shop">Live Shop</Link>
+          <Link className="navlink" href="/ai-studio">AI Studio</Link>
+          <Link className="navlink" href="/assistant">Assistant</Link>
           <Link className="navlink" href="/monetize">{t("monetize")}</Link>
           <Link className="navlink" href="/bots">{t("bots")}</Link>
           <Link className="navlink" href="/privacy">{t("privacy")}</Link>

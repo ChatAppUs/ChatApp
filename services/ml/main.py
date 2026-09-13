@@ -279,3 +279,9 @@ register_media_moderation(app)
 from kyc_verify import register_kyc_verify
 
 register_kyc_verify(app)
+
+# ---------- AI creator tools + assistant (dubbing, clips, assistant) ----------
+
+from creator_assistant import register_creator_assistant
+
+register_creator_assistant(app)
