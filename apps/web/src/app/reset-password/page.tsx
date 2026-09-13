@@ -53,8 +53,8 @@ function ResetPasswordForm() {
 			</div>
 			{needsTOTP && (
 				<div>
-					<label>Authenticator code</label>
-					<input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" maxLength={6} autoComplete="one-time-code" required />
+					<label>Authenticator or recovery code</label>
+					<input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="text" autoComplete="one-time-code" placeholder="6-digit TOTP or one-time recovery code" required />
 				</div>
 			)}
           {error && <div className="error-text">{error}</div>}

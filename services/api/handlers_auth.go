@@ -377,7 +377,13 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusUnauthorized, "totp_required")
 			return
 		}
-		if totpSecret == nil || !a.checkTOTP(*totpSecret, req.TOTPCode) {
+		validSecondFactor := totpSecret != nil && a.checkTOTP(*totpSecret, req.TOTPCode)
+		if !validSecondFactor {
+			// A one-time recovery code is the documented fallback when the
+			// authenticator device is unavailable. It is consumed atomically.
+			validSecondFactor = a.verifyRecoveryCode(userID, req.TOTPCode)
+		}
+		if !validSecondFactor {
 			writeErr(w, http.StatusUnauthorized, "invalid 2FA code")
 			return
 		}
