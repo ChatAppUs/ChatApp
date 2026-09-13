@@ -96,6 +96,8 @@ func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	wsConnections.Add(1)
+	defer wsConnections.Add(-1)
 	c := &wsClient{userID: claims.Sub, conn: conn, send: make(chan []byte, 64)}
 	a.hub.add(c)
 	defer a.hub.remove(c)

@@ -124,7 +124,10 @@ func (a *App) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "bot not found")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(), `DELETE FROM users WHERE id=$1`, botUserID)
+	if _, err := a.db.Exec(r.Context(), `DELETE FROM users WHERE id=$1`, botUserID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to delete bot")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

@@ -29,8 +29,11 @@ func (a *App) handleMute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUnmute(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM user_mutes WHERE user_id=$1 AND muted_id=$2`, userIDFrom(r), r.PathValue("id"))
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM user_mutes WHERE user_id=$1 AND muted_id=$2`, userIDFrom(r), r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to unmute")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unmuted"})
 }
 
@@ -88,8 +91,11 @@ func (a *App) handleRemoveWordFilter(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "phrase required")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM word_filters WHERE user_id=$1 AND phrase=$2`, userIDFrom(r), req.Phrase)
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM word_filters WHERE user_id=$1 AND phrase=$2`, userIDFrom(r), req.Phrase); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove filter")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
@@ -132,9 +138,12 @@ func (a *App) handleRestrict(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUnrestrict(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
+	if _, err := a.db.Exec(r.Context(),
 		`DELETE FROM restricted_list WHERE user_id=$1 AND restricted_id=$2`,
-		userIDFrom(r), r.PathValue("id"))
+		userIDFrom(r), r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to unrestrict")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unrestricted"})
 }
 
@@ -237,9 +246,12 @@ func (a *App) handleAcceptFollowRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *App) handleDeclineFollowRequest(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
+	if _, err := a.db.Exec(r.Context(),
 		`DELETE FROM follow_requests WHERE followee_id=$1 AND follower_id=$2`,
-		userIDFrom(r), r.PathValue("uid"))
+		userIDFrom(r), r.PathValue("uid")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to decline")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "declined"})
 }
 
@@ -299,7 +311,10 @@ func (a *App) handleDeclineMessageRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// Declining hides the conversation: remove membership silently.
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`, convID, uid)
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`, convID, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to decline")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "declined"})
 }

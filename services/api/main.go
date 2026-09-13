@@ -95,7 +95,9 @@ func main() {
 		if origin == "" {
 			return true // native/mobile clients send no Origin
 		}
-		return len(origins) == 0 || origins[origin]
+		// Browsers: allow only explicitly configured origins. An empty
+		// allowlist means no browser cross-origin WS connections.
+		return origins[origin]
 	}
 
 	mux := http.NewServeMux()
@@ -114,6 +116,7 @@ func main() {
 	guestLimiter := newRateLimiter(30, 10)
 
 	// public
+	mux.HandleFunc("GET /metrics", app.handleMetrics)
 	mux.HandleFunc("GET /health", app.handleHealth)
 	mux.HandleFunc("GET /ready", app.handleReadiness)
 	mux.HandleFunc("GET /api/countries", app.handleCountries)
@@ -876,7 +879,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           withSecurityHeaders(withCORS(mux, cfg.AllowedOrigins)),
+		Handler:           withSecurityHeaders(withCORS(withMetrics("", mux), cfg.AllowedOrigins)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("ChatApp API listening on :%s (env=%s)", cfg.Port, cfg.AppEnv)

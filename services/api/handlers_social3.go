@@ -39,9 +39,12 @@ func (a *App) handleLikeComment(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/comments/{id}/like
 func (a *App) handleUnlikeComment(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
+	if _, err := a.db.Exec(r.Context(),
 		`DELETE FROM comment_likes WHERE comment_id=$1 AND user_id=$2`,
-		r.PathValue("id"), userIDFrom(r))
+		r.PathValue("id"), userIDFrom(r)); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to unlike comment")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -49,9 +52,12 @@ func (a *App) handleUnlikeComment(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/notifications/read — mark all notifications read.
 func (a *App) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
+	if _, err := a.db.Exec(r.Context(),
 		`UPDATE notifications SET read_at = now() WHERE user_id=$1 AND read_at IS NULL`,
-		userIDFrom(r))
+		userIDFrom(r)); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to mark read")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -132,7 +138,10 @@ func (a *App) handleSharePostToChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Share ledger (TikTok-style shares with counter; feeds analytics).
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO shares (post_id, user_id, channel) VALUES ($1,$2,'dm')`, postID, uid)
+	if _, err := a.db.Exec(r.Context(),
+		`INSERT INTO shares (post_id, user_id, channel) VALUES ($1,$2,'dm')`, postID, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to record share")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

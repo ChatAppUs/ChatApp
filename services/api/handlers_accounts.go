@@ -310,7 +310,10 @@ func (a *App) handleSetLegacyContact(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleRemoveLegacyContact(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(), `DELETE FROM legacy_contacts WHERE user_id=$1`, userIDFrom(r))
+	if _, err := a.db.Exec(r.Context(), `DELETE FROM legacy_contacts WHERE user_id=$1`, userIDFrom(r)); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
@@ -456,8 +459,11 @@ func (a *App) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "profile not found")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`UPDATE users SET active_profile_id=NULL WHERE id=$1 AND active_profile_id=$2`, uid, id)
+	if _, err := a.db.Exec(r.Context(),
+		`UPDATE users SET active_profile_id=NULL WHERE id=$1 AND active_profile_id=$2`, uid, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to update profile pointer")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

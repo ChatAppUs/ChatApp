@@ -207,11 +207,17 @@ func (a *App) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
 	tag, err := a.db.Exec(r.Context(),
 		`DELETE FROM group_members WHERE group_id=$1 AND user_id=$2 AND status='active'`, id, uid)
 	if err == nil && tag.RowsAffected() > 0 {
-		_, _ = a.db.Exec(r.Context(),
-			`UPDATE content_groups SET member_count = GREATEST(member_count - 1, 0) WHERE id=$1`, id)
+		if _, err := a.db.Exec(r.Context(),
+			`UPDATE content_groups SET member_count = GREATEST(member_count - 1, 0) WHERE id=$1`, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to leave")
+			return
+		}
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM group_members WHERE group_id=$1 AND user_id=$2`, id, uid)
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM group_members WHERE group_id=$1 AND user_id=$2`, id, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to leave")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "left"})
 }
 
@@ -265,9 +271,12 @@ func (a *App) handleSetGroupRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid role")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
+	if _, err := a.db.Exec(r.Context(),
 		`UPDATE group_members SET role=$3 WHERE group_id=$1 AND user_id=$2 AND role <> 'owner'`,
-		id, target, req.Role)
+		id, target, req.Role); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to update role")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 

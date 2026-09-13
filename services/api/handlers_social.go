@@ -883,8 +883,11 @@ func (a *App) handleFollow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUnfollow(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM follows WHERE follower_id=$1 AND followee_id=$2`, userIDFrom(r), r.PathValue("id"))
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM follows WHERE follower_id=$1 AND followee_id=$2`, userIDFrom(r), r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to unfollow")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unfollowed"})
 }
 
