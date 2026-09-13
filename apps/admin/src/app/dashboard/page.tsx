@@ -81,7 +81,7 @@ interface SecurityAttestation {
   expires_at: string;
 }
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "security" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments" | "luckydraw";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "security" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments" | "luckydraw" | "platform";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -146,7 +146,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "security", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments", "luckydraw"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "security", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments", "luckydraw", "platform"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -337,6 +337,7 @@ export default function DashboardPage() {
       {tab === "derived-rates" && <DerivedRatesTab />}
       {tab === "moments" && <MomentsTab act={act} />}
       {tab === "luckydraw" && <LuckyDrawTab act={act} />}
+      {tab === "platform" && <PlatformTab act={act} />}
     </>
   );
 }
@@ -574,5 +575,97 @@ function TokensTab({ tokens, act }: { tokens: PlatformToken[]; act: (fn: () => P
         </table>
       </div>
     </>
+  );
+}
+
+// Platform ops: group-scale report, organization verification, P2P merchant
+// tier definitions. Backs the /api/admin/groups/scale, organizations verify
+// and merchant-tiers endpoints that previously had no admin-UI consumer.
+interface ScaleGroup { id: string; title: string; members: number }
+
+function PlatformTab({ act }: { act: (fn: () => Promise<unknown>) => void }) {
+  const [groups, setGroups] = useState<ScaleGroup[]>([]);
+  const [orgId, setOrgId] = useState("");
+  const [tier, setTier] = useState({ level: 1, name: "", max_trade_usd: "", daily_volume_usd: "", min_completed_trades: 0, min_completion_rate: "" });
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    adminApi<{ groups: ScaleGroup[] }>("/api/admin/groups/scale")
+      .then((d) => setGroups(d.groups)).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const verifyOrg = () => {
+    setMsg(""); setError("");
+    act(async () => {
+      await adminApi(`/api/admin/organizations/${encodeURIComponent(orgId.trim())}/verify`, { method: "POST", body: "{}" });
+      setMsg("Organization verified");
+      setOrgId("");
+    });
+  };
+
+  const upsertTier = () => {
+    setMsg(""); setError("");
+    act(async () => {
+      await adminApi("/api/admin/p2p/merchant-tiers", { method: "POST", body: JSON.stringify(tier) });
+      setMsg(`Merchant tier ${tier.level} saved`);
+      setTier({ level: 1, name: "", max_trade_usd: "", daily_volume_usd: "", min_completed_trades: 0, min_completion_rate: "" });
+    });
+  };
+
+  return (
+    <div className="col" style={{ gap: 16 }}>
+      <section className="card">
+        <h3>Group scale report</h3>
+        <p className="muted">Largest groups — validates realtime fanout batching.</p>
+        <div className="row" style={{ marginBottom: 8 }}>
+          <button className="secondary" onClick={load}>Refresh</button>
+        </div>
+        <table className="table">
+          <thead><tr><th>Title</th><th>Members</th></tr></thead>
+          <tbody>
+            {groups.map((g) => (
+              <tr key={g.id}><td>{g.title}</td><td>{g.members}</td></tr>
+            ))}
+            {groups.length === 0 && <tr><td colSpan={2} className="muted">No groups</td></tr>}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card">
+        <h3>Verify organization</h3>
+        <div className="row">
+          <input placeholder="organization id (uuid)" value={orgId} style={{ minWidth: 280 }}
+            onChange={(e) => setOrgId(e.target.value)} />
+          <button onClick={verifyOrg} disabled={!/^[0-9a-fA-F-]{36}$/.test(orgId.trim())}>Verify</button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h3>P2P merchant tier definition</h3>
+        <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+          <input type="number" min={1} max={10} placeholder="level" value={tier.level || ""} style={{ width: 90 }}
+            onChange={(e) => setTier({ ...tier, level: Number(e.target.value) })} />
+          <input placeholder="name" value={tier.name} maxLength={50} style={{ width: 160 }}
+            onChange={(e) => setTier({ ...tier, name: e.target.value })} />
+          <input placeholder="max trade USD" value={tier.max_trade_usd} style={{ width: 150 }}
+            onChange={(e) => setTier({ ...tier, max_trade_usd: e.target.value })} />
+          <input placeholder="daily volume USD" value={tier.daily_volume_usd} style={{ width: 150 }}
+            onChange={(e) => setTier({ ...tier, daily_volume_usd: e.target.value })} />
+          <input type="number" min={0} placeholder="min trades" value={tier.min_completed_trades || ""} style={{ width: 120 }}
+            onChange={(e) => setTier({ ...tier, min_completed_trades: Number(e.target.value) })} />
+          <input placeholder="min completion rate (0-1)" value={tier.min_completion_rate} style={{ width: 190 }}
+            onChange={(e) => setTier({ ...tier, min_completion_rate: e.target.value })} />
+          <button onClick={upsertTier}
+            disabled={tier.level < 1 || tier.level > 10 || !tier.name.trim() || !tier.max_trade_usd.trim()}>
+            Save tier
+          </button>
+        </div>
+      </section>
+
+      {msg && <div className="ok">{msg}</div>}
+      {error && <div className="error">{error}</div>}
+    </div>
   );
 }

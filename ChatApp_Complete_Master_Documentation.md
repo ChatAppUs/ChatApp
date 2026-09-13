@@ -3770,3 +3770,21 @@ Second, the same §65/§67 quality bar requires user-visible mutations to surfac
 Additional findings verified as already implemented or explicitly environmental: websocket origin checking denies browser origins unless `ALLOWED_ORIGINS` is configured; rate limiters cover every abuse-sensitive public endpoint; guest sessions provide identifier-free anonymous registration; registration requires only email *or* phone (never both); `/api/me/export` provides the GDPR-style data export; Tor/onion multi-hop and IP-privacy relays (Anonymous.md networking priorities 4–6) are NOT implemented and remain honestly marked as future work; fuzzing, tracing, and alerting pipelines are not implemented in-repo and remain environment/pipeline work.
 
 Validation after the changes: `go test -count=1` and `go vet` pass for `services/api`, `services/mesh`, and `services/sfu` with Go 1.25.1; strict C++17 `-Werror` builds pass for all five native data-plane services; web (53 routes) and admin (5 routes) production builds pass from fresh `npm ci`; parity is now **149 files / 537 registered routes** (the new `/metrics` endpoint); the feature registry remains 26 features / 7 required clients; and `git diff --check` is clean. Android/iOS device builds, radio handshakes, live provider integrations, and production load/backup/disaster-recovery validation remain environment-dependent and are not marked complete.
+
+---
+
+## Implementation audit addendum — 2026-09-13, web mesh parity and admin console closure pass
+
+A fresh reset to `origin/main` at commit `aaf447b` re-walked this 129-section specification against the executable source (no agent instructions, no prior reports). Two classes of parity gap were found and closed.
+
+**Web mesh parity (§15 Offline and Local Communication / Anonymous.md §5).** The backend mesh API was complete, Android and iOS had native mesh UIs, and the feature registry claimed web coverage — but the web client had no mesh page. `apps/web/src/app/mesh/page.tsx` now drives the same six `/api/mesh/*` endpoints with an `X-Mesh-Device` key, and the main navigation links it. Parity: 149 → **150 files** (web 91 → 92 files / 379 route refs).
+
+**Admin console closure (§50–54 Administration).** Five admin endpoints lacked any UI consumer: content-abuse log, custom-emoji management, group scale report, organization verification, and merchant tier definitions. The admin app's Safety tab and a new Platform tab now cover all of them; every `/api/admin/*` route now has an authorized UI consumer.
+
+Validation after the changes: fresh `npm ci && npm run build` passes for web (54 routes) and admin (5 routes); `tests/parity_check.py` reports 150 files / 537 registered routes; `scripts/validate-feature-registry.py` passes (26 features, 7 required clients); `go test -count=1` passes for `services/api`. Android/iOS release builds, radio handshakes, live PostgreSQL/provider integrations, Tor/multi-hop privacy transport (explicitly future work), and production load/backup/DR execution remain environment-dependent and are not marked complete.
+
+---
+
+## Implementation audit addendum — 2026-09-13, web mesh parity and admin console closure pass
+
+A fresh reset to `origin/main` at commit `aaf447b` re-walked the 129-section specification. Two parity gaps were found and closed: the web client had no mesh surface (§15 offline mesh: Android/iOS yes, web no) — `apps/web/src/app/mesh/page.tsx` now drives all six `/api/mesh/*` endpoints; and five admin endpoints (content-abuse log, custom-emoji, group scale report, organization verification, merchant tier upsert) had no admin-UI consumer — the Safety tab and a new Platform tab now cover them. Validation: web (54 routes) and admin (5 routes) fresh builds pass; parity **150 files / 537 registered routes** (web 92 files / 379 refs, admin 77 refs); registry 26 features / 7 required clients; `go test -count=1` passes on Go 1.25.1 for `services/api`. Tor/multi-hop IP privacy, fuzzing, tracing, and alerting remain honestly marked as future work; device builds, live integrations, and production load/backup/DR validation remain environment-gated.

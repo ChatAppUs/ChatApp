@@ -23,6 +23,16 @@ type BlockedHash = {
 
 type DerivedRate = { from_asset: string; to_asset: string; rate: number; trades: number };
 
+type AbuseEntry = {
+  id: number;
+  user_id: string;
+  body_hash: string;
+  link_count: number;
+  created_at: string;
+};
+
+type EmojiEntry = { shortcode: string; media_url: string; animated: boolean };
+
 export function SafetyTab() {
   const [sha, setSha] = useState("");
   const [reason, setReason] = useState("");
@@ -32,6 +42,11 @@ export function SafetyTab() {
   const [csv, setCsv] = useState("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [abuse, setAbuse] = useState<AbuseEntry[]>([]);
+  const [emoji, setEmoji] = useState<EmojiEntry[]>([]);
+  const [emojiCode, setEmojiCode] = useState("");
+  const [emojiUrl, setEmojiUrl] = useState("");
+  const [emojiAnimated, setEmojiAnimated] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -41,6 +56,10 @@ export function SafetyTab() {
       setHashes(h.hashes);
       const s = await adminApi<{ total: number; by_source?: Record<string, number> }>("/api/admin/sanctions/stats");
       setStats(s);
+      const a = await adminApi<{ entries: AbuseEntry[] }>("/api/admin/moderation/content-abuse");
+      setAbuse(a.entries);
+      const em = await adminApi<{ emoji: EmojiEntry[] }>("/api/custom-emoji");
+      setEmoji(em.emoji);
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to load");
     }
@@ -65,6 +84,26 @@ export function SafetyTab() {
 
   const unblock = async (id: string) => {
     await adminApi(`/api/admin/moderation/block-hash/${id}`, { method: "DELETE" }).catch(() => {});
+    load();
+  };
+
+  const addEmoji = async () => {
+    setError(""); setMsg("");
+    try {
+      await adminApi("/api/admin/custom-emoji", {
+        method: "POST",
+        body: JSON.stringify({ shortcode: emojiCode.trim(), media_url: emojiUrl.trim(), animated: emojiAnimated }),
+      });
+      setEmojiCode(""); setEmojiUrl(""); setEmojiAnimated(false);
+      setMsg("Custom emoji added");
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "add failed");
+    }
+  };
+
+  const removeEmoji = async (code: string) => {
+    await adminApi(`/api/admin/custom-emoji/${encodeURIComponent(code)}`, { method: "DELETE" }).catch(() => {});
     load();
   };
 
@@ -128,6 +167,54 @@ export function SafetyTab() {
               </tr>
             ))}
             {entries.length === 0 && <tr><td colSpan={4} className="muted">No moderation entries</td></tr>}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card">
+        <h3>Content-abuse log</h3>
+        <p className="muted">Posts flagged for link-spam heuristics (repeated body hash + high link count).</p>
+        <table className="table">
+          <thead><tr><th>User</th><th>Body hash</th><th>Links</th><th>At</th></tr></thead>
+          <tbody>
+            {abuse.map((a) => (
+              <tr key={a.id}>
+                <td style={{ fontFamily: "monospace" }}>{a.user_id.slice(0, 8)}…</td>
+                <td style={{ fontFamily: "monospace" }}>{a.body_hash.slice(0, 16)}…</td>
+                <td>{a.link_count}</td>
+                <td>{new Date(a.created_at).toLocaleString()}</td>
+              </tr>
+            ))}
+            {abuse.length === 0 && <tr><td colSpan={4} className="muted">No abuse marks</td></tr>}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card">
+        <h3>Custom emoji</h3>
+        <div className="row">
+          <input placeholder="shortcode (2-32 [a-z0-9_])" value={emojiCode} maxLength={32}
+            onChange={(e) => setEmojiCode(e.target.value)} />
+          <input placeholder="media URL (https:// or /media/)" value={emojiUrl} maxLength={500}
+            onChange={(e) => setEmojiUrl(e.target.value)} style={{ minWidth: 260 }} />
+          <label className="row" style={{ gap: 4, alignItems: "center" }}>
+            <input type="checkbox" checked={emojiAnimated} onChange={(e) => setEmojiAnimated(e.target.checked)} />
+            animated
+          </label>
+          <button onClick={addEmoji} disabled={!/^[a-z0-9_]{2,32}$/.test(emojiCode.trim()) || !emojiUrl.trim()}>Add</button>
+        </div>
+        <table className="table">
+          <thead><tr><th>Shortcode</th><th>Media</th><th>Animated</th><th /></tr></thead>
+          <tbody>
+            {emoji.map((e) => (
+              <tr key={e.shortcode}>
+                <td>:{e.shortcode}:</td>
+                <td style={{ fontFamily: "monospace" }}>{e.media_url}</td>
+                <td>{e.animated ? "yes" : "no"}</td>
+                <td><button className="danger small" onClick={() => removeEmoji(e.shortcode)}>Delete</button></td>
+              </tr>
+            ))}
+            {emoji.length === 0 && <tr><td colSpan={4} className="muted">No custom emoji</td></tr>}
           </tbody>
         </table>
       </section>

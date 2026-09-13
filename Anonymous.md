@@ -1948,3 +1948,13 @@ Second, the same §65/§67 quality bar requires user-visible mutations to surfac
 Additional findings verified as already implemented or explicitly environmental: websocket origin checking denies browser origins unless `ALLOWED_ORIGINS` is configured; rate limiters cover every abuse-sensitive public endpoint; guest sessions provide identifier-free anonymous registration; registration requires only email *or* phone (never both); `/api/me/export` provides the GDPR-style data export; Tor/onion multi-hop and IP-privacy relays (Anonymous.md networking priorities 4–6) are NOT implemented and remain honestly marked as future work; fuzzing, tracing, and alerting pipelines are not implemented in-repo and remain environment/pipeline work.
 
 Validation after the changes: `go test -count=1` and `go vet` pass for `services/api`, `services/mesh`, and `services/sfu` with Go 1.25.1; strict C++17 `-Werror` builds pass for all five native data-plane services; web (53 routes) and admin (5 routes) production builds pass from fresh `npm ci`; parity is now **149 files / 537 registered routes** (the new `/metrics` endpoint); the feature registry remains 26 features / 7 required clients; and `git diff --check` is clean. Android/iOS device builds, radio handshakes, live provider integrations, and production load/backup/disaster-recovery validation remain environment-dependent and are not marked complete.
+
+---
+
+## Implementation audit addendum — 2026-09-13, web mesh parity and admin console closure pass
+
+A fresh reset to `origin/main` re-audited this document against the executable source. The offline-mesh transport priority ladder (§5.1–5.3: local Wi-Fi → Wi-Fi Direct → Bluetooth with automatic reselection) remains implemented in Android (`MeshTransport.kt` via `WifiP2pManager`/RFCOMM), iOS (`MeshTransport.swift` via CoreBluetooth), and the shared Go `mesh` service, with the backend store-and-forward relay — but the **web client had no mesh surface at all**. `apps/web/src/app/mesh/page.tsx` now provides the web mesh UI (status, send, poll, relay policy) against the same `/api/mesh/*` endpoints, and the main navigation links it, closing the client-parity gap.
+
+The admin console now also consumes the five previously UI-less admin endpoints (content-abuse log, custom-emoji add/delete, group scale report, organization verification, merchant tier upsert).
+
+Still not implemented and honestly marked as future work (per the networking priority list): IP-privacy priorities 4–6 — Privacy Relay, Multi-hop Routing beyond the store-and-forward hop budget, and Tor onion transport. Web parity is now 92 files / 379 route refs (150 files / 537 routes overall).
