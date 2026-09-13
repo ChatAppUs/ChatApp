@@ -235,17 +235,17 @@ func (a *App) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "refresh_token required")
 		return
 	}
-	var sessionID, userID string
+	var userID string
 	err := a.db.QueryRow(r.Context(),
-		`SELECT id, user_id FROM sessions
-		 WHERE refresh_hash = $1 AND revoked_at IS NULL AND expires_at > now()`,
-		sha256hex(req.RefreshToken)).Scan(&sessionID, &userID)
+		`UPDATE sessions SET revoked_at = now()
+		 WHERE refresh_hash = $1 AND revoked_at IS NULL AND expires_at > now()
+		 RETURNING user_id`, sha256hex(req.RefreshToken)).Scan(&userID)
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "invalid refresh token")
 		return
 	}
-	// rotate refresh token
-	_, _ = a.db.Exec(r.Context(), `UPDATE sessions SET revoked_at = now() WHERE id = $1`, sessionID)
+	// The conditional UPDATE above both validates and revokes the token, so a
+	// concurrent refresh request cannot rotate the same token twice.
 	tokens, err := a.issueTokens(r.Context(), userID, r.UserAgent(), clientIP(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "session creation failed")
@@ -344,15 +344,6 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "password must be 8+ chars with letters and digits")
 		return
 	}
-	var resetID, userID string
-	err := a.db.QueryRow(r.Context(),
-		`SELECT id, user_id FROM password_resets
-		 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`,
-		sha256hex(req.Token)).Scan(&resetID, &userID)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid or expired reset token")
-		return
-	}
 	hash, err := a.passwordHash(req.NewPassword)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "hashing failed")
@@ -364,11 +355,15 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if _, err := tx.Exec(r.Context(), `UPDATE users SET password_hash=$1, updated_at=now() WHERE id=$2`, hash, userID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "reset failed")
+	var userID string
+	if err := tx.QueryRow(r.Context(),
+		`UPDATE password_resets SET used_at=now()
+		 WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now()
+		 RETURNING user_id`, sha256hex(req.Token)).Scan(&userID); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid or expired reset token")
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `UPDATE password_resets SET used_at=now() WHERE id=$1`, resetID); err != nil {
+	if _, err := tx.Exec(r.Context(), `UPDATE users SET password_hash=$1, updated_at=now() WHERE id=$2`, hash, userID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "reset failed")
 		return
 	}

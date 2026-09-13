@@ -1825,3 +1825,7 @@ This specification was reconciled with the executable repository on 2026-09-13. 
 The authentication implementation enforces the five-failure, 48-hour account lockout with an atomic PostgreSQL counter update, preventing concurrent failed requests from overwriting one another. Successful password authentication still clears the counter and lockout.
 
 A route, migration, client screen, or local unit test demonstrates an implementation path; it does not prove provider-backed delivery, configured-database behavior, production deployment, native-device Bluetooth/Wi-Fi Direct parity, or Android/iOS release builds. Those remain environment-dependent validation gates and must not be described as production-complete without the corresponding runtime evidence.
+
+## Implementation audit addendum — 2026-09-13, second pass
+
+The second source audit found and fixed two authentication race conditions. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement, and password-reset token consumption now occurs in the same transaction as the password update and session revocation. A token can therefore be accepted only once under concurrent requests. The remaining runtime and native-platform limitations stated above still apply.

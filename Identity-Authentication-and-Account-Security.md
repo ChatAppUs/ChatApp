@@ -4,7 +4,7 @@
 
 > **Global requirements.** No demo, no simulation, no stubs, no fake or mock data, no skeletons, no bugs, no broken files, no security vulnerabilities, no bypasses,and no cyber threats are permitted. All systems are fully dynamic, production-ready, scalable, secure,and implemented with complete real business logic. The light/dark theme switch must work on every page of every app.
 
-## Implementation status — audited 2026-09-12
+## Implementation status — audited 2026-09-13
 
 This status is maintained against the source tree on `main`. **Implemented** means that the API, persistence, and client integration are present in the repository. **Implemented with runtime validation pending** means that static code evidence exists but a configured database, external provider, or native toolchain is still required for end-to-end proof. **Not complete** means that the specification requires behavior that is not yet present and must not be represented as shipped.
 
@@ -21,9 +21,9 @@ This status is maintained against the source tree on `main`. **Implemented** mea
 
 The repository must not claim the full specification is complete until the rows marked **Not complete** and **Not proven complete** have passed their required implementation and runtime validation.
 
-### Validation audit — 2026-09-12
+### Validation audit — 2026-09-13
 
-Static and frontend validation completed in this checkout: parity passed with **128 files and 481 registered routes**; the web and admin Next.js production builds passed; Python ML compilation passed; extension JavaScript syntax checks passed; and `git diff --check` passed. Full runtime certification was not possible because Go, Cargo, Docker, PostgreSQL, Android, and iOS toolchains/services are unavailable here, and integration tests cannot connect to a running API/database/provider fixture. These checks therefore must not be represented as complete production validation.
+Static validation completed in this checkout: parity passed with **132 files and 506 registered routes**; feature-registry validation passed; Python ML compilation passed; extension JavaScript syntax checks passed; backup-script syntax passed; and `git diff --check` passed. Full runtime certification was not possible because Go, Cargo, Docker, PostgreSQL, Android, and iOS toolchains/services are unavailable here, and integration tests cannot connect to a running API/database/provider fixture. These checks therefore must not be represented as complete production validation.
 
 
 ## No stubs · no mocks · no fake data — audit 2026-09-12
@@ -278,3 +278,7 @@ This specification was reconciled with the executable repository on 2026-09-13. 
 The authentication implementation enforces the five-failure, 48-hour account lockout with an atomic PostgreSQL counter update, preventing concurrent failed requests from overwriting one another. Successful password authentication still clears the counter and lockout.
 
 A route, migration, client screen, or local unit test demonstrates an implementation path; it does not prove provider-backed delivery, configured-database behavior, production deployment, native-device Bluetooth/Wi-Fi Direct parity, or Android/iOS release builds. Those remain environment-dependent validation gates and must not be described as production-complete without the corresponding runtime evidence.
+
+## Implementation audit addendum — 2026-09-13, second pass
+
+The second source audit found and fixed two authentication race conditions. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement, and password-reset token consumption now occurs in the same transaction as the password update and session revocation. A token can therefore be accepted only once under concurrent requests. The remaining runtime and native-platform limitations stated above still apply.
