@@ -5,10 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (a *App) handleSecurityAttestation(w http.ResponseWriter, r *http.Request) {
-	var req struct{ SelfieURL string `json:"selfie_url"` }
+	var req struct {
+		SelfieURL string `json:"selfie_url"`
+	}
 	if !decodeJSON(w, r, &req) || strings.TrimSpace(req.SelfieURL) == "" {
 		writeErr(w, http.StatusBadRequest, "fresh selfie_url required")
 		return
@@ -43,8 +47,17 @@ func (a *App) handleSecurityAttestation(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "attested", "expires_in_seconds": 300, "score": score})
 }
 
-func (a *App) securityAttested(ctx context.Context, uid string) bool {
-	var ok bool
-	_ = a.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM security_attestations WHERE user_id=$1 AND purpose='credential_change' AND expires_at>now())`, uid).Scan(&ok)
-	return ok
+func claimSecurityAttestation(ctx context.Context, tx pgx.Tx, uid string) bool {
+	var id string
+	if err := tx.QueryRow(ctx, `
+		SELECT id
+		FROM security_attestations
+		WHERE user_id=$1 AND purpose='credential_change' AND expires_at>now()
+		ORDER BY verified_at DESC
+		LIMIT 1
+		FOR UPDATE`, uid).Scan(&id); err != nil {
+		return false
+	}
+	_, err := tx.Exec(ctx, `UPDATE security_attestations SET expires_at=now() WHERE id=$1`, id)
+	return err == nil
 }

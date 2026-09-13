@@ -376,7 +376,7 @@ python tests/counters_test.py && python tests/sfu_turn_test.py && python tests/p
 Verified full sweep: integration **153/153**, features **72/72**, finance **44/44**,
 gaps **92**, gaps2 **70**, gaps3 **82**, gaps4 **96**, gaps5 **39**, gaps6 **91**,
 gaps7 **85**, gaps8 **32**, gaps9 **15**, gaps10 **8**, staking **56**, authn **14**,
-counters **12**, sfu-turn **19**, parity **OK**; Go service tests/vet and web/admin production builds pass in the validated toolchains; Rust and C++ service builds remain CI/environment-dependent.
+counters **12**, sfu-turn **19**, parity **OK**; Go service tests/vet, Rust service tests in GitHub Actions, and strict C++17 builds for all five data-plane services pass in the validated toolchains; Android/iOS compilation and device/provider runtime remain environment-dependent.
 
 ---
 
@@ -3694,3 +3694,10 @@ The repository therefore has source implementations for the registered surfaces,
 ## Implementation audit addendum — 2026-09-13, seventh pass
 
 The native data-plane source was compiled directly from this checkout with `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread`. All five C++ services — `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode` — compiled successfully. GitHub Actions run `34757684511` also passed both static/frontend and backend jobs, including Go and Rust tests. Native Android/iOS compilation, radio handshakes, provider-backed AI output, and production deployment/load/disaster-recovery validation remain environment-dependent and are not marked complete.
+
+
+## Implementation audit addendum — 2026-09-13, eighth pass
+
+A fresh checkout of `origin/main` was audited directly against all five root specifications and the executable source; `AGENTS.md`, prior assistant reports, and earlier commits were not used as implementation evidence. Two security gaps were found and fixed. `PUT /api/me/security` now locks the account row and performs one-use OTP/attestation claims, the credential mutation, session revocation, and the 48-hour withdrawal freeze in one PostgreSQL transaction. Verification claims cannot be replayed inside their original ten-minute window, and the challenge verifier uses a conditional update so concurrent requests cannot both succeed. `POST /api/auth/2fa/setup` now refuses to overwrite an already enabled authenticator; disabling active 2FA must go through the authenticated disable flow, which applies the freeze.
+
+Fresh validation passed: web `npm ci && npm run build` for all 53 routes; admin `npm ci && npm run build` for all 5 routes; Go `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; strict C++17 compilation for all five data-plane services; parity (149 files, 536 registered routes); feature registry (26 features, 7 required clients); Python ML compilation; extension JavaScript syntax; backup-script syntax; and `git diff --check`. The source is implemented and tested where the checkout has the required toolchains. Android/iOS release builds, Bluetooth/Wi-Fi Direct handshakes, configured ML/SMTP/SMS/provider output, production deployment, load, backup/restore, and disaster-recovery certification remain explicit environment-dependent gates.

@@ -36,7 +36,7 @@ The specifications describe a release program substantially broader than what ca
 
 | Check | Result |
 |---|---|
-| `python3 tests/parity_check.py` | **Passed (re-verified 2026-09-13): 138 files, 536 registered routes** (132 files / 506 routes before this pass), with web/admin/Android/iOS/extension references accounted for. |
+| `python3 tests/parity_check.py` | **Passed (re-verified 2026-09-13): 149 files, 536 registered routes**, with web/admin/Android/iOS/extension references accounted for. |
 | `python3 scripts/validate-feature-registry.py` | **Passed (re-verified 2026-09-13): 26 registered P0/P1/P2 features** and 7 required client/service layers. |
 | **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 36 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
 | `python3 tests/gaps10_test.py` (regression) | **Executed 2026-09-13: 8/8 passed** after the `register()` email-OTP fix. |
@@ -164,3 +164,10 @@ The repository therefore has source implementations for the registered surfaces,
 ## Implementation audit addendum — 2026-09-13, seventh pass
 
 The native data-plane source was compiled directly from this checkout with `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread`. All five C++ services — `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode` — compiled successfully. GitHub Actions run `34757684511` also passed both static/frontend and backend jobs, including Go and Rust tests. Native Android/iOS compilation, radio handshakes, provider-backed AI output, and production deployment/load/disaster-recovery validation remain environment-dependent and are not marked complete.
+
+
+## Implementation audit addendum — 2026-09-13, eighth pass
+
+A fresh checkout of `origin/main` was audited directly against all five root specifications and the executable source; `AGENTS.md`, prior assistant reports, and earlier commits were not used as implementation evidence. Two security gaps were found and fixed. `PUT /api/me/security` now locks the account row and performs one-use OTP/attestation claims, the credential mutation, session revocation, and the 48-hour withdrawal freeze in one PostgreSQL transaction. Verification claims cannot be replayed inside their original ten-minute window, and the challenge verifier uses a conditional update so concurrent requests cannot both succeed. `POST /api/auth/2fa/setup` now refuses to overwrite an already enabled authenticator; disabling active 2FA must go through the authenticated disable flow, which applies the freeze.
+
+Fresh validation passed: web `npm ci && npm run build` for all 53 routes; admin `npm ci && npm run build` for all 5 routes; Go `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; strict C++17 compilation for all five data-plane services; parity (149 files, 536 registered routes); feature registry (26 features, 7 required clients); Python ML compilation; extension JavaScript syntax; backup-script syntax; and `git diff --check`. The source is implemented and tested where the checkout has the required toolchains. Android/iOS release builds, Bluetooth/Wi-Fi Direct handshakes, configured ML/SMTP/SMS/provider output, production deployment, load, backup/restore, and disaster-recovery certification remain explicit environment-dependent gates.

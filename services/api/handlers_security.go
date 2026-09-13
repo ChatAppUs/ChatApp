@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // ---- TOTP two-factor authentication (RFC 6238, RFC 4648 base32) ----
@@ -143,8 +145,8 @@ func (a *App) scrubRecoveryCode(code string) string {
 // POST /api/auth/2fa/recovery — (re-)issue recovery codes (replaces prior).
 // mintRecoveryCodes issues 8 fresh SHA-256-hashed scratch codes (previous
 // codes are revoked first), mirroring the gap-pack-9 recovery_codes table.
-func (a *App) mintRecoveryCodes(uid string) ([]string, error) {
-	if _, err := a.db.Exec(context.Background(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
+func (a *App) mintRecoveryCodesTx(ctx context.Context, tx pgx.Tx, uid string) ([]string, error) {
+	if _, err := tx.Exec(ctx, `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
 		return nil, err
 	}
 	raw := make([]string, 0, 8)
@@ -154,7 +156,7 @@ func (a *App) mintRecoveryCodes(uid string) ([]string, error) {
 			return nil, err
 		}
 		code := strings.ToLower(fmt.Sprintf("%s-%s-%s", b32NoPad(buf[0:4]), b32NoPad(buf[4:8]), b32NoPad(buf[8:10])))
-		if _, err := a.db.Exec(context.Background(),
+		if _, err := tx.Exec(ctx,
 			`INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1,$2)`,
 			uid, sha256hex(a.scrubRecoveryCode(code))); err != nil {
 			return nil, err
@@ -199,7 +201,15 @@ func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var username string
-	_ = a.db.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, uid).Scan(&username)
+	var enabled bool
+	if err := a.db.QueryRow(r.Context(), `SELECT username, totp_enabled FROM users WHERE id=$1`, uid).Scan(&username, &enabled); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to load 2FA state")
+		return
+	}
+	if enabled {
+		writeErr(w, http.StatusConflict, "disable existing 2FA before setting up a new authenticator")
+		return
+	}
 	// Store as pending secret; enabled only after code verification.
 	if _, err := a.db.Exec(r.Context(),
 		`UPDATE users SET totp_secret=$1, totp_enabled=false, updated_at=now() WHERE id=$2`, secret, uid); err != nil {
@@ -218,9 +228,15 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userIDFrom(r)
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to enable 2FA")
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var secret string
-	if err := a.db.QueryRow(r.Context(),
-		`SELECT COALESCE(totp_secret,'') FROM users WHERE id=$1`, uid).Scan(&secret); err != nil || secret == "" {
+	if err := tx.QueryRow(r.Context(),
+		`SELECT COALESCE(totp_secret,'') FROM users WHERE id=$1 FOR UPDATE`, uid).Scan(&secret); err != nil || secret == "" {
 		writeErr(w, http.StatusBadRequest, "run 2FA setup first")
 		return
 	}
@@ -228,21 +244,24 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
-	if _, err := a.db.Exec(r.Context(),
-			`UPDATE users SET totp_enabled=true, updated_at=now() WHERE id=$1`, uid); err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to enable 2FA")
-		return
-	}
-	if err := a.freezeWithdrawals(r.Context(), uid); err != nil {
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE users
+		SET totp_enabled=true,
+		    withdrawal_freeze_until = GREATEST(COALESCE(withdrawal_freeze_until, now()), now() + interval '48 hours'),
+		    updated_at=now()
+		WHERE id=$1`, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to apply security cooldown")
 		return
 	}
-	raw, gerr := a.mintRecoveryCodes(uid)
-	if gerr != nil {
+	raw, err := a.mintRecoveryCodesTx(r.Context(), tx, uid)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to generate recovery codes")
 		return
 	}
-
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to enable 2FA")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "enabled", "recovery_codes": raw,
 		"note": "recovery codes are shown once; store them safely"})
 }
@@ -255,10 +274,16 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userIDFrom(r)
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var secret string
 	var enabled bool
-	if err := a.db.QueryRow(r.Context(),
-		`SELECT COALESCE(totp_secret,''), totp_enabled FROM users WHERE id=$1`, uid).Scan(&secret, &enabled); err != nil {
+	if err := tx.QueryRow(r.Context(),
+		`SELECT COALESCE(totp_secret,''), totp_enabled FROM users WHERE id=$1 FOR UPDATE`, uid).Scan(&secret, &enabled); err != nil {
 		writeErr(w, http.StatusBadRequest, "2FA not configured")
 		return
 	}
@@ -266,15 +291,22 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM recovery_codes WHERE user_id=$1`, uid)
-	if _, err := a.db.Exec(r.Context(),
-			`UPDATE users SET totp_secret=NULL, totp_enabled=false, updated_at=now() WHERE id=$1`, uid); err != nil {
+	if _, err := tx.Exec(r.Context(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
 	}
-	if err := a.freezeWithdrawals(r.Context(), uid); err != nil {
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE users
+		SET totp_secret=NULL,
+		    totp_enabled=false,
+		    withdrawal_freeze_until = GREATEST(COALESCE(withdrawal_freeze_until, now()), now() + interval '48 hours'),
+		    updated_at=now()
+		WHERE id=$1`, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to apply security cooldown")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
