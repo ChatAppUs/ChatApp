@@ -300,3 +300,11 @@ gaps **92**, gaps2 **70**, gaps3 **82**, gaps4 **96**, gaps5 **39**, gaps6 **91*
 gaps7 **85**, gaps8 **32**, gaps9 **15**, gaps10 **8**, staking **56**, authn **14**,
 counters **12**, sfu-turn **19**, parity **OK**; `go test ./...` OK; web `next build` OK;
 admin `tsc` OK; all C++ + Rust services build OK.
+
+## Implementation audit addendum — 2026-09-13
+
+This specification was reconciled with the executable repository on 2026-09-13. The repository now commits `apps/web/package-lock.json` and `apps/admin/package-lock.json`, so the documented CI `npm ci` builds are reproducible. CI also provisions Go and Rust and runs `go test`/`go vet` for `services/api`, `services/mesh`, and `services/sfu`, plus `cargo test --locked` for `services/authn` and `services/security`.
+
+The authentication implementation enforces the five-failure, 48-hour account lockout with an atomic PostgreSQL counter update, preventing concurrent failed requests from overwriting one another. Successful password authentication still clears the counter and lockout.
+
+A route, migration, client screen, or local unit test demonstrates an implementation path; it does not prove provider-backed delivery, configured-database behavior, production deployment, native-device Bluetooth/Wi-Fi Direct parity, or Android/iOS release builds. Those remain environment-dependent validation gates and must not be described as production-complete without the corresponding runtime evidence.

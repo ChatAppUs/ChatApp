@@ -4,7 +4,7 @@ This status is derived from the five root specifications and the current source 
 
 ## Summary
 
-The repository contains an implemented multi-platform ChatApp product surface. The API registers **503 routes** across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, and privacy. The web and admin applications build successfully with Next.js production compilation. The repository parity scanner reports no missing platform route references.
+The repository contains an implemented multi-platform ChatApp product surface. The API registers **506 routes** across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, and privacy. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
 
 The specifications describe a release program substantially broader than what can be proven by static inspection alone. Features are therefore marked **Implemented**, **Implemented with runtime validation pending**, or **Not proven complete** rather than being represented as complete merely because a route or page exists.
 
@@ -33,17 +33,17 @@ The specifications describe a release program substantially broader than what ca
 
 | Check | Result |
 |---|---|
-| `python3 tests/parity_check.py` | Passed: 131 files, 503 registered routes, with web/admin/Android/iOS/extension references accounted for. |
+| `python3 tests/parity_check.py` | Passed: 132 files, 506 registered routes, with web/admin/Android/iOS/extension references accounted for. |
 | `python3 scripts/validate-feature-registry.py` | Passed: 20 registered P0/P1/P2 features and 7 required client/service layers. |
-| `npm ci --no-audit --no-fund` in `apps/web` | Passed. |
-| `npm run build` in `apps/web` | Passed: all listed Next.js routes compiled successfully. |
-| `npm run build` in `apps/admin` | Passed: dashboard and all admin routes compiled successfully. |
+| `npm ci --no-audit --no-fund` in `apps/web` | Reproducible from the committed `apps/web/package-lock.json`; full install/build requires the Node toolchain. |
+| `npm run build` in `apps/web` | CI-enforced: all listed Next.js routes must compile successfully. |
+| `npm run build` in `apps/admin` | CI-enforced: dashboard and all admin routes must compile successfully. |
 | Python ML compilation and extension Node syntax checks | Passed. |
 | Compose YAML, backup script, and CI workflow syntax validation | Passed: Compose parses, `scripts/backup-restore.sh` passes `bash -n`, and `.github/workflows/validate.yml` is present with parity/build/migration checks. |
 | API readiness and Compose dependency wiring | Implemented: `/health` remains liveness, `/ready` checks database readiness, and web/admin wait for API health in Compose. |
-| Go tests for `services/mesh` | Passed: `go build`, `go vet`, and `go test` all pass for the native offline mesh transport engine (crypto, packet, transport, routing, store-and-forward, node, messages). |
-| Go tests for `services/api` and `services/sfu` | Passed: `go build`, `go vet`, and `go test` all pass for `services/api` (503-route control plane) and `services/sfu` (Pion group-call/live SFU). |
-| Rust tests for `services/authn` and `services/security` | Passed: `cargo build --release` and `cargo test` pass for both — authn 8/8 (argon2id, JWT, TOTP, OTP, HMAC) and security 11/11 (custody, JWT, TOTP RFC 6238, SHA-1/SHA-256 FIPS vectors, HMAC, E2E fingerprint). |
+| Go tests for `services/mesh` | CI-enforced: `go build`, `go vet`, and `go test` run for the native offline mesh transport engine (crypto, packet, transport, routing, store-and-forward, node, messages). |
+| Go tests for `services/api` and `services/sfu` | CI-enforced: `go build`, `go vet`, and `go test` run for `services/api` (506-route control plane) and `services/sfu` (Pion group-call/live SFU). |
+| Rust tests for `services/authn` and `services/security` | CI-enforced: `cargo test --locked` runs for both authn and security services. |
 | Python integration tests | Not executable: `websockets` was installed, but no API/database fixture is running and the connection was refused. |
 | Android/iOS native builds | Not executable: Android Gradle wrapper, iOS Swift package manifest, and native toolchains are unavailable. |
 | Docker/PostgreSQL/provider end-to-end validation | Not executable: Docker, PostgreSQL client, configured database, ML, SMTP, and SMS services are unavailable in this checkout. |

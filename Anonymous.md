@@ -1817,3 +1817,11 @@ Make sure everything is positioning correct place with correct name address and 
 Delete all duplicate files also preserve there services and features including functionality into main files .
 If need upgrade then perform upgrade everything if needed . Don't create any new branch upload everything to GitHub repo main 
 Use advanced database like postgresql radis etc.  Remove sql lite databases
+
+## Implementation audit addendum — 2026-09-13
+
+This specification was reconciled with the executable repository on 2026-09-13. The repository now commits `apps/web/package-lock.json` and `apps/admin/package-lock.json`, so the documented CI `npm ci` builds are reproducible. CI also provisions Go and Rust and runs `go test`/`go vet` for `services/api`, `services/mesh`, and `services/sfu`, plus `cargo test --locked` for `services/authn` and `services/security`.
+
+The authentication implementation enforces the five-failure, 48-hour account lockout with an atomic PostgreSQL counter update, preventing concurrent failed requests from overwriting one another. Successful password authentication still clears the counter and lockout.
+
+A route, migration, client screen, or local unit test demonstrates an implementation path; it does not prove provider-backed delivery, configured-database behavior, production deployment, native-device Bluetooth/Wi-Fi Direct parity, or Android/iOS release builds. Those remain environment-dependent validation gates and must not be described as production-complete without the corresponding runtime evidence.

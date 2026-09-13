@@ -155,14 +155,13 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var deletionScheduled *time.Time
 	var totpSecret *string
 	var totpEnabled bool
-	var failedAttempts int
 	var lockedUntil *time.Time
 	err := a.db.QueryRow(r.Context(),
 			`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled,
 			        failed_login_attempts, locked_until FROM users
 			 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
 			Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled,
-				&failedAttempts, &lockedUntil)
+				new(int), &lockedUntil)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusInternalServerError, "login failed")
 		return
@@ -174,18 +173,18 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if errors.Is(err, pgx.ErrNoRows) || !a.passwordVerify(req.Password, hash) {
 		// Record the failed attempt against the account (if it exists) and lock
-		// it for 48 hours once 5 consecutive failures accumulate.
+		// it for 48 hours once 5 consecutive failures accumulate. Keep this
+		// update atomic so concurrent attempts cannot overwrite the counter.
 		if err == nil {
-			newCount := failedAttempts + 1
-			if newCount >= 5 {
-				_, _ = a.db.Exec(r.Context(),
-					`UPDATE users SET failed_login_attempts = $2, locked_until = now() + interval '48 hours', updated_at = now() WHERE id = $1`,
-					userID, newCount)
-			} else {
-				_, _ = a.db.Exec(r.Context(),
-					`UPDATE users SET failed_login_attempts = $2, updated_at = now() WHERE id = $1`,
-					userID, newCount)
-			}
+			_, _ = a.db.Exec(r.Context(),
+				`UPDATE users
+				 SET failed_login_attempts = failed_login_attempts + 1,
+				     locked_until = CASE
+				       WHEN failed_login_attempts + 1 >= 5 THEN now() + interval '48 hours'
+				       ELSE locked_until
+				     END,
+				     updated_at = now()
+				 WHERE id = $1`, userID)
 		}
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
