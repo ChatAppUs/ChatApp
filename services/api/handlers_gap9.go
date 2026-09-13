@@ -126,7 +126,13 @@ func (a *App) handleGenerateRecoveryCodes(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusUnauthorized, "invalid code")
 		return
 	}
-	if _, err := a.db.Exec(r.Context(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to rotate codes")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to rotate codes")
 		return
 	}
@@ -137,13 +143,17 @@ func (a *App) handleGenerateRecoveryCodes(w http.ResponseWriter, r *http.Request
 			writeErr(w, http.StatusInternalServerError, "failed to generate codes")
 			return
 		}
-		if _, err := a.db.Exec(r.Context(),
+		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1,$2)`,
 			uid, sha256hex(code)); err != nil {
 			writeErr(w, http.StatusInternalServerError, "failed to store code")
 			return
 		}
 		codes = append(codes, code)
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to rotate codes")
+		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"codes": codes, "note": "store these in a safe place; each code works once"})
 }
@@ -171,36 +181,16 @@ func (a *App) handleRedeemRecoveryCode(w http.ResponseWriter, r *http.Request) {
 		return
 
 	}
-	var uid string
+	uid := userIDFrom(r)
+	var redeemedUID string
 	err := a.db.QueryRow(r.Context(),
-		`SELECT user_id FROM recovery_codes WHERE user_id IN (SELECT id FROM users WHERE username=$2) AND code_hash=$1 AND used_at IS NULL`,
-		sha256hex(req.Code), req.Code[0:0]).Scan(&uid)
-	if err != nil {
-		// fallback: match by plaintext code lookup across the user's own rows
+		`UPDATE recovery_codes SET used_at=now()
+		 WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL
+		 RETURNING user_id`,
+		uid, sha256hex(req.Code)).Scan(&redeemedUID)
+	if err != nil || redeemedUID != uid {
 		writeErr(w, http.StatusUnauthorized, "invalid or already-used recovery code")
 		return
-	}
-	// verify 2FA secret exists? No — recovery redeems WITHOUT the current password
-	// only when yanking 2FA: bind to the user row via code_hash directly.
-
-	// The redeem needs the user id; we look it up by code hash across ALL users
-	// (codes are unique per (user,hash) and hashes are infeasible to brute). SO:
-	_ = err
-	err = a.db.QueryRow(r.Context(),
-		`SELECT user_id FROM recovery_codes WHERE code_hash=$1 AND used_at IS NULL`, sha256hex(req.Code)).Scan(&uid)
-	if err != nil {
-		writeErr(w, http.StatusUnauthorized, "invalid or already-used recovery code")
-		return
-	}
-	// Single-use: mark consumed now, atomically. Only the first redeemer wins.
-
-	res, err := a.db.Exec(r.Context(),
-		`UPDATE recovery_codes SET used_at=now() WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL`,
-		uid, sha256hex(req.Code))
-	if err != nil || res.RowsAffected() == 0 {
-		writeErr(w, http.StatusUnauthorized, "code already used")
-		return
-
 	}
 	nonce, err := randomRecoveryCode()
 	if err != nil {
@@ -230,17 +220,33 @@ func (a *App) handleDisable2FAWithRecovery(w http.ResponseWriter, r *http.Reques
 
 	}
 	uid := string(uidBytes)
-	if _, err := a.db.Exec(r.Context(),
-			`UPDATE users SET totp_enabled=false, totp_secret=NULL, updated_at=now() WHERE id=$1`, uid); err != nil {
+	if uid != userIDFrom(r) {
+		writeErr(w, http.StatusUnauthorized, "claim does not belong to this account")
+		return
+	}
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
-
 	}
-	if err := a.freezeWithdrawals(r.Context(), uid); err != nil {
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE users SET totp_enabled=false, totp_secret=NULL, updated_at=now() WHERE id=$1`, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
+		return
+	}
+	if err := freezeWithdrawalsTx(r.Context(), tx, uid); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to apply security cooldown")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid)
+	if _, err := tx.Exec(r.Context(), `DELETE FROM recovery_codes WHERE user_id=$1`, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to revoke recovery codes")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
+		return
+	}
 	a.cache.del(r.Context(), "2fa:recover:"+req.Claim)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "2fa_disabled"})
 }

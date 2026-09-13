@@ -184,6 +184,15 @@ func (a *App) verifyRecoveryCode(uid string, code string) bool {
 // freezeWithdrawals records the security cooldown required after a sensitive
 // account change. The greatest deadline wins, so concurrent changes cannot
 // shorten an existing freeze.
+func freezeWithdrawalsTx(ctx context.Context, tx pgx.Tx, uid string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users
+		SET withdrawal_freeze_until = GREATEST(COALESCE(withdrawal_freeze_until, now()), now() + interval '48 hours'),
+		    updated_at = now()
+		WHERE id=$1`, uid)
+	return err
+}
+
 func (a *App) freezeWithdrawals(ctx context.Context, uid string) error {
 	_, err := a.db.Exec(ctx, `
 		UPDATE users

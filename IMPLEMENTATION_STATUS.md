@@ -192,3 +192,9 @@ Fresh validation completed:
 - GitHub Actions run `34758496367` completed successfully for both static/frontend and backend/Rust jobs.
 
 The remaining gaps are validation boundaries, not silently marked features: Android/iOS/desktop device builds and Bluetooth/Wi-Fi Direct radio handshakes, configured PostgreSQL/SMTP/SMS/TURN/FFmpeg/provider integrations, and production load, observability, backup/restore, and disaster recovery still require their real environments. The workflow still declares Go 1.23 while the checked-in modules require Go 1.25; the hosted run is green because Go resolves the required toolchain automatically, but the workflow declaration should be raised when a GitHub token with workflow-file permission is available.
+
+## Implementation audit addendum — 2026-09-13, recovery-path pass
+
+A new source audit was performed from the clean `origin/main` checkout, independently of `AGENTS.md`, earlier commits, and earlier audit prose. One real security-flow gap was found and fixed: the recovery-code redemption handler performed an impossible empty-username lookup and returned before its fallback, so valid recovery codes could not be redeemed. Redemption now consumes a code atomically, scopes it to the authenticated account, and binds the short-lived claim to that account. Recovery-code generation now rotates all eight codes in one transaction; authenticator-loss disable now atomically disables 2FA, applies the 48-hour withdrawal freeze, and revokes the remaining codes.
+
+The fresh checks for this pass are green: Go tests and `go vet` for `services/api`, `services/mesh`, and `services/sfu`; fresh `npm ci && npm run build` for all 53 web routes and all 5 admin routes; parity (149 files / 536 routes); feature registry (26 features / 7 required clients); Python ML and extension syntax checks; and `git diff --check`. The existing native/mobile/provider/load/DR validation boundaries remain explicitly open in the status ledger.
