@@ -2617,3 +2617,5 @@ A route, migration, client screen, or local unit test demonstrates an implementa
 ## Implementation audit addendum — 2026-09-13, second pass
 
 The second source audit found and fixed authentication lifecycle gaps. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement; password-reset token consumption now occurs in the same transaction as the password update and session revocation; and a successful password reset clears stale login-lockout counters. Tokens can therefore be accepted only once under concurrent requests, and a verified recovery flow restores account access. The remaining runtime and native-platform limitations stated above still apply.
+
+The fourth audit additionally implemented the Identity requirement for conditional 2FA during password recovery. The reset API checks the account's TOTP secret before consuming the reset token, returns `totp_required` when appropriate, preserves the token on an invalid code, and the web reset page presents the authenticator-code prompt.

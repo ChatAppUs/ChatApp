@@ -336,6 +336,7 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Token       string `json:"token"`
 		NewPassword string `json:"new_password"`
+		TOTPCode    string `json:"totp_code"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -357,10 +358,34 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	var userID string
 	if err := tx.QueryRow(r.Context(),
-		`UPDATE password_resets SET used_at=now()
+		`SELECT user_id FROM password_resets
 		 WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now()
-		 RETURNING user_id`, sha256hex(req.Token)).Scan(&userID); err != nil {
+		 FOR UPDATE`, sha256hex(req.Token)).Scan(&userID); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid or expired reset token")
+		return
+	}
+	var totpEnabled bool
+	var totpSecret *string
+	if err := tx.QueryRow(r.Context(),
+		`SELECT totp_enabled, totp_secret FROM users WHERE id=$1`, userID).
+		Scan(&totpEnabled, &totpSecret); err != nil {
+		writeErr(w, http.StatusInternalServerError, "reset failed")
+		return
+	}
+	if totpEnabled {
+		if strings.TrimSpace(req.TOTPCode) == "" {
+			writeErr(w, http.StatusUnauthorized, "totp_required")
+			return
+		}
+		if totpSecret == nil || !a.checkTOTP(*totpSecret, req.TOTPCode) {
+			writeErr(w, http.StatusUnauthorized, "invalid 2FA code")
+			return
+		}
+	}
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE password_resets SET used_at=now()
+		 WHERE token_hash=$1 AND used_at IS NULL`, sha256hex(req.Token)); err != nil {
+		writeErr(w, http.StatusInternalServerError, "reset failed")
 		return
 	}
 	// A valid reset proves control of the recovery channel; clear stale

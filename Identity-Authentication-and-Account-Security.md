@@ -10,7 +10,7 @@ This status is maintained against the source tree on `main`. **Implemented** mea
 
 | Requirement area | Status | Source evidence | Remaining work |
 |---|---|---|---|
-| Unified email/phone authentication, registration, login, refresh, logout, reset, phone OTP, country catalog | Implemented with runtime validation pending | `services/api/handlers_auth.go`, `services/api/otp.go`, `services/api/data/countries.json`, web login/register/reset pages | Run database-backed flows and verify every native client. |
+| Unified email/phone authentication, registration, login, refresh, logout, reset, phone OTP, country catalog | Implemented with runtime validation pending | `services/api/handlers_auth.go`, `services/api/otp.go`, `services/api/data/countries.json`, web login/register/reset pages; password reset now conditionally verifies the account TOTP code before consuming the token. | Run database-backed flows and verify every native client. |
 | Password hashing, JWT, sessions, recovery codes, TOTP 2FA | Implemented with runtime validation pending | Argon2id/JWT helpers, `handlers_security.go`, `handlers_gap9.go`, `services/authn/`, session routes | Run Go/Rust security tests and authn-service delegation tests. |
 | Passkeys, Google OAuth, QR login, trusted recovery, app lock, screen time, data export | Implemented with runtime validation pending | `handlers_webauthn.go`, `handlers_oauth.go`, `handlers_qrlogin.go`, `handlers_accounts.go`, `handlers_gap8.go` | Verify provider credentials, WebAuthn ceremonies, and database behavior end to end. |
 | KYC submission, ML score threshold, sanctions check, admin review, financial KYC gates | Implemented with runtime validation pending | `handlers_wallet.go`, `handlers_features.go`, `handlers_crypto.go`, `handlers_p2p.go`, `handlers_staking.go`, `handlers_cards.go` | Run configured ML/sanctions/admin review tests. |
@@ -282,3 +282,5 @@ A route, migration, client screen, or local unit test demonstrates an implementa
 ## Implementation audit addendum — 2026-09-13, second pass
 
 The second source audit found and fixed authentication lifecycle gaps. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement; password-reset token consumption now occurs in the same transaction as the password update and session revocation; and a successful password reset clears stale login-lockout counters. Tokens can therefore be accepted only once under concurrent requests, and a verified recovery flow restores account access. The remaining runtime and native-platform limitations stated above still apply.
+
+The fourth audit additionally implemented the Identity requirement for conditional 2FA during password recovery. The reset API checks the account's TOTP secret before consuming the reset token, returns `totp_required` when appropriate, preserves the token on an invalid code, and the web reset page presents the authenticator-code prompt.
