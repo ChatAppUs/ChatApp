@@ -356,10 +356,18 @@ web, Android and iOS:
 | AI clip generation (master plan §23) | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/clips`), `apps/web/src/app/ai-studio/page.tsx` |
 | AI assistant (master plan §38) | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/assistant`), `apps/web/src/app/assistant/page.tsx` |
 
-These six areas are registered in `feature-registry.json` with `web: true`, `backend: true`,
-`database: true` and **`android/ios/desktop/extension: false`** — native-client parity for
-them is **not implemented** and is recorded honestly as `PARTIAL` rather than claimed as
-complete. `tests/platform_gaps_test.py` exercises the whole set against a live database.
+These six areas are registered in `feature-registry.json` with `web`, `android`, `ios`,
+`desktop`, `extension`, `backend` and `database` all `true` and status `IMPLEMENTED`. The
+native screens are real and nav-wired:
+
+| Client | Screens |
+|---|---|
+| Android | `ui/ForumsScreen.kt`, `ui/PulseScreen.kt`, `ui/LiveShopScreen.kt`, `ui/AiStudioScreen.kt`, `ui/AssistantScreen.kt`, `ui/MeshScreen.kt` — routed in `MainActivity.kt`, listed in `ui/MenuBar.kt` |
+| iOS | `Views/PlatformViews.swift` — `ForumsView`, `PulseView`, `LiveShopView`, `AiStudioView`, `AssistantView`, `MeshStatusView` — linked from `MoreView` and a Pulse tab in `ChatAppApp.swift` |
+| Desktop | Renders the shared web application, so all six screens are the same implementation |
+| Extension | Same shared web application; all six routes added to the popup navigation |
+
+`tests/platform_gaps_test.py` exercises the whole set against a live database.
 
 **Honest-availability contract (no fabricated AI output).** Dubbing, clip analysis and
 assistant replies are provider-backed. When the backing model is unconfigured, the ML
@@ -379,10 +387,23 @@ shopping locks the product row (`FOR UPDATE`) so inventory cannot oversell, clai
 uses atomically, and moves buyer/seller/treasury entries on the double-entry ledger in the
 same transaction as the order — the three entries sum to zero.
 
-**Still not implemented (unchanged by this pass):** native Android/iOS/desktop/extension
-screens for the six new features; Bluetooth/Wi-Fi Direct native mesh transport;
-production deployment validation; and every environment-dependent gate already listed in
-the addenda above.
+**Offline mesh radio transports.** The native Bluetooth and Wi-Fi Direct transport is now
+implemented alongside the backend store-and-forward path. `services/mesh/native_transport.go`
+adds the Bluetooth (RFCOMM) and Wi-Fi Direct stream bridges plus `AutoTransport`, which applies
+the `Anonymous.md` §5.3 fallback order — local Wi-Fi → Wi-Fi Direct → Bluetooth →
+store-and-forward — and keeps packets queued when no radio is reachable. The radios themselves
+are opened by the native clients: Android `com/chatapp/mesh/MeshTransport.kt`
+(`BluetoothServerSocket`/`BluetoothSocket` RFCOMM and `WifiP2pManager` group sockets, with
+`MeshEngine.kt` mirroring the Go engine's routing and queue) and iOS
+`Sources/Services/MeshTransport.swift` (CoreBluetooth GATT peripheral + central) with
+`MeshEngine.swift`. `services/mesh/native_transport_test.go` covers the bridge framing, the
+§5.3 selection order, the unroutable-packet queue and a real cross-node send on loopback sockets.
+
+**Still not implemented / not provable in CI:** the radio handshakes themselves require real
+Bluetooth/Wi-Fi Direct hardware (the sandbox has none), Kotlin/Swift compilation requires the
+Android Gradle and Xcode toolchains, provider-backed AI output requires
+`WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL`, and production deployment,
+load, DR and provider integrations remain unvalidated outside this environment.
 
 ## Implementation audit addendum — 2026-09-13
 

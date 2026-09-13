@@ -17,6 +17,7 @@ import time
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from integration_test import check, req, grant_superadmin
+from gaps6_test import register as otp_register
 
 
 def db(sql):
@@ -43,23 +44,16 @@ def main():
     bob = f"ldB{ts}"
     carol = f"ldC{ts}"
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": alice, "email": f"{alice}@test.dev", "password": "Passw0rd!123",
-        "country_code": "US"})
-    check("ld register alice", s in (200, 201), f"{s} {r}")
-    alice_tok = r.get("access_token")
+    # Registration must complete the Identity spec's email-OTP gate, so these
+    # users are created through the real send-code → check-code flow.
+    alice_tok = otp_register(alice)
+    check("ld register alice", bool(alice_tok), "no token")
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": bob, "email": f"{bob}@test.dev", "password": "Passw0rd!123",
-        "country_code": "US"})
-    check("ld register bob", s in (200, 201), f"{s} {r}")
-    bob_tok = r.get("access_token")
+    bob_tok = otp_register(bob)
+    check("ld register bob", bool(bob_tok), "no token")
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": carol, "email": f"{carol}@test.dev", "password": "Passw0rd!123",
-        "country_code": "US"})
-    check("ld register carol", s in (200, 201), f"{s} {r}")
-    carol_tok = r.get("access_token")
+    carol_tok = otp_register(carol)
+    check("ld register carol", bool(carol_tok), "no token")
 
     grant_superadmin(alice)
     s, r = req("POST", "/api/admin/login",
@@ -90,7 +84,7 @@ def main():
     draw_id = d.get("id")
 
     # --- user list sees the open draw ---
-    s, lst = req("GET", "/api/luckydraw", tok=alice_tok)
+    s, lst = req("GET", "/api/luckydraw", token=alice_tok)
     check("ld list draws", s == 200 and any(x.get("id") == draw_id for x in lst.get("draws", [])), f"{s} {lst}")
 
     # --- buy tickets from internal USD ---
@@ -106,7 +100,7 @@ def main():
     check("ld max tickets gate", s == 400, f"{s} {b4}")
 
     # --- immutable price + ledger entries ---
-    s, mine = req("GET", "/api/luckydraw/mine", tok=bob_tok)
+    s, mine = req("GET", "/api/luckydraw/mine", token=bob_tok)
     check("ld my tickets", s == 200 and len(mine.get("tickets", [])) == 1, f"{s} {mine}")
 
     # --- draft + approve a future price ---
@@ -115,7 +109,7 @@ def main():
     price_id = pr.get("id")
     s, _ = req("POST", f"/api/admin/luckydraw/prices/{price_id}/approve", {}, admin_tok)
     check("ld approve price", s == 200, f"{s} {pr}")
-    s, hist = req("GET", f"/api/admin/luckydraw/{draw_id}/prices", tok=admin_tok)
+    s, hist = req("GET", f"/api/admin/luckydraw/{draw_id}/prices", token=admin_tok)
     check("ld price history", s == 200 and len(hist.get("prices", [])) >= 2, f"{s} {hist}")
 
     # --- close sales, run draw, settle ---
@@ -125,11 +119,11 @@ def main():
     check("ld run draw", s == 200 and run.get("winners_selected") == 1, f"{s} {run}")
     s, _ = req("POST", f"/api/admin/luckydraw/{draw_id}/settle", {}, admin_tok)
     check("ld settle prizes", s == 200, f"{s} {_}")
-    s, w = req("GET", f"/api/luckydraw/{draw_id}/winners", tok=alice_tok)
+    s, w = req("GET", f"/api/luckydraw/{draw_id}/winners", token=alice_tok)
     check("ld winners published", s == 200 and len(w.get("winners", [])) == 1, f"{s} {w}")
 
     # ledger invariant: prize debited from treasury, credited to winner
-    s, audit = req("GET", f"/api/admin/luckydraw/{draw_id}/audit", tok=admin_tok)
+    s, audit = req("GET", f"/api/admin/luckydraw/{draw_id}/audit", token=admin_tok)
     check("ld audit trail", s == 200 and len(audit.get("audit", [])) >= 5, f"{s} {audit}")
 
     # --- governance: create + disable a second draw ---

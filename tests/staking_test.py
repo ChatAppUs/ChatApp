@@ -16,6 +16,7 @@ from decimal import Decimal
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from integration_test import check, req, grant_superadmin
+from gaps6_test import register as otp_register
 
 Q = Decimal("0.000000000000000001")  # NUMERIC(38,18) scale
 
@@ -75,17 +76,12 @@ def main():
     ASYM = "STK" + str(ts % 100000)
     CHAIN = "test"
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": alice, "email": f"{alice}@test.dev", "password": "Passw0rd!123",
-        "country_code": "US"})
-    check("stk register alice (admin)", s in (200, 201), f"{s} {r}")
-    alice_tok = r.get("access_token")
+    # Registration completes the Identity spec's email-OTP gate.
+    alice_tok = otp_register(alice)
+    check("stk register alice (admin)", bool(alice_tok), "no token")
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": bob, "email": f"{bob}@test.dev", "password": "Passw0rd!123",
-        "country_code": "NG"})
-    check("stk register bob", s in (200, 201), f"{s} {r}")
-    bob_tok = r.get("access_token")
+    bob_tok = otp_register(bob)
+    check("stk register bob", bool(bob_tok), "no token")
 
     grant_superadmin(alice)
     s, r = req("POST", "/api/admin/login",

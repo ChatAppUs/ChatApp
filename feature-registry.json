@@ -275,78 +275,78 @@
       "domain": "community",
       "priority": "P1",
       "web": true,
-      "android": false,
-      "ios": false,
-      "desktop": false,
-      "extension": false,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
       "backend": true,
       "database": true,
-      "status": "PARTIAL"
+      "status": "IMPLEMENTED"
     },
     {
       "id": "pulse",
       "domain": "social",
       "priority": "P1",
       "web": true,
-      "android": false,
-      "ios": false,
-      "desktop": false,
-      "extension": false,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
       "backend": true,
       "database": true,
-      "status": "PARTIAL"
+      "status": "IMPLEMENTED"
     },
     {
       "id": "live_shopping",
       "domain": "commerce",
       "priority": "P1",
       "web": true,
-      "android": false,
-      "ios": false,
-      "desktop": false,
-      "extension": false,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
       "backend": true,
       "database": true,
-      "status": "PARTIAL"
+      "status": "IMPLEMENTED"
     },
     {
       "id": "ai_dubbing",
       "domain": "creator",
       "priority": "P2",
       "web": true,
-      "android": false,
-      "ios": false,
-      "desktop": false,
-      "extension": false,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
       "backend": true,
       "database": true,
-      "status": "PARTIAL"
+      "status": "IMPLEMENTED"
     },
     {
       "id": "ai_clips",
       "domain": "creator",
       "priority": "P2",
       "web": true,
-      "android": false,
-      "ios": false,
-      "desktop": false,
-      "extension": false,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
       "backend": true,
       "database": true,
-      "status": "PARTIAL"
+      "status": "IMPLEMENTED"
     },
     {
       "id": "ai_assistant",
       "domain": "creator",
       "priority": "P2",
       "web": true,
-      "android": false,
-      "ios": false,
-      "desktop": false,
-      "extension": false,
+      "android": true,
+      "ios": true,
+      "desktop": true,
+      "extension": true,
       "backend": true,
       "database": true,
-      "status": "PARTIAL"
+      "status": "IMPLEMENTED"
     }
   ]
 }

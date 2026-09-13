@@ -145,7 +145,12 @@ def main():
 
     # ---------- integration with /internal/counters/flush directly ----------
     s, r = req("POST", "/internal/counters/flush", {"hashtags": [], "views": [], "peaks": []})
-    check("flush endpoint requires internal secret", s == 401, f"{s}")
+    # The security property is that the flush endpoint is never usable without
+    # the internal cluster secret. requireInternal answers 401 when a secret is
+    # configured and the header is wrong, and 403 when no secret is configured
+    # at all (the endpoint is disabled outright). Both are a pass; only a 2xx
+    # would mean it is publicly reachable.
+    check("flush endpoint requires internal secret", s in (401, 403), f"{s}")
 
     print(f"\n{integration_test.passed} passed, {integration_test.failed} failed")
     sys.exit(1 if integration_test.failed else 0)

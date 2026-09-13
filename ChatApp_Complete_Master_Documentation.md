@@ -29,12 +29,17 @@ backend and in the web client — parity route count 506 → **536**, migrations
 **Implemented:** backend logic, persistence and web UI for all six, verified by
 `tests/platform_gaps_test.py` (**76/76 checks passed** against live PostgreSQL and a running API).
 
-**Partially implemented:** native Android/iOS/desktop/extension screens for these six are **not
-implemented** (`feature-registry.json` status `PARTIAL`).
+**Implemented on every client:** native Android/iOS/desktop/extension screens for these six now
+exist with nav wiring, and `feature-registry.json` records all six clients `true` with status
+`IMPLEMENTED`.
 
-**Not implemented:** native Bluetooth/Wi-Fi Direct mesh transport; production deployment
-validation. AI outputs additionally require their provider models to be configured — without
-them the endpoints report unavailability honestly instead of fabricating results.
+**Now implemented:** native Bluetooth/Wi-Fi Direct mesh transport
+(`services/mesh/native_transport.go`, Android `mesh/MeshTransport.kt`, iOS `Services/MeshTransport.swift`).
+
+**Not implemented:** production deployment validation, and on-device radio validation (no
+Bluetooth/Wi-Fi Direct hardware in CI). AI outputs additionally require their provider models to
+be configured — without them the endpoints report unavailability honestly instead of fabricating
+results.
 
 | Status area | Repository evidence | Current result |
 |---|---|---|
@@ -45,7 +50,7 @@ them the endpoints report unavailability honestly instead of fabricating results
 | LuckyDraw | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py` | Implemented: draws, ticket purchases on the double-entry ledger, audited winner selection with the unique-user rule, prize settlement, and admin lifecycle |
 | Professional analytics dashboard | `services/api/handlers_gap4.go`, `services/api/main.go`, `apps/web/src/app/analytics/page.tsx`, `apps/web/src/components/Nav.tsx` | Implemented: authenticated web dashboard consumes account posts, audience, engagement, seven-day shares, and earnings metrics |
 | Anonymous guest session | `services/api/handlers_guest.go`, `services/api/main.go` (`POST /api/auth/guest`), web `apps/web/src/lib/api.ts` (`startGuestSession`), login/register pages, `Nav.tsx` | Implemented: device-local ephemeral guest token (no account row) with a web `Continue without account` surface |
-| Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`) | Implemented (backend): device registration, encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status; native device transport pending |
+| Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`), `services/mesh/native_transport.go`, Android `mesh/MeshTransport.kt`, iOS `Services/MeshTransport.swift` | Implemented: device registration (open to anonymous/guest clients), encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status, plus native Bluetooth/Wi-Fi Direct transports with the §5.3 fallback chain |
 
 
 ## No stubs · no mocks · no fake data — audit 2026-09-13

@@ -35,6 +35,8 @@ struct MainTabView: View {
                 .tabItem { Label("Groups", systemImage: "person.3") }
             PagesView()
                 .tabItem { Label("Pages", systemImage: "flag") }
+            PulseView()
+                .tabItem { Label("Pulse", systemImage: "bolt") }
             MoreView()
                 .tabItem { Label("More", systemImage: "ellipsis") }
         }
@@ -47,6 +49,14 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("Platform") {
+                    NavigationLink("Forums", destination: ForumsView())
+                    NavigationLink("Pulse", destination: PulseView())
+                    NavigationLink("Live Shopping", destination: LiveShopView())
+                    NavigationLink("AI Studio", destination: AiStudioView())
+                    NavigationLink("Assistant", destination: AssistantView())
+                    NavigationLink("Offline Mesh", destination: MeshStatusView())
+                }
                 NavigationLink("Wallet", destination: WalletView())
                 NavigationLink("Staking", destination: StakingView())
                 NavigationLink("Monetization", destination: MonetizeView())

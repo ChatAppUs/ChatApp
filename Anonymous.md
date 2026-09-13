@@ -29,12 +29,13 @@ topics) while stating that no language model is configured.
 The honest-availability contract is exercised by `tests/platform_gaps_test.py`, which asserts
 both branches. All 76 checks passed against a live PostgreSQL database and running API.
 
-**Native-client parity for these six features is NOT implemented** — there are no Android, iOS,
-desktop or extension screens for forums, Pulse, live shopping, AI dubbing, AI clips or the AI
-assistant. `feature-registry.json` records this explicitly (`android/ios/desktop/extension:
-false`, status `PARTIAL`). This is the one place where the "all apps must have same features"
-requirement is not yet met for the newly added surfaces, and it is reported as such rather than
-claimed as complete.
+**Native-client parity for these six features is now implemented** — Android, iOS, desktop
+and extension all surface forums, Pulse, live shopping, AI dubbing, AI clips and the AI
+assistant. `feature-registry.json` records this (`android/ios/desktop/extension: true`, status
+`IMPLEMENTED`) after the fourth audit pass added real native screens and nav wiring on every
+client. The mesh section below likewise has its native Bluetooth / Wi-Fi Direct transports
+implemented, so the "all apps must have same features" requirement is met for these surfaces;
+on-device radio validation remains outstanding because CI has no Bluetooth/Wi-Fi Direct hardware.
 
 - **Configuration is fully environment-driven.** All secrets, keys, tokens, ports, URLs, and provider credentials are read from environment variables via `services/api/config.go` and `.env.example` — never hardcoded in source. Production requires real values (e.g. `JWT_SECRET`, `WALLET_MASTER_SEED`, `SIGNING_SECRET`); empty values disable the corresponding integration rather than substituting fake data.
 - **Every flagged pattern was verified as real logic.** The only matches for stub/mock/placeholder keywords are legitimate: HTML `placeholder` input attributes, i18n placeholder strings, a STUN/TURN protocol length-field placeholder, a default mesh storage quota, and a bounded JWT cache — none are fake implementations.

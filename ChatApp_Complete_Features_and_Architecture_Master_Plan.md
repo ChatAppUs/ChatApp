@@ -26,16 +26,24 @@ tables, zero client references. All six are now implemented on the backend and i
 | §23 | AI clip generation | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/clips`), `apps/web/src/app/ai-studio/page.tsx` |
 | §38 | In-app AI assistant | **Implemented**, provider-backed | `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/assistant`), `apps/web/src/app/assistant/page.tsx` |
 
-**Partially implemented:** all six are backend + web only. Android, iOS, desktop and extension
-screens are **not implemented**, recorded as `PARTIAL` in `feature-registry.json`.
+**Implemented on every client:** the backend, persistence, web UI, and the Android, iOS, desktop
+and extension screens all exist (Android `ui/*Screen.kt` + `MeshScreen.kt`, iOS
+`Views/PlatformViews.swift`, desktop/extension via the shared web app), recorded as
+`IMPLEMENTED` with all six clients `true` in `feature-registry.json`.
 
 **Provider-dependent:** AI dubbing, clip analysis and assistant replies return real output only
 when `WHISPER_MODEL`, `TRANSLATE_MODEL`, `TTS_MODEL` and `ASSISTANT_MODEL` are configured.
 Without them the endpoints correctly report unavailability with a reason — nothing is faked.
 Clip-candidate scoring and the assistant's data lookups work without any model.
 
-**Not implemented anywhere:** native Bluetooth/Wi-Fi Direct mesh transport, and production
-deployment validation. See `IMPLEMENTATION_STATUS.md` for the full ledger.
+**Now implemented:** native Bluetooth/Wi-Fi Direct mesh transport — `services/mesh/native_transport.go`
+(Bluetooth RFCOMM + Wi-Fi Direct stream bridges and the §5.3 `AutoTransport` selection chain),
+Android `com/chatapp/mesh/MeshTransport.kt`, and iOS `Sources/Services/MeshTransport.swift` —
+covered by `services/mesh/native_transport_test.go`.
+
+**Not implemented anywhere:** production deployment validation, and on-device radio validation
+(the sandbox has no Bluetooth/Wi-Fi Direct hardware). See `IMPLEMENTATION_STATUS.md` for the
+full ledger.
 
 | Status area | Repository evidence | Current result |
 |---|---|---|
@@ -46,7 +54,7 @@ deployment validation. See `IMPLEMENTATION_STATUS.md` for the full ledger.
 | LuckyDraw | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py` | Implemented: draws, ticket purchases on the double-entry ledger, audited winner selection with the unique-user rule, prize settlement, and admin lifecycle |
 | Professional analytics dashboard | `services/api/handlers_gap4.go`, `services/api/main.go`, `apps/web/src/app/analytics/page.tsx`, `apps/web/src/components/Nav.tsx` | Implemented: authenticated web dashboard consumes account posts, audience, engagement, seven-day shares, and earnings metrics |
 | Anonymous guest session | `services/api/handlers_guest.go`, `services/api/main.go` (`POST /api/auth/guest`), web `apps/web/src/lib/api.ts` (`startGuestSession`), login/register pages, `Nav.tsx` | Implemented: device-local ephemeral guest token (no account row) with a web `Continue without account` surface |
-| Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`) | Implemented (backend): device registration, encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status; native device transport pending |
+| Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`), `services/mesh/native_transport.go`, Android `mesh/MeshTransport.kt`, iOS `Services/MeshTransport.swift` | Implemented: device registration (open to anonymous/guest clients), encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status, plus native Bluetooth/Wi-Fi Direct transports with the §5.3 fallback chain |
 
 
 ## No stubs · no mocks · no fake data — audit 2026-09-13

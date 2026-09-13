@@ -19,13 +19,18 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.chatapp.data.ApiClient
 import com.chatapp.data.Session
+import com.chatapp.ui.AiStudioScreen
+import com.chatapp.ui.AssistantScreen
 import com.chatapp.ui.BotsScreen
 import com.chatapp.ui.ChatAppTheme
 import com.chatapp.ui.ChatScreen
 import com.chatapp.ui.FeedScreen
+import com.chatapp.ui.ForumsScreen
 import com.chatapp.ui.FypScreen
 import com.chatapp.ui.GroupsScreen
+import com.chatapp.ui.LiveShopScreen
 import com.chatapp.ui.LoginScreen
+import com.chatapp.ui.MeshScreen
 import com.chatapp.ui.MenuBar
 import com.chatapp.ui.MonetizeScreen
 import com.chatapp.ui.PagesScreen
@@ -90,6 +95,24 @@ fun ChatAppNav(session: Session, onToggleTheme: () -> Unit) {
         }
         composable("privacy") {
             AuthedScreen(nav, session, onToggleTheme) { PrivacyScreen(api, session) }
+        }
+        composable("forums") {
+            AuthedScreen(nav, session, onToggleTheme) { ForumsScreen(api, session) }
+        }
+        composable("pulse") {
+            AuthedScreen(nav, session, onToggleTheme) { PulseScreen(api, session) }
+        }
+        composable("live-shop") {
+            AuthedScreen(nav, session, onToggleTheme) { LiveShopScreen(api, session) }
+        }
+        composable("ai-studio") {
+            AuthedScreen(nav, session, onToggleTheme) { AiStudioScreen(api, session) }
+        }
+        composable("assistant") {
+            AuthedScreen(nav, session, onToggleTheme) { AssistantScreen(api, session) }
+        }
+        composable("mesh") {
+            AuthedScreen(nav, session, onToggleTheme) { MeshScreen(api, session) }
         }
         composable("chat") {
             AuthedScreen(nav, session, onToggleTheme) { ChatScreen(api, session, wsBaseUrl = BuildConfig.WS_BASE_URL) }

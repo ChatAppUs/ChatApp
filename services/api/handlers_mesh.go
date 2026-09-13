@@ -41,8 +41,13 @@ func (a *App) handleMeshRegister(w http.ResponseWriter, r *http.Request) {
 	if req.Transport == "" {
 		req.Transport = "internet"
 	}
+	// The account id is optional: mesh registration is open to anonymous
+	// clients, and guest sessions carry a non-UUID subject ("guest_<id>")
+	// which must not be cast to `uuid`. Store the link only when the subject
+	// is a real account UUID, otherwise the device is recorded as a pure
+	// relay/member node (user_id NULL).
 	uid := userIDFrom(r)
-	if uid == "" {
+	if !isUUIDShape(uid) {
 		uid = ""
 	}
 	var id string

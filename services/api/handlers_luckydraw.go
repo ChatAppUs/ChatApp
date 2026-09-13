@@ -30,24 +30,24 @@ import (
 // claims a jurisdiction-approved product.
 
 type luckyDrawJSON struct {
-	ID              string    `json:"id"`
-	Title           string    `json:"title"`
-	Frequency       string    `json:"frequency"`
-	SalesOpenAt     time.Time `json:"sales_open_at"`
-	SalesCloseAt    time.Time `json:"sales_close_at"`
-	Status          string    `json:"status"`
-	TicketPriceUSD  string    `json:"ticket_price_usd"`
-	PrizeAllocPct   string    `json:"prize_alloc_pct"`
-	OperatorFeePct  string    `json:"operator_fee_pct"`
-	MaxTickets      int       `json:"max_tickets_per_user"`
-	UniqueWinner    bool      `json:"unique_winner"`
-	MinAge          int       `json:"min_age"`
-	AllowedCountries []string `json:"allowed_countries"`
-	Disabled        bool      `json:"disabled"`
-	PrizePool       string    `json:"prize_pool"`
-	WinnerCount     int       `json:"winner_count"`
-	TicketsSold     int       `json:"tickets_sold"`
-	MyTickets       int       `json:"my_tickets,omitempty"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Frequency        string    `json:"frequency"`
+	SalesOpenAt      time.Time `json:"sales_open_at"`
+	SalesCloseAt     time.Time `json:"sales_close_at"`
+	Status           string    `json:"status"`
+	TicketPriceUSD   string    `json:"ticket_price_usd"`
+	PrizeAllocPct    string    `json:"prize_alloc_pct"`
+	OperatorFeePct   string    `json:"operator_fee_pct"`
+	MaxTickets       int       `json:"max_tickets_per_user"`
+	UniqueWinner     bool      `json:"unique_winner"`
+	MinAge           int       `json:"min_age"`
+	AllowedCountries []string  `json:"allowed_countries"`
+	Disabled         bool      `json:"disabled"`
+	PrizePool        string    `json:"prize_pool"`
+	WinnerCount      int       `json:"winner_count"`
+	TicketsSold      int       `json:"tickets_sold"`
+	MyTickets        int       `json:"my_tickets,omitempty"`
 }
 
 const luckyDrawSelect = `
@@ -162,7 +162,13 @@ func (a *App) handleLuckyDrawBuyTickets(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusNotFound, "draw not found")
 		return
 	}
-	if disabled || status != "open" || time.Now().After(salesClose) {
+	// A draw that governance has explicitly disabled is refused outright (403);
+	// a draw that is merely not in its sales window is a bad request (400).
+	if disabled {
+		writeErr(w, http.StatusForbidden, "draw is disabled")
+		return
+	}
+	if status != "open" || time.Now().After(salesClose) {
 		writeErr(w, http.StatusBadRequest, "draw is not open for sales")
 		return
 	}
@@ -251,13 +257,23 @@ func (a *App) handleLuckyDrawBuyTickets(w http.ResponseWriter, r *http.Request) 
 		}
 		tickets = append(tickets, map[string]any{"id": id, "ticket_number": num, "price_usd": price})
 	}
-	// Refresh the prize pool conservatively: recompute from sales.
-	_, _ = tx.Exec(r.Context(),
-		`UPDATE lucky_draws SET prize_pool =
-		   (SELECT COALESCE(SUM(t.price_usd),0) * (d.prize_alloc_pct/100.0)
-		      FROM lucky_draw_tickets t JOIN lucky_draws d ON d.id=t.draw_id
-		     WHERE t.draw_id=$1)
-		   WHERE id=$1`, req.DrawID)
+	// Refresh the prize pool and sold count from real sales. The correlated
+	// subquery must reference the target row's own column (lucky_draws.x) —
+	// naming a second alias here is invalid SQL, and because this statement
+	// previously discarded its error the transaction was silently aborted, so
+	// the following Commit always failed and every ticket purchase 500'd.
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE lucky_draws SET
+		   prize_pool = COALESCE((SELECT SUM(t.price_usd)
+		                            * (lucky_draws.prize_alloc_pct/100.0)
+		                           FROM lucky_draw_tickets t
+		                          WHERE t.draw_id = lucky_draws.id), 0),
+		   tickets_sold = (SELECT COUNT(*) FROM lucky_draw_tickets t
+		                    WHERE t.draw_id = lucky_draws.id)
+		 WHERE id=$1`, req.DrawID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "purchase failed")
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "purchase failed")
 		return
@@ -298,7 +314,7 @@ func (a *App) handleLuckyDrawList(w http.ResponseWriter, r *http.Request) {
 	a.refreshLuckyDrawStatus(r.Context())
 	uid := userIDFrom(r)
 	rows, err := a.db.Query(r.Context(), luckyDrawSelect+
-		` ORDER BY d.sales_open_at DESC`, )
+		` ORDER BY d.sales_open_at DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load draws")
 		return
@@ -403,18 +419,18 @@ func (a *App) handleAdminLuckyDraws(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/luckydraw — create a draw (LuckyDraw manager).
 func (a *App) handleAdminLuckyDrawCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title            string   `json:"title"`
-		Frequency        string   `json:"frequency"`
-		SalesOpenAt      string   `json:"sales_open_at"`
-		SalesCloseAt     string   `json:"sales_close_at"`
-		TicketPriceUSD   string   `json:"ticket_price_usd"`
-		PrizeAllocPct    *string  `json:"prize_alloc_pct"`
-		OperatorFeePct   *string  `json:"operator_fee_pct"`
-		MaxTicketsPerUser *int    `json:"max_tickets_per_user"`
-		UniqueWinner     *bool    `json:"unique_winner"`
-		MinAge           *int     `json:"min_age"`
-		AllowedCountries []string `json:"allowed_countries"`
-		WinnerCount      *int     `json:"winner_count"`
+		Title             string   `json:"title"`
+		Frequency         string   `json:"frequency"`
+		SalesOpenAt       string   `json:"sales_open_at"`
+		SalesCloseAt      string   `json:"sales_close_at"`
+		TicketPriceUSD    string   `json:"ticket_price_usd"`
+		PrizeAllocPct     *string  `json:"prize_alloc_pct"`
+		OperatorFeePct    *string  `json:"operator_fee_pct"`
+		MaxTicketsPerUser *int     `json:"max_tickets_per_user"`
+		UniqueWinner      *bool    `json:"unique_winner"`
+		MinAge            *int     `json:"min_age"`
+		AllowedCountries  []string `json:"allowed_countries"`
+		WinnerCount       *int     `json:"winner_count"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -483,10 +499,15 @@ func (a *App) handleAdminLuckyDrawCreate(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "draw creation failed")
 		return
 	}
-	// Seed the initial price history row (approved-now).
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO lucky_draw_prices (draw_id, price_usd, status, requested_by, approved_by)
-		 VALUES ($1,$2::numeric,'approved',$3,$3)`, id, price, uid)
+	// Seed the initial price history row (approved-now). effective_at must be
+	// set: the column is nullable, and the admin price-history reader decodes it
+	// into a time value, so a NULL here would silently drop the row.
+	if _, err := a.db.Exec(r.Context(),
+		`INSERT INTO lucky_draw_prices (draw_id, price_usd, status, requested_by, approved_by, effective_at)
+		 VALUES ($1,$2::numeric,'approved',$3,$3, now())`, id, price, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "draw creation failed")
+		return
+	}
 	a.audit(r.Context(), uid, "luckydraw.create", id,
 		map[string]any{"frequency": freq, "price": price, "alloc": alloc, "fee": fee})
 	_, _ = a.db.Exec(r.Context(),
@@ -556,10 +577,12 @@ func (a *App) handleAdminLuckyDrawPriceApprove(w http.ResponseWriter, r *http.Re
 		return
 	}
 	defer tx.Rollback(r.Context())
-	// Same draw: supersede any prior approved effective price, then approve.
+	// Immutable price history (draft -> approved -> superseded): approving a new
+	// price retires the previously effective one instead of overwriting it, so
+	// the full pricing timeline is retained for audit.
 	if _, err := tx.Exec(r.Context(),
 		`UPDATE lucky_draw_prices SET status='superseded'
-		  WHERE draw_id=$1 AND status='approved'`, drawID); err != nil {
+		  WHERE draw_id=$1 AND status='approved' AND id <> $2`, drawID, priceID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "approval failed")
 		return
 	}
@@ -632,7 +655,7 @@ func (a *App) handleAdminLuckyDrawPrices(w http.ResponseWriter, r *http.Request)
 		Status      string     `json:"status"`
 		RequestedBy string     `json:"requested_by,omitempty"`
 		ApprovedBy  *string    `json:"approved_by,omitempty"`
-		EffectiveAt time.Time  `json:"effective_at"`
+		EffectiveAt *time.Time `json:"effective_at,omitempty"`
 		CreatedAt   time.Time  `json:"created_at"`
 	}
 	out := []priceRow{}

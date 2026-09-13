@@ -71,9 +71,12 @@ func NewNode(cfg NodeConfig) *Node {
 		maxHops:   maxHops,
 		stop:      make(chan struct{}),
 	}
-	// Wire the transport's inbound callback to this node.
-	if udp, ok := cfg.Transport.(*UDPTransport); ok {
-		udp.onPkt = n.HandleInbound
+	// Wire the transport's inbound callback to this node. Any transport that
+	// accepts a late-bound inbound callback (UDP, the Bluetooth/Wi-Fi Direct
+	// stream bridges, or the auto-selecting transport) is supported — not only
+	// the UDP one.
+	if setter, ok := cfg.Transport.(inboundSetter); ok {
+		setter.SetInbound(n.HandleInbound)
 	}
 	return n
 }
@@ -109,7 +112,7 @@ func (n *Node) beaconLoop() {
 			b := &Beacon{
 				DeviceID:  n.DeviceID,
 				Kind:      n.Kind,
-				Transport: "local_wifi",
+				Transport: n.transportName(),
 				Addr:      n.transport.Addr(),
 				Seq:       seq,
 			}
@@ -121,6 +124,20 @@ func (n *Node) beaconLoop() {
 			_ = n.transport.Send("255.255.255.255:0", data)
 		}
 	}
+}
+
+// transportName reports which physical link is currently carrying traffic, so
+// the discovery beacon advertises the transport peers should route over. With
+// an AutoTransport this follows the Anonymous.md §5.3 fallback order; with a
+// single link it is that link's name.
+func (n *Node) transportName() string {
+	if named, ok := n.transport.(interface{ Active() string }); ok {
+		return named.Active()
+	}
+	if named, ok := n.transport.(interface{ Transport() string }); ok {
+		return named.Transport()
+	}
+	return "local_wifi"
 }
 
 // HandleInbound processes a raw datagram from a peer.

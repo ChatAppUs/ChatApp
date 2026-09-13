@@ -15,6 +15,7 @@ import websockets
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from integration_test import WS, check, req
+from gaps6_test import register as otp_register, uid
 
 
 async def ws_send(token, conv_id, body):
@@ -29,19 +30,15 @@ def main():
     alice = f"featA{ts}"
     bob = f"featB{ts}"
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": alice, "email": f"{alice}@test.dev", "password": "Passw0rd!123",
-        "display_name": "Alice", "country_code": "US"})
-    check("feat register alice", s in (200, 201), f"{s} {r}")
-    alice_tok = r.get("access_token")
-    alice_id = r.get("user_id")
+    # Accounts must clear the Identity spec's email-OTP gate, so they are
+    # created through the real send-code → check-code flow.
+    alice_tok = otp_register(alice)
+    check("feat register alice", bool(alice_tok), "no token")
+    alice_id = uid(alice_tok)
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": bob, "email": f"{bob}@test.dev", "password": "Passw0rd!123",
-        "display_name": "Bob", "country_code": "GB"})
-    check("feat register bob", s in (200, 201), f"{s} {r}")
-    bob_tok = r.get("access_token")
-    bob_id = r.get("user_id")
+    bob_tok = otp_register(bob)
+    check("feat register bob", bool(bob_tok), "no token")
+    bob_id = uid(bob_tok)
 
     # --- groups ---
     s, r = req("POST", "/api/groups", {
@@ -237,11 +234,8 @@ def main():
 
     # --- message requests: stranger DM with no follow relation ---
     carol = f"featC{ts}"
-    s, r = req("POST", "/api/auth/register", {
-        "username": carol, "email": f"{carol}@test.dev", "password": "Passw0rd!123",
-        "display_name": "Carol", "country_code": "US"})
-    check("feat register carol", s in (200, 201), f"{s} {r}")
-    carol_tok = r.get("access_token")
+    carol_tok = otp_register(carol)
+    check("feat register carol", bool(carol_tok), "no token")
 
     s, r = req("POST", "/api/conversations", {"member_ids": [alice_id]}, token=carol_tok)
     check("direct conversation create", s in (200, 201), f"{s} {r}")

@@ -765,12 +765,18 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 			`SELECT id FROM users WHERE lower(username) = $1 AND status='active'`, uname).Scan(&mentionedID); err != nil {
 			continue
 		}
-		_, _ = tx.Exec(r.Context(),
+		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO comment_mentions (comment_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-			commentID, mentionedID)
-		_, _ = tx.Exec(r.Context(),
+			commentID, mentionedID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "comment failed")
+			return
+		}
+		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'mention',$2)`,
-			mentionedID, map[string]string{"comment_id": commentID, "post_id": postID, "by": uid})
+			mentionedID, map[string]string{"comment_id": commentID, "post_id": postID, "by": uid}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "comment failed")
+			return
+		}
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "comment failed")

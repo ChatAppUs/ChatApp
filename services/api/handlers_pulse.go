@@ -191,17 +191,26 @@ func (a *App) handlePulseCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "post failed")
 		return
 	}
-	// Register topics and notify a replied-to author.
+	// Register topics and notify a replied-to author. These run inside the same
+	// transaction, so a failure must abort instead of being discarded — a
+	// swallowed error leaves the transaction aborted and the Commit would fail
+	// with a misleading error.
 	for _, t := range topics {
-		_, _ = tx.Exec(r.Context(),
-			`INSERT INTO pulse_topics (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, t)
+		if _, err := tx.Exec(r.Context(),
+			`INSERT INTO pulse_topics (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, t); err != nil {
+			writeErr(w, http.StatusInternalServerError, "post failed")
+			return
+		}
 	}
 	if parent != nil {
-		_, _ = tx.Exec(r.Context(),
+		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO notifications (user_id, kind, payload)
 			 SELECT author_id, 'pulse_reply', jsonb_build_object('post_id',$1::text)
 			   FROM pulse_posts WHERE id=$2 AND author_id <> $3`,
-			id, *parent, uid)
+			id, *parent, uid); err != nil {
+			writeErr(w, http.StatusInternalServerError, "post failed")
+			return
+		}
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "post failed")

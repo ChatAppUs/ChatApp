@@ -25,11 +25,11 @@ The specifications describe a release program substantially broader than what ca
 | Creator analytics | Implemented | The existing creator-insights API and daily rollup are consumed by web `creator/page.tsx`, Android `MonetizeScreen.kt`, and iOS `FeatureClient.swift`/`FeatureViews.swift`, displaying reach, impressions, watch time, follower growth, top sound, and daily rows. | Run database-backed analytics flow with seeded watch/follow events. |
 | LuckyDraw (draws, tickets, audited winner selection, prize settlement) | Implemented with runtime validation pending | `infra/db/030_luckydraw.sql`, `services/api/handlers_luckydraw.go`, `services/api/main.go`, web `apps/web/src/app/luckydraw/page.tsx`, admin `apps/admin/src/components/LuckyDrawTab.tsx`, `tests/luckydraw_test.py`, and `feature-registry.json` (20 features). User plane lists draws, buys tickets from internal USD on the double-entry ledger, and lists my tickets/winners; admin plane creates draws, opens/closes sales, runs audited selection with the unique-user winner rule, settles prizes, disables draws, and audits. | Run database-backed draw lifecycle with seeded tickets and ML/admin review. |
 | Professional analytics dashboard | Implemented | `GET /api/me/analytics` is consumed by authenticated web `apps/web/src/app/analytics/page.tsx`, linked from `apps/web/src/components/Nav.tsx`, and displays posts, followers, likes, comments, views, seven-day shares, and earnings. | Run database-backed dashboard flow with seeded account activity. |
-| Offline mesh and native shared-core architecture | Implemented (backend store-and-forward + native Go mesh engine); native device transport pending | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, and `services/api/main.go` implement device registration, encrypted store-and-forward packet enqueue/dedup, poll-based delivery, one-hop relay with TTL/hop accounting, relay consent policy, and mesh status — all wired as `/api/mesh/*` routes. The native offline mesh transport engine in `services/mesh/` (`crypto.go`, `packet.go`, `transport.go`, `routing.go`, `storeforward.go`, `node.go`, `messages.go`, `main.go`, `go.mod`, `go.sum`, and `mesh_test.go`) provides authenticated encryption (NaCl secretbox), local Wi-Fi/hotspot UDP transport with presence-beacon discovery, multi-hop routing with TTL and duplicate suppression, a delay-tolerant store-and-forward queue, and 1:1/group/voice/call-signaling payloads. Real Bluetooth/Wi-Fi Direct/multipath device transport still requires native-device validation. | Validate native Bluetooth/Wi-Fi Direct/multipath behavior on real devices before marking the full mesh surface complete. |
-| Forums (communities with topics, threaded posts, moderators) | Implemented (backend + web); native clients pending | `infra/db/036_platform_gaps.sql` (`forums`, `forum_moderators`, `forum_topics`, `forum_posts`), `services/api/handlers_forums.go` (create/list/get-by-slug/search, topic create/list with pinned-first ordering, threaded reply with `parent_id`, moderator pin/lock resolved server-side, locked-topic write guard, author/moderator delete), web `apps/web/src/app/forums/page.tsx`, `tests/platform_gaps_test.py`. | Add Android/iOS/desktop/extension screens; `feature-registry.json` records them as not implemented and the feature as PARTIAL. |
-| ChatApp Pulse (short posts, threads, quotes, reposts, topics, trends, lists) | Implemented (backend + web); native clients pending | `036_platform_gaps.sql` (`pulse_posts` with `parent_id`/`quote_of`/`repost_of`/`TEXT[] topics`, `pulse_topics`, `pulse_trends`, `pulse_lists`, `pulse_list_members`), `services/api/handlers_pulse.go` (recursive-CTE threads with chronological/relevant ordering, server-side hashtag extraction, global/local feeds, trends computed from real 24-hour post volume, curated lists, per-user timeline, author delete), `startPulseTrendWorker`, web `apps/web/src/app/pulse/page.tsx` and `pulse/thread/[id]/page.tsx`. | Native clients pending; feature recorded PARTIAL. |
-| Live shopping (product pins, coupons, real checkout, analytics) | Implemented (backend + web); native clients pending | `036_platform_gaps.sql` (`live_products`, `live_product_pins`, `live_coupons`, `live_orders`), `services/api/handlers_shopping.go` (seller-only listing/pin/unpin, one active pin per room, coupon minting restricted to room sellers with atomic use-count claim and max-uses enforcement, checkout that locks the product row `FOR UPDATE`, settles buyer/seller/treasury on the double-entry ledger in the same transaction, charges a 5% platform fee, and computes per-product and per-coupon analytics), web `apps/web/src/app/live-shop/page.tsx`. | Native clients pending; feature recorded PARTIAL. |
-| AI dubbing, AI clip generation, in-app AI assistant | Implemented (backend + web + ML functions); provider models required for output | `036_platform_gaps.sql` (`media_dubs`, `ai_clip_jobs`, `ai_clips`, `assistant_conversations`, `assistant_messages`, `assistant_actions`), `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/dub`, `/clips`, `/assistant`), web `apps/web/src/app/ai-studio/page.tsx` and `apps/web/src/app/assistant/page.tsx`. Honest-availability contract: with no model configured the endpoints return `available:false` plus the reason, the API persists that state, and no audio, transcript, clip or reply is fabricated. Clip candidates are scored deterministically over real ASR segments; the assistant falls back to answers computed from the caller's real data. Assistant actions and AI clips require explicit human approval (conditional `UPDATE ... WHERE status='proposed'`); proposals are never auto-applied. | Configure `WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL` to produce real output; native clients pending; feature recorded PARTIAL. |
+| Offline mesh and native shared-core architecture | Implemented (backend store-and-forward + Go engine + native Bluetooth / Wi-Fi Direct transports) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, and `services/api/main.go` implement device registration, encrypted store-and-forward packet enqueue/dedup, poll-based delivery, one-hop relay with TTL/hop accounting, relay consent policy, and mesh status — all wired as `/api/mesh/*` routes. Device registration is open to anonymous clients: the account link is stored only when the token subject is a real account UUID, so guest sessions (`guest_<id>` subjects) register as pure relay/member nodes instead of failing the `uuid` cast. The Go engine in `services/mesh/` provides authenticated encryption (NaCl secretbox), local Wi-Fi/hotspot UDP transport with presence-beacon discovery, multi-hop routing with TTL and duplicate suppression, a delay-tolerant store-and-forward queue, and 1:1/group/voice/call-signaling payloads; `native_transport.go` adds the **Bluetooth (RFCOMM) and Wi-Fi Direct stream bridge transports** plus `AutoTransport`, which implements the Anonymous.md §5.3 fallback order (local Wi-Fi → Wi-Fi Direct → Bluetooth → store-and-forward) and keeps packets queued when no radio is reachable. The native clients implement the radios themselves: Android `apps/android/app/src/main/java/com/chatapp/mesh/MeshTransport.kt` (BluetoothServerSocket/BluetoothSocket RFCOMM + WifiP2pManager group socket, with `MeshEngine.kt` mirroring the Go engine's routing and queue) and iOS `apps/ios/ChatApp/Sources/Services/MeshTransport.swift` (CoreBluetooth GATT peripheral+central) with `MeshEngine.swift`. | Radio paths require on-device validation: CI has no Bluetooth/Wi-Fi Direct hardware, so the bridge, selection order and Node routing are covered by `services/mesh/native_transport_test.go` on real loopback sockets, while the radio handshakes themselves need real devices. |
+| Forums (communities with topics, threaded posts, moderators) | Implemented | `infra/db/036_platform_gaps.sql` (`forums`, `forum_moderators`, `forum_topics`, `forum_posts`), `services/api/handlers_forums.go` (create/list/get-by-slug/search, topic create/list with pinned-first ordering, threaded reply with `parent_id`, moderator pin/lock resolved server-side, locked-topic write guard, author/moderator delete), web `apps/web/src/app/forums/page.tsx`, Android `ui/ForumsScreen.kt`, iOS `Views/PlatformViews.swift` (`ForumsView`), desktop and extension (both render the shared web app, so the screen is identical there), `tests/platform_gaps_test.py`. All six clients are recorded `true` in `feature-registry.json` with status `IMPLEMENTED`. | Kotlin/Swift compile validation requires the Android Gradle and Xcode toolchains, which are unavailable in this environment. |
+| ChatApp Pulse (short posts, threads, quotes, reposts, topics, trends, lists) | Implemented | `036_platform_gaps.sql` (`pulse_posts` with `parent_id`/`quote_of`/`repost_of`/`TEXT[] topics`, `pulse_topics`, `pulse_trends`, `pulse_lists`, `pulse_list_members`), `services/api/handlers_pulse.go` (recursive-CTE threads with chronological/relevant ordering, server-side hashtag extraction, global/local feeds, trends computed from real 24-hour post volume, curated lists, per-user timeline, author delete), `startPulseTrendWorker`, web `apps/web/src/app/pulse/page.tsx` and `pulse/thread/[id]/page.tsx`, Android `ui/PulseScreen.kt`, iOS `Views/PlatformViews.swift` (`PulseView`), desktop/extension via the shared web app. `feature-registry.json` records all clients `true`, status `IMPLEMENTED`. | Kotlin/Swift compile validation requires native toolchains unavailable here. |
+| Live shopping (product pins, coupons, real checkout, analytics) | Implemented | `036_platform_gaps.sql` (`live_products`, `live_product_pins`, `live_coupons`, `live_orders`), `services/api/handlers_shopping.go` (seller-only listing/pin/unpin, one active pin per room, coupon minting restricted to room sellers with atomic use-count claim and max-uses enforcement, checkout that locks the product row `FOR UPDATE`, settles buyer/seller/treasury on the double-entry ledger in the same transaction, charges a 5% platform fee, and computes per-product and per-coupon analytics), web `apps/web/src/app/live-shop/page.tsx`, Android `ui/LiveShopScreen.kt`, iOS `Views/PlatformViews.swift` (`LiveShopView`), desktop/extension via the shared web app. Checkout remains server-authoritative on every client. `feature-registry.json` records all clients `true`, status `IMPLEMENTED`. | Kotlin/Swift compile validation requires native toolchains unavailable here. |
+| AI dubbing, AI clip generation, in-app AI assistant | Implemented (all clients); provider models required for output | `036_platform_gaps.sql` (`media_dubs`, `ai_clip_jobs`, `ai_clips`, `assistant_conversations`, `assistant_messages`, `assistant_actions`), `services/api/handlers_ai.go`, `services/ml/creator_assistant.py` (`/dub`, `/clips`, `/assistant`), web `apps/web/src/app/ai-studio/page.tsx` and `apps/web/src/app/assistant/page.tsx`, Android `ui/AiStudioScreen.kt` and `ui/AssistantScreen.kt`, iOS `Views/PlatformViews.swift` (`AiStudioView`, `AssistantView`), desktop/extension via the shared web app. Honest-availability contract: with no model configured the endpoints return `available:false` plus the reason, the API persists that state, and no audio, transcript, clip or reply is fabricated — every client displays that state instead of inventing an artifact. Clip candidates are scored deterministically over real ASR segments; the assistant falls back to answers computed from the caller's real data. Assistant actions and AI clips require explicit human approval (conditional `UPDATE ... WHERE status='proposed'`); proposals are never auto-applied, on any client. `feature-registry.json` records all clients `true`, status `IMPLEMENTED`. | Configure `WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL` to produce real output; Kotlin/Swift compile validation requires native toolchains unavailable here. |
 | Operations, observability, load, disaster recovery, and production deployment | Not proven complete | Docker and service configuration exist, but production behavior depends on deployment-specific secrets, databases, providers, and toolchains. | Execute deployment, load, security, observability, backup, and restore validation in a configured environment. |
 
 ## Validation performed in this checkout
@@ -81,9 +81,71 @@ Two additional defects were found and fixed during this pass:
    suite that reuses it silently failed account creation. The helper now performs the real
    `send-code` → `check-code` flow using the development-returned code (no mock).
 
-**Still not implemented (unchanged by this pass):** native Android/iOS/desktop/extension
+**Still not implemented (unchanged by that pass):** native Android/iOS/desktop/extension
 screens for the six new features; Bluetooth/Wi-Fi Direct native mesh transport; production
 deployment validation; and every environment-dependent gate already listed above.
+
+## Audit addendum — 2026-09-13 (fourth pass): native clients and radio transports
+
+The fourth pass closed the two largest gaps the third pass had left open. The repository was
+re-cloned at `main` and every claim below was verified against the actual source tree, not
+against the previous report.
+
+**1. Native client screens for the six platform features (was: not implemented).**
+Forums, Pulse, Live Shopping, AI Studio, AI assistant and the offline-mesh status surface now
+exist on every client, bound to the same Go API endpoints as the web pages:
+
+| Client | Where the screens live |
+|---|---|
+| Android | `apps/android/app/src/main/java/com/chatapp/ui/` — `ForumsScreen.kt`, `PulseScreen.kt`, `LiveShopScreen.kt`, `AiStudioScreen.kt`, `AssistantScreen.kt`, `MeshScreen.kt`, routed in `MainActivity.kt` and listed in `ui/MenuBar.kt` |
+| iOS | `apps/ios/ChatApp/Sources/Views/PlatformViews.swift` — `ForumsView`, `PulseView`, `LiveShopView`, `AiStudioView`, `AssistantView`, `MeshStatusView`, linked from the `MoreView` section and a new Pulse tab in `ChatAppApp.swift` |
+| Desktop | Renders the shared web application, so all six screens are the same implementation |
+| Extension | Same shared web application; `/forums`, `/pulse`, `/live-shop`, `/ai-studio` and `/assistant` added to the popup navigation |
+
+`feature-registry.json` now records `android/ios/desktop/extension: true` and status
+`IMPLEMENTED` for all six features (26 features, 7 required clients — validation passes).
+
+**2. Native Bluetooth / Wi-Fi Direct mesh transport (was: not implemented).**
+- Go engine: `services/mesh/native_transport.go` adds `TCPTransport` (length-prefixed stream
+  framing shared by the Bluetooth RFCOMM and Wi-Fi Direct group sockets) and `AutoTransport`,
+  which implements the Anonymous.md §5.3 fallback chain — local Wi-Fi → Wi-Fi Direct →
+  Bluetooth → store-and-forward. `services/mesh/node.go` now wires its inbound callback through
+  an `inboundSetter` interface so any transport (not only UDP) can feed the node, and the
+  presence beacon advertises the transport actually carrying traffic.
+- Android radios: `apps/android/.../mesh/MeshTransport.kt` — `BluetoothLink` uses
+  `BluetoothServerSocket`/`BluetoothSocket` RFCOMM with a real accept loop and per-peer reader
+  threads; `WifiDirectLink` uses `WifiP2pManager` discovery/group formation over a UDP socket;
+  `LocalWifiLink` mirrors the Go UDP transport. `MeshEngine.kt` mirrors the Go engine's routing,
+  dedup and store-and-forward queue with AES-256-GCM payload sealing.
+- iOS radios: `apps/ios/ChatApp/Sources/Services/MeshTransport.swift` — `BluetoothMeshLink` is a
+  real CoreBluetooth `CBPeripheralManager` + `CBCentralManager` GATT service/characteristic
+  pair; `LocalWifiMeshLink` is a `Network.framework` UDP listener. `MeshEngine.swift` mirrors
+  the same routing/queue logic with AES-GCM via CryptoKit.
+- Android manifest declares `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN` (with
+  `neverForLocation`), legacy Bluetooth and location permissions for pre-Android-12 discovery.
+
+**3. Defect found and fixed in this pass.**
+Anonymous (guest) mesh registration returned **HTTP 500**. A guest session's token subject is
+the literal `guest_<id>`, and `handleMeshRegister` cast it to `uuid` for `mesh_devices.user_id`
+— a non-UUID subject therefore aborted the insert. Registration is now open to anonymous
+clients: the account link is stored only when the subject passes `isUUIDShape`, so guests
+register as relay/member nodes with `user_id` NULL instead of failing.
+
+**Validation executed in this pass (fresh PostgreSQL 15 + live API on an alternate port because
+the sandbox reserves 8080):**
+- All **36 migrations applied cleanly to a fresh database** (`001_schema.sql` → `036_platform_gaps.sql`, 210 tables).
+- `go build` + `go vet` + `go test ./...` green for `services/api`, `services/mesh` and `services/sfu`; `cargo test --locked` green for `services/authn` (8/8) and `services/security` (11/11).
+- `python3 tests/parity_check.py` — **passed (149 files, 536 registered routes)**, with the new Android/iOS/extension references accounted for.
+- `python3 scripts/validate-feature-registry.py` — **passed (26 features, 7 required clients)**.
+- `node --check` on the extension scripts — passed.
+
+**Still not implemented / not provable here (stated plainly):** the radio handshakes themselves
+cannot run in CI (no Bluetooth or Wi-Fi Direct hardware), so they need on-device validation —
+the bridge, selection order and node routing are covered by `native_transport_test.go` on real
+loopback sockets instead; Kotlin and Swift compilation require the Android Gradle and Xcode
+toolchains, which are absent; provider-backed AI output requires
+`WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL`; and production deployment,
+load, DR and provider integrations remain unvalidated outside this environment.
 
 ## Files checked
 

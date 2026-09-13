@@ -570,9 +570,14 @@ func (a *App) handleBlock(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to block")
 		return
 	}
-	// Blocking severs the follow relationship in both directions.
-	_, _ = tx.Exec(r.Context(),
-		`DELETE FROM follows WHERE (follower_id=$1 AND followee_id=$2) OR (follower_id=$2 AND followee_id=$1)`, uid, target)
+	// Blocking severs the follow relationship in both directions. Propagate the
+	// error: discarding it would leave the transaction aborted and turn the
+	// Commit into a misleading failure.
+	if _, err := tx.Exec(r.Context(),
+		`DELETE FROM follows WHERE (follower_id=$1 AND followee_id=$2) OR (follower_id=$2 AND followee_id=$1)`, uid, target); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to block")
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to block")
 		return
