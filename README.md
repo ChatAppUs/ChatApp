@@ -429,3 +429,7 @@ One real source gap was found and fixed. The web production build failed because
 Static validation after the fixes: `tests/parity_check.py` passes with 149 client files and 536 registered API routes; `scripts/validate-feature-registry.py` passes with 26 features across 7 required layers; Python ML compilation, extension syntax checks, and `git diff --check` pass.
 
 The repository therefore has source implementations for the registered surfaces, but it is not truthful to call the whole specification production-certified or claim runtime parity is proven everywhere. Rust builds, Android/iOS compilation, real Bluetooth/Wi-Fi Direct handshakes, provider-backed AI, Docker deployment, load, backup/restore, and disaster-recovery validation still require their environments. The feature registry and status ledger retain those limitations explicitly.
+
+## Implementation audit addendum — 2026-09-13, seventh pass
+
+The native data-plane source was compiled directly from this checkout with `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread`. All five C++ services — `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode` — compiled successfully. GitHub Actions run `34757684511` also passed both static/frontend and backend jobs, including Go and Rust tests. Native Android/iOS compilation, radio handshakes, provider-backed AI output, and production deployment/load/disaster-recovery validation remain environment-dependent and are not marked complete.

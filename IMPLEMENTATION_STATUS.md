@@ -40,7 +40,7 @@ The specifications describe a release program substantially broader than what ca
 | `python3 scripts/validate-feature-registry.py` | **Passed (re-verified 2026-09-13): 26 registered P0/P1/P2 features** and 7 required client/service layers. |
 | **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 36 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
 | `python3 tests/gaps10_test.py` (regression) | **Executed 2026-09-13: 8/8 passed** after the `register()` email-OTP fix. |
-| Go service tests and vet | **Passed 2026-09-13 with Go 1.25.1** for `services/api`, `services/mesh`, and `services/sfu`; CI now selects Go 1.25 to match the modules. |
+| Go service tests and vet | **Passed 2026-09-13 with Go 1.25.1** for `services/api`, `services/mesh`, and `services/sfu`; the hosted CI run also passed with its Go 1.23 setup and automatic module toolchain resolution. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Reproducible from the committed `apps/web/package-lock.json`; full install/build requires the Node toolchain. |
 | `npm run build` in `apps/web` | **Passed 2026-09-13 after adding Suspense boundaries to URL-search-param pages; 53 routes generated successfully.** |
 | `npm run build` in `apps/admin` | CI-enforced: dashboard and all admin routes must compile successfully. |
@@ -160,3 +160,7 @@ One real source gap was found and fixed. The web production build failed because
 Static validation after the fixes: `tests/parity_check.py` passes with 149 client files and 536 registered API routes; `scripts/validate-feature-registry.py` passes with 26 features across 7 required layers; Python ML compilation, extension syntax checks, and `git diff --check` pass.
 
 The repository therefore has source implementations for the registered surfaces, but it is not truthful to call the whole specification production-certified or claim runtime parity is proven everywhere. Rust builds, Android/iOS compilation, real Bluetooth/Wi-Fi Direct handshakes, provider-backed AI, Docker deployment, load, backup/restore, and disaster-recovery validation still require their environments. The feature registry and status ledger retain those limitations explicitly.
+
+## Implementation audit addendum — 2026-09-13, seventh pass
+
+The native data-plane source was compiled directly from this checkout with `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread`. All five C++ services — `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode` — compiled successfully. GitHub Actions run `34757684511` also passed both static/frontend and backend jobs, including Go and Rust tests. Native Android/iOS compilation, radio handshakes, provider-backed AI output, and production deployment/load/disaster-recovery validation remain environment-dependent and are not marked complete.
