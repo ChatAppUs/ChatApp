@@ -66,7 +66,7 @@ func verifyPassword(password, encoded string) bool {
 
 type Claims struct {
 	Sub   string `json:"sub"`
-	Type  string `json:"typ"`             // "access" | "refresh"
+	Type  string `json:"typ"`             // "access" | "refresh" | "2fa_recovery"
 	Scope string `json:"scope,omitempty"` // "user" (default) | "admin"
 	Exp   int64  `json:"exp"`
 	Iat   int64  `json:"iat"`

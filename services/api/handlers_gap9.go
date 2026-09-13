@@ -192,18 +192,22 @@ func (a *App) handleRedeemRecoveryCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid or already-used recovery code")
 		return
 	}
-	nonce, err := randomRecoveryCode()
+	now := time.Now()
+	claim, err := signJWT(a.cfg.JWTSecret, Claims{
+		Sub:  uid,
+		Type: "2fa_recovery",
+		Exp:  now.Add(10 * time.Minute).Unix(),
+		Iat:  now.Unix(),
+	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to mint claim")
 		return
-
 	}
-	a.cache.set(r.Context(), "2fa:recover:"+nonce, []byte(uid), 10*time.Minute)
-	writeJSON(w, http.StatusOK, map[string]any{"claim": nonce, "expires_in": 600})
+	writeJSON(w, http.StatusOK, map[string]any{"claim": claim, "expires_in": 600})
 }
 
 // POST /api/auth/2fa/recovery-codes/disable — consume the claim token: disables 2FA
-// and revokes the seed so ops can re-register fresh codes.leg-2 of the redeemerflow.
+// and revokes the seed so ops can re-register fresh codes. The signed claim is single-use because the update is bound to the pre-claim account timestamp.
 func (a *App) handleDisable2FAWithRecovery(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Claim string `json:"claim"`
@@ -213,26 +217,27 @@ func (a *App) handleDisable2FAWithRecovery(w http.ResponseWriter, r *http.Reques
 		return
 
 	}
-	uidBytes, ok := a.cache.get(r.Context(), "2fa:recover:"+req.Claim)
-	if !ok {
+	claims, err := parseJWT(a.cfg.JWTSecret, req.Claim)
+	if err != nil || claims.Type != "2fa_recovery" || claims.Sub != userIDFrom(r) {
 		writeErr(w, http.StatusUnauthorized, "invalid or expired claim")
 		return
-
 	}
-	uid := string(uidBytes)
-	if uid != userIDFrom(r) {
-		writeErr(w, http.StatusUnauthorized, "claim does not belong to this account")
-		return
-	}
+	uid := claims.Sub
 	tx, err := a.db.Begin(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if _, err := tx.Exec(r.Context(),
-		`UPDATE users SET totp_enabled=false, totp_secret=NULL, updated_at=now() WHERE id=$1`, uid); err != nil {
+	result, err := tx.Exec(r.Context(),
+		`UPDATE users SET totp_enabled=false, totp_secret=NULL, updated_at=now()
+		 WHERE id=$1 AND totp_enabled=true AND updated_at <= to_timestamp($2)`, uid, claims.Iat)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
+		return
+	}
+	if result.RowsAffected() != 1 {
+		writeErr(w, http.StatusUnauthorized, "claim already used")
 		return
 	}
 	if err := freezeWithdrawalsTx(r.Context(), tx, uid); err != nil {
@@ -247,7 +252,6 @@ func (a *App) handleDisable2FAWithRecovery(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
 	}
-	a.cache.del(r.Context(), "2fa:recover:"+req.Claim)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "2fa_disabled"})
 }
 
