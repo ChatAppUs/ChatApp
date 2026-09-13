@@ -3693,7 +3693,7 @@ The repository therefore has source implementations for the registered surfaces,
 
 ## Implementation audit addendum — 2026-09-13, seventh pass
 
-The native data-plane source was compiled directly from this checkout with `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread`. All five C++ services — `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode` — compiled successfully. GitHub Actions run `34758393397` also passed both static/frontend and backend jobs, including Go and Rust tests. Native Android/iOS compilation, radio handshakes, provider-backed AI output, and production deployment/load/disaster-recovery validation remain environment-dependent and are not marked complete.
+The native data-plane source was compiled directly from this checkout with `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread`. All five C++ services — `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode` — compiled successfully. GitHub Actions run `34758496367` also passed both static/frontend and backend jobs, including Go and Rust tests. Native Android/iOS compilation, radio handshakes, provider-backed AI output, and production deployment/load/disaster-recovery validation remain environment-dependent and are not marked complete.
 
 
 ## Implementation audit addendum — 2026-09-13, eighth pass
@@ -3704,6 +3704,21 @@ Fresh validation passed: web `npm ci && npm run build` for all 53 routes; admin 
 
 ## Implementation audit addendum — 2026-09-13, final verification
 
-After commit `372616a`, a fresh `origin/main` checkout was revalidated directly against the five root specifications. `npm ci && npm run build` passes for all 53 web routes and all 5 admin routes; Go tests and vet pass for `services/api`, `services/mesh`, and `services/sfu`; parity passes with 149 client files and 536 registered routes; the feature registry passes with 26 features across 7 required clients; Python ML, extension JavaScript, and backup-script syntax checks pass; and all five C++ services pass strict C++17 compilation. GitHub Actions run `34758393397` completed successfully for both frontend/static and backend/Rust jobs.
+After commit `34182aa`, a fresh `origin/main` checkout was revalidated directly against the five root specifications. `npm ci && npm run build` passes for all 53 web routes and all 5 admin routes; Go tests and vet pass for `services/api`, `services/mesh`, and `services/sfu`; parity passes with 149 client files and 536 registered routes; the feature registry passes with 26 features across 7 required clients; Python ML, extension JavaScript, and backup-script syntax checks pass; and all five C++ services pass strict C++17 compilation. GitHub Actions run `34758496367` completed successfully for both frontend/static and backend/Rust jobs.
 
 The remaining gaps are validation gates rather than unimplemented source: Android/iOS release compilation, real Bluetooth/Wi-Fi Direct handshakes, configured SMTP/SMS/ML/provider integrations, Docker deployment, load testing, observability, backup/restore, and disaster-recovery execution. The repository status must continue to mark those as pending until their environments are available.
+
+
+## Implementation audit addendum — 2026-09-13, independent fresh-main pass
+
+This pass reset the checkout directly to `origin/main` at commit `34182aa` and compared the five root specifications with the source tree. It did not use `AGENTS.md`, prior commits as instructions, or earlier audit prose. The source-only unfinished-marker scan found no new implementation stubs; the remaining matches are intentional CSS skeleton styling, comments, and ordinary input placeholders.
+
+Fresh validation completed:
+
+- `npm ci && npm run build` passes for all 53 web routes and all 5 admin routes.
+- Go tests and `go vet` pass for `services/api`, `services/mesh`, and `services/sfu` with Go 1.25.1.
+- Strict C++17 compilation passes for `counters`, `media`, `realtime`, `sfu-forwarder`, and `transcode`.
+- Parity passes with 149 client files and 536 registered routes; the feature registry passes with 26 features across 7 required clients. Python ML, extension JavaScript, backup-script syntax, and migration numbering checks pass.
+- GitHub Actions run `34758496367` completed successfully for both static/frontend and backend/Rust jobs.
+
+The remaining gaps are validation boundaries, not silently marked features: Android/iOS/desktop device builds and Bluetooth/Wi-Fi Direct radio handshakes, configured PostgreSQL/SMTP/SMS/TURN/FFmpeg/provider integrations, and production load, observability, backup/restore, and disaster recovery still require their real environments. The workflow still declares Go 1.23 while the checked-in modules require Go 1.25; the hosted run is green because Go resolves the required toolchain automatically, but the workflow declaration should be raised when a GitHub token with workflow-file permission is available.
