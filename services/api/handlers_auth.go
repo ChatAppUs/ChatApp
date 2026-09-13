@@ -363,7 +363,12 @@ func (a *App) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid or expired reset token")
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `UPDATE users SET password_hash=$1, updated_at=now() WHERE id=$2`, hash, userID); err != nil {
+	// A valid reset proves control of the recovery channel; clear stale
+	// credential-stuffing lockout state together with the new password.
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE users
+		 SET password_hash=$1, failed_login_attempts=0, locked_until=NULL, updated_at=now()
+		 WHERE id=$2`, hash, userID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "reset failed")
 		return
 	}

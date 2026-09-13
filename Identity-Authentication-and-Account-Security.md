@@ -26,7 +26,7 @@ The repository must not claim the full specification is complete until the rows 
 Static validation completed in this checkout: parity passed with **132 files and 506 registered routes**; feature-registry validation passed; Python ML compilation passed; extension JavaScript syntax checks passed; backup-script syntax passed; and `git diff --check` passed. Full runtime certification was not possible because Go, Cargo, Docker, PostgreSQL, Android, and iOS toolchains/services are unavailable here, and integration tests cannot connect to a running API/database/provider fixture. These checks therefore must not be represented as complete production validation.
 
 
-## No stubs · no mocks · no fake data — audit 2026-09-12
+## No stubs · no mocks · no fake data — audit 2026-09-13
 
 The repository is audited against the requirement that **no hardcoded values, no mock data, no fake implementations, and no stubs are permitted** — everything is fully dynamic, real logic, and operationally complete.
 
@@ -281,4 +281,4 @@ A route, migration, client screen, or local unit test demonstrates an implementa
 
 ## Implementation audit addendum — 2026-09-13, second pass
 
-The second source audit found and fixed two authentication race conditions. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement, and password-reset token consumption now occurs in the same transaction as the password update and session revocation. A token can therefore be accepted only once under concurrent requests. The remaining runtime and native-platform limitations stated above still apply.
+The second source audit found and fixed authentication lifecycle gaps. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement; password-reset token consumption now occurs in the same transaction as the password update and session revocation; and a successful password reset clears stale login-lockout counters. Tokens can therefore be accepted only once under concurrent requests, and a verified recovery flow restores account access. The remaining runtime and native-platform limitations stated above still apply.

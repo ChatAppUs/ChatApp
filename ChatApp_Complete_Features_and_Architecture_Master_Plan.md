@@ -6,7 +6,7 @@
 
 ---
 
-## Implementation status — audited 2026-09-12
+## Implementation status — audited 2026-09-13
 
 The repository implementation is tracked by `feature-registry.json`, validated by `scripts/validate-feature-registry.py`, and enforced in `.github/workflows/validate.yml`. The registry covers the documented P0/P1/P2 platform surfaces across Web, Android, iOS, Desktop, Extension, Backend, and Database. Repository parity, web/admin production builds, ML compilation, extension syntax, migration ordering, API readiness wiring, and backup-script syntax are validated in this checkout. Provider-backed, real-device, load, disaster-recovery, and production deployment tests require their configured environments and are not claimed as executed here.
 
@@ -22,7 +22,7 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 | Offline multi-hop mesh (store-and-forward) | `infra/db/031_mesh.sql`, `services/api/handlers_mesh.go`, `services/api/main.go` (`/api/mesh/*`) | Implemented (backend): device registration, encrypted store-and-forward enqueue/dedup, poll delivery, one-hop relay, relay policy, status; native device transport pending |
 
 
-## No stubs · no mocks · no fake data — audit 2026-09-12
+## No stubs · no mocks · no fake data — audit 2026-09-13
 
 The repository is audited against the requirement that **no hardcoded values, no mock data, no fake implementations, and no stubs are permitted** — everything is fully dynamic, real logic, and operationally complete.
 
@@ -2616,4 +2616,4 @@ A route, migration, client screen, or local unit test demonstrates an implementa
 
 ## Implementation audit addendum — 2026-09-13, second pass
 
-The second source audit found and fixed two authentication race conditions. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement, and password-reset token consumption now occurs in the same transaction as the password update and session revocation. A token can therefore be accepted only once under concurrent requests. The remaining runtime and native-platform limitations stated above still apply.
+The second source audit found and fixed authentication lifecycle gaps. Refresh-token rotation now validates and revokes a token in one conditional `UPDATE ... RETURNING` statement; password-reset token consumption now occurs in the same transaction as the password update and session revocation; and a successful password reset clears stale login-lockout counters. Tokens can therefore be accepted only once under concurrent requests, and a verified recovery flow restores account access. The remaining runtime and native-platform limitations stated above still apply.
