@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api, getAccessToken } from "@/lib/api";
 import { SfuCall, SfuSession } from "@/lib/webrtc";
 
 // Live broadcasting on the ChatApp SFU: publishers capture and publish;
 // viewers subscribe receive-only.
-export default function LiveRoomPage() {
+function LiveRoomContent() {
   const router = useRouter();
   const params = useParams<{ roomId: string }>();
   const searchParams = useSearchParams();
@@ -101,5 +101,13 @@ export default function LiveRoomPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function LiveRoomPage() {
+  return (
+    <Suspense fallback={null}>
+      <LiveRoomContent />
+    </Suspense>
   );
 }

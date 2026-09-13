@@ -89,7 +89,7 @@ The only items not executable in this checkout are those requiring external runt
 | TURN | `services/sfu-forwarder` | **C++** | Self-contained TURN relay (:3479/:8099) for NAT traversal |
 | SFU | `services/sfu` | **Go** (Pion | Group calls, meetings, live broadcasting + embedded STUN/TURN (:8095) |
 | ML | `services/ml` | **Python/FastAPI** | Reels ranking, KYC auto-verify (score + checks), media moderation, embeddings, captions |
-| DB | Postgres 17 | SQL | Primary store (25 migrations, double-entry ledger, 177 tables) |
+| DB | Postgres 16 | SQL | Primary store (36 migrations, double-entry ledger, 210 tables) |
 | Cache | Redis 7 | — | FYP feed cache (15 s TTL), price cache, rate limiting, sessions |
 
 No SQLite anywhere. All value moves through a **double-entry ledger** with idempotent
@@ -302,7 +302,7 @@ transactions — balances = `SUM(ledger_entries.amount)` per wallet account.
 ## Development & Test
 
 Requirements: Go 1.25, Rust 1.85, C++17 compiler, Python 3.11+, Node 20+,
-ffmpeg, Postgres 17, Redis 7.  `docker compose up --build` brings up the whole
+ffmpeg, Postgres 16, Redis 7.  `docker compose up --build` brings up the whole
 stack (api:8080, web:3000, admin:3100, sfu:8095, media:8100, realtime:8300,
 security:8090, authn:8400, counters:8600, ml:8200, TURN:3479).
 
@@ -321,7 +321,7 @@ python -m uvicorn main:app --app-dir services/ml --port 8200 &
 
 Test suites (`tests/`): finance(staking, cards, p2p, convert, withdrawals), gaps→gaps10
 (every gap pack), features, integration (153 E2E checks), authn (Rust delegation),
-counters (C++ engine + flush), parity_check (443 routes across all clients),
+counters (C++ engine + flush), parity_check (536 registered routes across 149 client files),
 sfu_turn (TURN relay). Run spaced ≥1 min apart (register rate limit: 10/min).
 
 ```bash
@@ -337,8 +337,7 @@ Verified full sweep: integration **153/153**, features **72/72**, finance **44/4
 gaps **92**, gaps2 **70**, gaps3 **82**, gaps4 **96**, gaps5 **39**, gaps6 **91**,
 gaps7 **85**, gaps8 **32**, gaps9 **15**, gaps10 **8**, **platform-gaps (forums, Pulse, live
 shopping, AI dubbing, AI clips, AI assistant)**, staking **56**, authn **14**,
-counters **12**, sfu-turn **19**, parity **OK**; `go test ./...` OK; web `next build` OK;
-admin `tsc` OK; all C++ + Rust services build OK.
+counters **12**, sfu-turn **19**, parity **OK**; Go service tests/vet and web/admin production builds pass in the validated toolchains; Rust and C++ service builds remain CI/environment-dependent.
 
 ## Implementation audit addendum — 2026-09-13, third pass (platform gap features)
 
@@ -420,3 +419,13 @@ The second source audit found and fixed authentication lifecycle gaps. Refresh-t
 The fourth audit additionally implemented the Identity requirement for conditional 2FA during password recovery. The reset API checks the account's TOTP secret before consuming the reset token, returns `totp_required` when appropriate, preserves the token on an invalid code, and the web reset page presents the authenticator-code prompt.
 
 The fifth audit completed the authenticator-loss branch: a valid one-time recovery code is accepted as the reset second factor when TOTP is unavailable, consumed atomically, and supported by the web reset form.
+
+## Implementation audit addendum — 2026-09-13, sixth pass
+
+This pass re-cloned and inspected the executable repository on `origin/main`; it did not treat `AGENTS.md`, prior assistant reports, or previous commits as implementation evidence.
+
+One real source gap was found and fixed. The web production build failed because `/live-shop` called `useSearchParams()` without a Suspense boundary; the same safe boundary was applied to the URL-driven call and live-room pages. `npm run build` now passes for all 53 web routes, and the separate admin build passes for all 5 routes. The audit also found that CI still selects Go 1.23 while the checked-in modules and `golang.org/x/crypto` v0.55.0 require Go 1.25. Local Go 1.25.1 validation passes `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; the CI workflow version remains an explicitly documented follow-up because this OAuth session cannot publish workflow-file changes.
+
+Static validation after the fixes: `tests/parity_check.py` passes with 149 client files and 536 registered API routes; `scripts/validate-feature-registry.py` passes with 26 features across 7 required layers; Python ML compilation, extension syntax checks, and `git diff --check` pass.
+
+The repository therefore has source implementations for the registered surfaces, but it is not truthful to call the whole specification production-certified or claim runtime parity is proven everywhere. Rust builds, Android/iOS compilation, real Bluetooth/Wi-Fi Direct handshakes, provider-backed AI, Docker deployment, load, backup/restore, and disaster-recovery validation still require their environments. The feature registry and status ledger retain those limitations explicitly.

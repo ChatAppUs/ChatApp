@@ -2656,3 +2656,13 @@ The second source audit found and fixed authentication lifecycle gaps. Refresh-t
 The fourth audit additionally implemented the Identity requirement for conditional 2FA during password recovery. The reset API checks the account's TOTP secret before consuming the reset token, returns `totp_required` when appropriate, preserves the token on an invalid code, and the web reset page presents the authenticator-code prompt.
 
 The fifth audit completed the authenticator-loss branch: a valid one-time recovery code is accepted as the reset second factor when TOTP is unavailable, consumed atomically, and supported by the web reset form.
+
+## Implementation audit addendum — 2026-09-13, sixth pass
+
+This pass re-cloned and inspected the executable repository on `origin/main`; it did not treat `AGENTS.md`, prior assistant reports, or previous commits as implementation evidence.
+
+One real source gap was found and fixed. The web production build failed because `/live-shop` called `useSearchParams()` without a Suspense boundary; the same safe boundary was applied to the URL-driven call and live-room pages. `npm run build` now passes for all 53 web routes, and the separate admin build passes for all 5 routes. The audit also found that CI still selects Go 1.23 while the checked-in modules and `golang.org/x/crypto` v0.55.0 require Go 1.25. Local Go 1.25.1 validation passes `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; the CI workflow version remains an explicitly documented follow-up because this OAuth session cannot publish workflow-file changes.
+
+Static validation after the fixes: `tests/parity_check.py` passes with 149 client files and 536 registered API routes; `scripts/validate-feature-registry.py` passes with 26 features across 7 required layers; Python ML compilation, extension syntax checks, and `git diff --check` pass.
+
+The repository therefore has source implementations for the registered surfaces, but it is not truthful to call the whole specification production-certified or claim runtime parity is proven everywhere. Rust builds, Android/iOS compilation, real Bluetooth/Wi-Fi Direct handshakes, provider-backed AI, Docker deployment, load, backup/restore, and disaster-recovery validation still require their environments. The feature registry and status ledger retain those limitations explicitly.

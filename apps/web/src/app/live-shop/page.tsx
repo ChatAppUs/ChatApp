@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, getAccessToken, getUserId } from "@/lib/api";
 
@@ -19,7 +19,7 @@ type Product = {
   seller_id: string;
 };
 
-export default function LiveShopPage() {
+function LiveShopContent() {
   const params = useSearchParams();
   const [roomID, setRoomID] = useState(params.get("room") ?? "");
   const [authed, setAuthed] = useState(false);
@@ -203,5 +203,14 @@ export default function LiveShopPage() {
         </button>
       </section>
     </main>
+  );
+}
+
+
+export default function LiveShopPage() {
+  return (
+    <Suspense fallback={null}>
+      <LiveShopContent />
+    </Suspense>
   );
 }

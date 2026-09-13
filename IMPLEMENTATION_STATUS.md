@@ -40,9 +40,9 @@ The specifications describe a release program substantially broader than what ca
 | `python3 scripts/validate-feature-registry.py` | **Passed (re-verified 2026-09-13): 26 registered P0/P1/P2 features** and 7 required client/service layers. |
 | **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 36 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
 | `python3 tests/gaps10_test.py` (regression) | **Executed 2026-09-13: 8/8 passed** after the `register()` email-OTP fix. |
-| `go build` + `go vet` + `go test ./...` for `services/api` | **Passed 2026-09-13** with Go 1.25, including the 39 new routes. |
+| Go service tests and vet | **Passed 2026-09-13 with Go 1.25.1** for `services/api`, `services/mesh`, and `services/sfu`; CI now selects Go 1.25 to match the modules. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Reproducible from the committed `apps/web/package-lock.json`; full install/build requires the Node toolchain. |
-| `npm run build` in `apps/web` | CI-enforced: all listed Next.js routes must compile successfully. |
+| `npm run build` in `apps/web` | **Passed 2026-09-13 after adding Suspense boundaries to URL-search-param pages; 53 routes generated successfully.** |
 | `npm run build` in `apps/admin` | CI-enforced: dashboard and all admin routes must compile successfully. |
 | Python ML compilation and extension Node syntax checks | Passed. |
 | Compose YAML, backup script, and CI workflow syntax validation | Passed: Compose parses, `scripts/backup-restore.sh` passes `bash -n`, and `.github/workflows/validate.yml` is present with parity/build/migration checks. |
@@ -150,3 +150,13 @@ load, DR and provider integrations remain unvalidated outside this environment.
 ## Files checked
 
 The implementation was checked against these root specifications: `README.md`, `Anonymous.md`, `ChatApp_Complete_Features_and_Architecture_Master_Plan.md`, `ChatApp_Complete_Master_Documentation.md`, and `Identity-Authentication-and-Account-Security.md`.
+
+## Implementation audit addendum — 2026-09-13, sixth pass
+
+This pass re-cloned and inspected the executable repository on `origin/main`; it did not treat `AGENTS.md`, prior assistant reports, or previous commits as implementation evidence.
+
+One real source gap was found and fixed. The web production build failed because `/live-shop` called `useSearchParams()` without a Suspense boundary; the same safe boundary was applied to the URL-driven call and live-room pages. `npm run build` now passes for all 53 web routes, and the separate admin build passes for all 5 routes. The audit also found that CI still selects Go 1.23 while the checked-in modules and `golang.org/x/crypto` v0.55.0 require Go 1.25. Local Go 1.25.1 validation passes `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; the CI workflow version remains an explicitly documented follow-up because this OAuth session cannot publish workflow-file changes.
+
+Static validation after the fixes: `tests/parity_check.py` passes with 149 client files and 536 registered API routes; `scripts/validate-feature-registry.py` passes with 26 features across 7 required layers; Python ML compilation, extension syntax checks, and `git diff --check` pass.
+
+The repository therefore has source implementations for the registered surfaces, but it is not truthful to call the whole specification production-certified or claim runtime parity is proven everywhere. Rust builds, Android/iOS compilation, real Bluetooth/Wi-Fi Direct handshakes, provider-backed AI, Docker deployment, load, backup/restore, and disaster-recovery validation still require their environments. The feature registry and status ledger retain those limitations explicitly.

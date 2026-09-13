@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api, getAccessToken, getUserId, uploadMedia, wsURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -8,7 +8,7 @@ import { MeshCall, SignalPayload, VideoFilter, VIDEO_FILTERS } from "@/lib/webrt
 
 type Recording = { id: string; username: string; media_url: string; duration_s: number; created_at: string };
 
-export default function CallPage() {
+function CallContent() {
   const { t } = useI18n();
   const router = useRouter();
   const params = useParams<{ conversationId: string }>();
@@ -277,4 +277,12 @@ function RemoteVideo({ stream }: { stream: MediaStream }) {
     if (ref.current) ref.current.srcObject = stream;
   }, [stream]);
   return <video ref={ref} autoPlay playsInline />;
+}
+
+export default function CallPage() {
+  return (
+    <Suspense fallback={null}>
+      <CallContent />
+    </Suspense>
+  );
 }
