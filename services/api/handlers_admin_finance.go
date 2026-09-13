@@ -90,7 +90,10 @@ func (a *App) handleAdminDeleteRoleDef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Deleting a role strips it from every admin who held it.
-	_, _ = tx.Exec(r.Context(), `DELETE FROM admin_roles WHERE role=$1`, name)
+	if _, err := tx.Exec(r.Context(), `DELETE FROM admin_roles WHERE role=$1`, name); err != nil {
+		writeErr(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "delete failed")
 		return
@@ -184,7 +187,10 @@ func (a *App) handleAdminReviewWithdrawal(w http.ResponseWriter, r *http.Request
 			writeErr(w, http.StatusInternalServerError, "review failed")
 			return
 		}
-		a.refundWithdrawal(r.Context(), id)
+		if err := a.refundWithdrawal(r.Context(), id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "withdrawal refund failed")
+			return
+		}
 		a.audit(r.Context(), adminID, "withdrawal_reject", id, nil)
 		a.notifyUser(r.Context(), userID, "withdrawal_rejected", map[string]string{"id": id})
 		writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})

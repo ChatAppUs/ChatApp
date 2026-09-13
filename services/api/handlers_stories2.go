@@ -161,8 +161,11 @@ func (a *App) handleAddCloseFriend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleRemoveCloseFriend(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM close_friends WHERE user_id=$1 AND friend_id=$2`, userIDFrom(r), r.PathValue("id"))
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM close_friends WHERE user_id=$1 AND friend_id=$2`, userIDFrom(r), r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove close friend")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 

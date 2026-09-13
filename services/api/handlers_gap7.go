@@ -323,9 +323,17 @@ func (a *App) handleAdminMomentAddItem(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/admin/moments/{id}/items/{postId}
 func (a *App) handleAdminMomentRemoveItem(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
+	tag, err := a.db.Exec(r.Context(),
 		`DELETE FROM moment_items WHERE moment_id=$1 AND post_id=$2`,
 		r.PathValue("id"), r.PathValue("postId"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "remove failed")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "moment item not found")
+		return
+	}
 	a.audit(r.Context(), userIDFrom(r), "moment.remove_item", r.PathValue("id"), map[string]any{"post_id": r.PathValue("postId")})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
@@ -378,7 +386,15 @@ func (a *App) handleAdminMomentPublish(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/admin/moments/{id}
 func (a *App) handleAdminDeleteMoment(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(), `DELETE FROM moments WHERE id=$1`, r.PathValue("id"))
+	tag, err := a.db.Exec(r.Context(), `DELETE FROM moments WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "moment not found")
+		return
+	}
 	a.audit(r.Context(), userIDFrom(r), "moment.delete", r.PathValue("id"), nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

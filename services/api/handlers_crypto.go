@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -333,7 +334,9 @@ func (a *App) executeWithdrawal(ctx context.Context, id string) string {
 		if err != nil {
 			_, _ = a.db.Exec(ctx,
 				`UPDATE withdrawal_requests SET status='failed', updated_at=now() WHERE id=$1`, id)
-			a.refundWithdrawal(ctx, id)
+			if refundErr := a.refundWithdrawal(ctx, id); refundErr != nil {
+				log.Printf("withdrawal %s refund failed: %v", id, refundErr)
+			}
 			return "failed"
 		}
 		_, _ = a.db.Exec(ctx,
@@ -347,8 +350,8 @@ func (a *App) executeWithdrawal(ctx context.Context, id string) string {
 }
 
 // refundWithdrawal reverses the hold for rejected/failed requests.
-func (a *App) refundWithdrawal(ctx context.Context, id string) {
-	_, _ = a.db.Exec(ctx,
+func (a *App) refundWithdrawal(ctx context.Context, id string) error {
+	_, err := a.db.Exec(ctx,
 		`INSERT INTO ledger_entries (tx_id, account_id, amount, kind, memo)
 		 SELECT wr.ledger_tx, wa.id, (wr.amount + wr.fee), 'withdrawal_refund', 'withdrawal ' || wr.id || ' refunded'
 		 FROM withdrawal_requests wr
@@ -356,6 +359,7 @@ func (a *App) refundWithdrawal(ctx context.Context, id string) {
 		 WHERE wr.id = $1
 		   AND NOT EXISTS (SELECT 1 FROM ledger_entries le
 		                   WHERE le.tx_id = wr.ledger_tx AND le.kind = 'withdrawal_refund')`, id)
+	return err
 }
 
 func (a *App) handleListWithdrawals(w http.ResponseWriter, r *http.Request) {

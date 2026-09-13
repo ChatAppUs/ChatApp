@@ -229,13 +229,26 @@ func (a *App) handleOrgAddMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only the org owner can add members")
 		return
 	}
-	if _, err := a.db.Exec(r.Context(),
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to add member")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(),
 		`INSERT INTO organization_members (org_id, user_id, title) VALUES ($1,$2,$3)
 		 ON CONFLICT (org_id, user_id) DO UPDATE SET title=EXCLUDED.title`, orgID, req.UserID, req.Title); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to add member")
 		return
 	}
-	a.db.Exec(r.Context(), `UPDATE users SET affiliated_org_id=$1 WHERE id=$2`, orgID, req.UserID)
+	if _, err := tx.Exec(r.Context(), `UPDATE users SET affiliated_org_id=$1 WHERE id=$2`, orgID, req.UserID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to add member")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to add member")
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "affiliated"})
 }
 
@@ -248,8 +261,24 @@ func (a *App) handleOrgRemoveMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only the org owner can remove members")
 		return
 	}
-	a.db.Exec(r.Context(), `DELETE FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, target)
-	a.db.Exec(r.Context(), `UPDATE users SET affiliated_org_id=NULL WHERE id=$1 AND affiliated_org_id=$2`, target, orgID)
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove member")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(), `DELETE FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, target); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove member")
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `UPDATE users SET affiliated_org_id=NULL WHERE id=$1 AND affiliated_org_id=$2`, target, orgID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove member")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove member")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 

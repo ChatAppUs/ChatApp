@@ -218,13 +218,26 @@ func (a *App) handleAdminSetUserStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := r.PathValue("id")
-	res, err := a.db.Exec(r.Context(), `UPDATE users SET status=$1, updated_at=now() WHERE id=$2`, req.Status, target)
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to update user")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	res, err := tx.Exec(r.Context(), `UPDATE users SET status=$1, updated_at=now() WHERE id=$2`, req.Status, target)
 	if err != nil || res.RowsAffected() == 0 {
 		writeErr(w, http.StatusNotFound, "user not found")
 		return
 	}
 	if req.Status == "suspended" {
-		_, _ = a.db.Exec(r.Context(), `UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, target)
+		if _, err := tx.Exec(r.Context(), `UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, target); err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to revoke user sessions")
+			return
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to update user")
+		return
 	}
 	a.audit(r.Context(), userIDFrom(r), "user_"+req.Status, target, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": req.Status})

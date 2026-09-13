@@ -93,8 +93,11 @@ func (a *App) handleQRLoginApprove(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/auth/qr/{token}/reject — scanning device declines the login.
 func (a *App) handleQRLoginReject(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
+	if _, err := a.db.Exec(r.Context(),
 		`UPDATE qr_login_tokens SET status='expired'
-		 WHERE token=$1 AND status='pending'`, r.PathValue("token"))
+		 WHERE token=$1 AND status='pending'`, r.PathValue("token")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to reject QR login")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

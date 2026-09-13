@@ -142,8 +142,11 @@ func (a *App) handleUnreactMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "not a member")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM message_reactions WHERE message_id=$1 AND user_id=$2 AND emoji=$3`, msgID, uid, emoji)
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM message_reactions WHERE message_id=$1 AND user_id=$2 AND emoji=$3`, msgID, uid, emoji); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove reaction")
+		return
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"type": "reaction", "conversation_id": convID, "message_id": msgID,
 		"user_id": uid, "emoji": emoji, "action": "remove",
@@ -298,8 +301,11 @@ func (a *App) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "the owner cannot be removed")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`, convID, target)
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`, convID, target); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove member")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
@@ -332,8 +338,11 @@ func (a *App) handleChannelUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "the owner cannot unsubscribe")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`, convID, uid)
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM conversation_members WHERE conversation_id=$1 AND user_id=$2`, convID, uid); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to unsubscribe")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unsubscribed"})
 }
 
@@ -500,8 +509,11 @@ func (a *App) handleBookmark(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUnbookmark(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM bookmarks WHERE user_id=$1 AND post_id=$2`, userIDFrom(r), r.PathValue("id"))
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM bookmarks WHERE user_id=$1 AND post_id=$2`, userIDFrom(r), r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to remove bookmark")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
@@ -587,8 +599,11 @@ func (a *App) handleBlock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUnblock(w http.ResponseWriter, r *http.Request) {
-	_, _ = a.db.Exec(r.Context(),
-		`DELETE FROM user_blocks WHERE blocker_id=$1 AND blocked_id=$2`, userIDFrom(r), r.PathValue("id"))
+	if _, err := a.db.Exec(r.Context(),
+		`DELETE FROM user_blocks WHERE blocker_id=$1 AND blocked_id=$2`, userIDFrom(r), r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to unblock")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unblocked"})
 }
 
