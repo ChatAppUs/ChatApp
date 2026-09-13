@@ -113,7 +113,9 @@ func (a *App) handleGenerateRecoveryCodes(w http.ResponseWriter, r *http.Request
 	var req struct {
 		Code string `json:"code"`
 	}
-	_ = decodeJSON(w, r, &req)
+	if !decodeJSON(w, r, &req) {
+		return
+	}
 	var totpEnabled bool
 	var secret string
 	_ = a.db.QueryRow(r.Context(), `SELECT totp_enabled, COALESCE(totp_secret,'') FROM users WHERE id=$1`, uid).Scan(&totpEnabled, &secret)
@@ -162,8 +164,11 @@ func (a *App) handleGenerateRecoveryCodes(w http.ResponseWriter, r *http.Request
 func (a *App) handleListRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	var n int
-	_ = a.db.QueryRow(r.Context(),
-		`SELECT count(*) FROM recovery_codes WHERE user_id=$1 AND used_at IS NULL`, uid).Scan(&n)
+	if err := a.db.QueryRow(r.Context(),
+		`SELECT count(*) FROM recovery_codes WHERE user_id=$1 AND used_at IS NULL`, uid).Scan(&n); err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to load recovery-code status")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"remaining": n})
 }
 
