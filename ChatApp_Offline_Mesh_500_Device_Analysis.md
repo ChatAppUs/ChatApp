@@ -75,3 +75,13 @@ Coding alone cannot supply Bluetooth/Wi-Fi hardware, radio spectrum, battery, OS
 - A controlled 500-device experiment reports measured delivery, delay, battery, heat, loss and route survival.
 - Offline live calls are either implemented and measured against declared limits or explicitly unavailable in the UI.
 - Documentation says “finite store-and-forward mesh” rather than “infinite communication”.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current code-level mesh fixes and the remaining real-hardware/scale gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+Cross-platform packet compatibility and native forwarding were corrected, but the 500-device claim still requires simulation and physical-device evidence. See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

@@ -50,3 +50,13 @@ Facebook/TikTok/X/Telegram all depend on mature moderation queues, policy enforc
 - TikTok Stories, playlists, creator tools and LIVE: https://support.tiktok.com/en/using-tiktok/exploring-videos/watching-stories-on-tiktok, https://support.tiktok.com/en/search?searchTerm=Creator%20Playlists, https://newsroom.tiktok.com/en-US/new-tools-for-creators
 - Telegram calls, bots/mini apps and live Stories: https://telegram.org/blog/calls-and-bots, https://telegram.org/blog/live-stories-gift-auctions
 - imo chat/calls/privacy/weak-network products: https://imo.im/en/faq/What-are-the-features-of-the-chat-function-in-the-imo-app, https://imo.im/android
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current source audit and remaining production gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The short comparison remains an executive summary; the direct source audit and implementation status are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

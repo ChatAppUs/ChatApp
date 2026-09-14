@@ -159,3 +159,13 @@ That breadth is useful, but route counts are not adoption, reliability or featur
 - [imo: current product description, weak networks and privacy features](https://imo.im/android)
 - [X: Creator Subscriptions](https://help.x.com/en/using-x/subscriptions-creator)
 - [X: Creator revenue programme transition](https://help.x.com/en/using-x/creator-revenue-sharing)
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The competitor decision is reconciled against current code and validation in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The competitor verdict was rechecked against the executable source and native mesh protocol. See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'` for the final decision and release gates.

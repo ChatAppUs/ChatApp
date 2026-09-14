@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import CoreBluetooth
 import Network
+import Security
 
 // MeshTransport.swift — the native iOS radio transports for the offline mesh.
 //
@@ -50,7 +51,7 @@ final class BluetoothMeshLink: NSObject, MeshLink {
     private let queue = DispatchQueue(label: "mesh.bluetooth")
     private var subscribed = Set<UUID>()
     private var discovered: [UUID: CBPeripheral] = [:]
-    @Volatile private var running = false
+    private var running = false
 
     init(onPacket: @escaping (String, Data) -> Void) {
         self.onPacket = onPacket
@@ -190,7 +191,7 @@ final class LocalWifiMeshLink: MeshLink {
     private var listener: NWListener?
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "mesh.localwifi")
-    @Volatile private var running = false
+    private var running = false
 
     init(onPacket: @escaping (String, Data) -> Void, port: UInt16 = 47821) {
         self.onPacket = onPacket

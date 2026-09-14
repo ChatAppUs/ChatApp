@@ -2025,3 +2025,13 @@ This does not claim network-level anonymity. Tor/onion transport, anonymous IP r
 The executable mesh path now forwards received packets through the local store-and-forward queue, suppresses source-side loops, and is covered by a real three-node UDP relay test. Android and iOS transport adapters, the web mesh controls, encrypted envelopes, TTL, deduplication, relay policy, guest registration, and automatic Wi-Fi → Wi-Fi Direct → Bluetooth selection are implemented in source.
 
 Tor/onion routing and anonymous IP relays are still not implemented and are not implied by guest mode or encrypted mesh. Bluetooth/Wi-Fi Direct hardware validation also remains pending; provider-backed translation requires `TRANSLATE_MODEL`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current source-vs-specification review, mesh interoperability fixes and remaining bounded-mesh/live-media gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current implementation findings, native mesh interoperability fixes, dependency reduction and remaining physical-radio/live-media limits are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

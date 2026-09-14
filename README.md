@@ -615,3 +615,13 @@ The remaining gaps are explicitly not marked complete: Tor/onion routing, anonym
 The current executable source was checked against the five root specifications. The implementation now includes selectable web message translation with configured ML-provider support and bounded fallback, close-friend search/add/remove, chat-folder create/delete, portable message export, opt-in People Nearby, complete ML image source copying, and corrected native multi-hop mesh forwarding with a real three-node UDP test. Validation passed with Go 1.25.1 tests/vet for API, mesh and SFU; web and admin production builds; Python ML compilation; TypeScript checking; feature-registry validation; API parity; and `git diff --check` (26 registry features, 7 clients, 153 scanned files, 547 API routes).
 
 The source is not falsely marked production-complete: Tor/onion transport, anonymous IP-privacy relays, physical Bluetooth/Wi-Fi Direct handshakes, configured provider/model execution, Android/iOS release builds, production load, backup/restore, disaster recovery, and deployed observability remain pending gates. The local translation phrasebook is a limited fallback; production-quality arbitrary-language translation requires `TRANSLATE_MODEL`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'` for the one-by-one Markdown review, competitor verdict, code-level mesh fixes, dependency reduction, validation results and remaining non-code gates.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'` for the one-by-one Markdown review, competitor verdict, code-level mesh fixes, dependency reduction, validation results and remaining non-code gates.

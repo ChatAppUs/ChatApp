@@ -466,3 +466,13 @@ Pending and not marked implemented: Tor/onion transport, anonymous IP relays, ph
 Implemented and checked against source: selectable web translation with ML-provider wiring and bounded fallback; close-friend search/add/remove; chat-folder create/delete; portable message export; opt-in People Nearby; complete ML image source copying; and corrected native mesh forwarding with a real three-node UDP relay test. Validation passed: Go 1.25.1 tests/vet for API, mesh, and SFU; web and admin production builds; Python ML compilation; TypeScript; feature-registry validation; API parity; and `git diff --check`. Current counts: 26 registry features, 7 required clients, 153 scanned files, 547 registered API routes.
 
 Pending rather than falsely marked complete: Tor/onion transport, anonymous IP relays, hardware Bluetooth/Wi-Fi Direct handshakes, configured provider/model output, Android/iOS release builds, production load, backup/restore, disaster recovery, and deployed observability.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+Latest source evidence, validation, dependency reduction and remaining unproven native/mesh gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current status includes a cross-platform AES-GCM mesh envelope, native forwarding queue fixes, group metadata preservation, removal of the mesh `x/crypto` dependency and a deterministic interop test. Full findings and unproven release gates are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

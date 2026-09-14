@@ -483,3 +483,13 @@ The current identity-sensitive additions were checked for authentication boundar
 ## Direct source audit — 2026-09-14
 
 The new user-facing surfaces preserve authenticated membership checks: message translation resolves conversation membership, close-friend mutations are account-scoped, chat folders are owner-scoped, data export is authenticated, and People Nearby requires explicit discoverability plus live-location state. Guest mesh registration remains separate from account identity. Tor-level anonymity and anonymous IP relaying are not implemented and must not be inferred from guest mode.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current code/security reconciliation and the distinction between implemented invariants and unproven production controls are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+Authentication/security requirements were reviewed alongside the native mesh key limitations. AES-GCM does not replace authenticated device identity, key exchange, rotation or revocation; see `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

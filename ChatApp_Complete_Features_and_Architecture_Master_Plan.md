@@ -2854,3 +2854,13 @@ The unresolved items remain honest environment or product-network gates: Tor/oni
 Source was re-walked against the complete feature plan. Newly closed gaps are selectable/provider-backed web message translation with bounded fallback, close-friend management, chat-folder deletion, portable message export, People Nearby consent, complete ML container source copying, and functioning three-node native mesh forwarding. The current tree validates at 26 registry features across 7 required clients, 153 scanned client files, and 547 registered API routes; Go 1.25.1 API/mesh/SFU tests and vet, web/admin builds, Python compilation, TypeScript, parity, and patch checks pass.
 
 The following remain explicit validation or deployment gates, not completed features: Tor/onion transport, anonymous IP relays, physical radio handshakes, configured model/provider output, Android/iOS release builds, production load, backup/restore, disaster recovery, and deployed observability.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+Implementation claims in this plan are reconciled with the current code and validation in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+Feature registration was checked against executable routes and clients. The native mesh protocol fixes and the remaining production gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

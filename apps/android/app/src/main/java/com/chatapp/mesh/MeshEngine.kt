@@ -26,6 +26,7 @@ data class MeshPacket(
     val id: String,
     val src: String,
     val dst: String,
+    val groupId: String? = null,
     val kind: String,
     var ttl: Int,
     var hops: Int = 0,
@@ -118,18 +119,20 @@ class MeshEngine(
     // ---- sending ---------------------------------------------------------
 
     /** Encrypts a payload and queues a packet for [dst]. Returns the packet id. */
-    fun send(kind: String, dst: String, plaintext: ByteArray): String {
+    fun send(kind: String, dst: String, plaintext: ByteArray, groupId: String? = null): String {
         val sealed = MeshCrypto.encrypt(key, plaintext)
         val p = MeshPacket(
             id = newId(),
             src = deviceId,
             dst = dst,
+            groupId = groupId,
             kind = kind,
             ttl = maxHops,
             payload = sealed.ciphertext,
             nonce = sealed.nonce,
             createdAt = System.currentTimeMillis(),
         )
+        seen[p.id] = System.currentTimeMillis()
         enqueue(p)
         flush()
         return p.id
@@ -184,6 +187,7 @@ class MeshEngine(
         if (p.ttl <= 0) return null
         p.ttl -= 1
         p.hops += 1
+        enqueue(p)
         flush()
         return p
     }
@@ -244,10 +248,12 @@ object MeshPacketCodec {
         .put("id", p.id)
         .put("src", p.src)
         .put("dst", p.dst)
+        .put("group_id", p.groupId ?: JSONObject.NULL)
         .put("kind", p.kind)
         .put("ttl", p.ttl)
         .put("hops", p.hops)
         .put("payload", android.util.Base64.encodeToString(p.payload, android.util.Base64.NO_WRAP))
+        .put("nonce", android.util.Base64.encodeToString(p.nonce, android.util.Base64.NO_WRAP))
         .put("created_at", p.createdAt)
         .toString()
         .toByteArray()
@@ -258,11 +264,12 @@ object MeshPacketCodec {
             id = o.getString("id"),
             src = o.getString("src"),
             dst = o.getString("dst"),
+            groupId = o.optString("group_id", "").takeUnless { it.isEmpty() || it == "null" },
             kind = o.optString("kind", "message"),
             ttl = o.optInt("ttl", MeshEngine.DEFAULT_MAX_HOPS),
             hops = o.optInt("hops", 0),
             payload = android.util.Base64.decode(o.optString("payload"), android.util.Base64.NO_WRAP),
-            nonce = ByteArray(0),
+            nonce = android.util.Base64.decode(o.optString("nonce"), android.util.Base64.NO_WRAP),
             createdAt = o.optLong("created_at", System.currentTimeMillis()),
         )
     } catch (_: Exception) {
@@ -270,12 +277,7 @@ object MeshPacketCodec {
     }
 }
 
-/**
- * Authenticated encryption for mesh payloads. The Go engine uses NaCl
- * secretbox; the native clients use AES-256-GCM with a fresh 12-byte nonce,
- * which is the platform-native AEAD and provides the same guarantees: relays
- * hold no key and cannot open the payload, and tampering fails closed.
- */
+/** Authenticated encryption shared by Go, Android and iOS mesh clients. */
 object MeshCrypto {
     private const val NONCE_LEN = 12
     private const val TAG_BITS = 128

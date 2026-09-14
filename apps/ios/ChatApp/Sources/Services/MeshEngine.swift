@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Security
 
 // MeshEngine.swift — transport-agnostic mesh logic for the iOS client.
 //
@@ -14,6 +15,7 @@ struct MeshPacket {
     let id: String
     let src: String
     let dst: String
+    let groupId: String?
     let kind: String
     var ttl: Int
     var hops: Int
@@ -117,12 +119,15 @@ final class MeshEngine {
 
     /// Encrypts a payload and queues a packet for `dst`. Returns the packet id.
     @discardableResult
-    func send(kind: String, dst: String, plaintext: Data) -> String {
+    func send(kind: String, dst: String, plaintext: Data, groupId: String? = nil) -> String {
         let nonce = MeshCrypto.randomNonce()
         let sealed = MeshCrypto.encrypt(key: key, plaintext: plaintext, nonce: nonce)
-        let p = MeshPacket(id: MeshCrypto.randomId(), src: deviceId, dst: dst, kind: kind,
+        let p = MeshPacket(id: MeshCrypto.randomId(), src: deviceId, dst: dst, groupId: groupId, kind: kind,
                            ttl: maxHops, hops: 0, payload: sealed, nonce: nonce,
                            createdAt: Int64(Date().timeIntervalSince1970 * 1000))
+        lock.lock()
+        seen[p.id] = Date()
+        lock.unlock()
         enqueue(p)
         _ = flush()
         return p.id
@@ -181,6 +186,7 @@ final class MeshEngine {
         var forwarded = p
         forwarded.ttl -= 1
         forwarded.hops += 1
+        enqueue(forwarded)
         _ = flush()
         return forwarded
     }
@@ -214,12 +220,14 @@ final class MeshEngine {
 enum MeshPacketCodec {
 
     static func encode(_ p: MeshPacket) -> Data {
-        let obj: [String: Any] = [
-            "id": p.id, "src": p.src, "dst": p.dst, "kind": p.kind,
-            "ttl": p.ttl, "hops": p.hops,
+        var obj: [String: Any] = [
+            "id": p.id, "src": p.src, "dst": p.dst,
+            "kind": p.kind, "ttl": p.ttl, "hops": p.hops,
             "payload": p.payload.base64EncodedString(),
+            "nonce": p.nonce.base64EncodedString(),
             "created_at": p.createdAt,
         ]
+        if let groupId = p.groupId { obj["group_id"] = groupId }
         return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data()
     }
 
@@ -229,19 +237,18 @@ enum MeshPacketCodec {
         else { return nil }
         return MeshPacket(
             id: id, src: src, dst: dst,
+            groupId: o["group_id"] as? String,
             kind: (o["kind"] as? String) ?? "message",
             ttl: (o["ttl"] as? Int) ?? MeshEngine.defaultMaxHops,
             hops: (o["hops"] as? Int) ?? 0,
             payload: Data(base64Encoded: (o["payload"] as? String) ?? "") ?? Data(),
-            nonce: Data(),
+            nonce: Data(base64Encoded: (o["nonce"] as? String) ?? "") ?? Data(),
             createdAt: Int64((o["created_at"] as? NSNumber)?.int64Value ?? 0)
         )
     }
 }
 
-/// Authenticated encryption for mesh payloads (AES-GCM via CryptoKit). The Go
-/// engine uses NaCl secretbox; both are AEADs, so relays hold no key, cannot
-/// open the payload, and tampering fails closed.
+/// Authenticated encryption shared by Go, Android and iOS mesh clients.
 enum MeshCrypto {
 
     static func randomNonce() -> Data {
@@ -259,13 +266,12 @@ enum MeshCrypto {
     static func encrypt(key: SymmetricKey, plaintext: Data, nonce: Data) -> Data {
         guard let nonce = try? AES.GCM.Nonce(data: nonce),
               let sealed = try? AES.GCM.seal(plaintext, using: key, nonce: nonce) else { return Data() }
-        return sealed.ciphertext
+        return sealed.ciphertext + sealed.tag
     }
 
     /// Returns the plaintext, or nil when the key is wrong or data was tampered.
     static func decrypt(key: SymmetricKey, ciphertext: Data, nonce: Data) -> Data? {
-        guard let nonce = try? AES.GCM.Nonce(data: nonce),
-              let box = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: Data()) else { return nil }
+        guard let box = try? AES.GCM.SealedBox(combined: nonce + ciphertext) else { return nil }
         return try? AES.GCM.open(box, using: key)
     }
 }

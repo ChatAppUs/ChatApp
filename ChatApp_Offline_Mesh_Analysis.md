@@ -66,3 +66,13 @@ The defensible promise is: **encrypted, store-and-forward text and voice notes o
 5. Add hardware-in-the-loop tests at 3/10/50/100/500 devices; record p50/p95 delivery latency, loss, throughput, battery, thermal throttling and route survival.
 6. Build an offline voice-note transfer protocol before any live-media work.
 7. Keep Internet WebRTC/SFU/TURN and offline mesh media as separate transports with honest capability negotiation.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The direct source findings and completed cross-platform packet fixes are reconciled in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The current pass fixes the native packet nonce/tag/group metadata and forwarding defects while preserving the honest limits on live calls, distance and radio execution. See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

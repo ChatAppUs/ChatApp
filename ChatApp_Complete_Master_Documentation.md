@@ -3897,3 +3897,13 @@ Source coverage is not production certification. Tor/onion routing, anonymous IP
 The live source, migrations, clients, tests, and container files were checked directly rather than relying on earlier status prose. Implemented surfaces include selectable ML-aware message translation, close-friend search/add/remove, chat-folder create/delete, JSON message export, People Nearby opt-in, complete ML module copying in the container image, and corrected multi-hop mesh forwarding with a real three-node test. Verified coverage is 26 registry features, 7 clients, 153 scanned files, and 547 API routes; Go 1.25.1 tests/vet, web/admin builds, Python compilation, TypeScript, parity, and patch checks pass.
 
 Pending gates remain explicitly visible: Tor/onion transport, anonymous IP relays, physical Bluetooth/Wi-Fi Direct validation, configured models/providers, native release builds, load, backup/restore, disaster recovery, and deployed observability.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The one-by-one Markdown review, source fixes and unresolved gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+This master document is a specification and architecture record. Current implementation evidence, dependency reductions and unproven competitor-scale claims are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

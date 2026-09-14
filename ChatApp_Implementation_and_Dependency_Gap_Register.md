@@ -60,3 +60,13 @@ The ML image includes FastAPI/Pydantic but not a model package or model weights.
 ## Correct conclusion
 
 The repository has a substantial prototype/platform foundation, not a finished peer to five mature global networks. The highest-return work is correctness and proof — especially interoperable mesh, mobile builds, weak-network calls, operations and safety — rather than adding more unverified screens.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+This register is expanded and reconciled by `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`, including the mesh dependency reduction and validation evidence.
+
+
+## Deep source-and-documentation audit — 2026-09-14
+
+The mesh crypto/forwarding gaps identified by this register were implemented and tested in the current pass; the full source audit and remaining dependency boundaries are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
