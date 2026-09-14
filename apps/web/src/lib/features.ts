@@ -283,6 +283,19 @@ export const addCloseFriend = (uid: string) =>
   api(`/api/users/${uid}/close-friend`, { method: "POST" });
 export const removeCloseFriend = (uid: string) =>
   api(`/api/users/${uid}/close-friend`, { method: "DELETE" });
+
+export interface ChatFolder {
+  id: string;
+  name: string;
+  conversation_ids: string[];
+}
+export const chatFolders = () => api<{ folders: ChatFolder[] }>("/api/me/chat-folders");
+export const createChatFolder = (name: string) =>
+  api<{ id: string }>("/api/me/chat-folders", { method: "POST", body: JSON.stringify({ name }) });
+export const deleteChatFolder = (id: string) =>
+  api(`/api/me/chat-folders/${id}`, { method: "DELETE" });
+export const setChatFolderConversations = (id: string, conversationIds: string[]) =>
+  api(`/api/me/chat-folders/${id}/conversations`, { method: "PUT", body: JSON.stringify({ conversation_ids: conversationIds }) });
 export interface Highlight {
   id: string;
   title: string;

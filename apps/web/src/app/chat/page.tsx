@@ -544,6 +544,32 @@ export default function ChatPage() {
     return Object.entries(reads).some(([uid, at]) => uid !== getUserId() && at >= m.created_at);
   };
 
+  const [translations, setTranslations] = useState<Record<string, { text: string; lang: string; provider: string }>>({});
+  const [translating, setTranslating] = useState<string | null>(null);
+  const [translateLang, setTranslateLang] = useState("es");
+  const translateMessage = async (m: Message) => {
+    if (translations[m.id]) {
+      setTranslations((t) => {
+        const next = { ...t };
+        delete next[m.id];
+        return next;
+      });
+      return;
+    }
+    if (!m.body?.trim()) return;
+    setTranslating(m.id);
+    try {
+      const s = await api<{ translation: { translated: string; target_lang: string; provider: string } }>(
+        `/api/messages/${m.id}/translate`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_lang: translateLang }) });
+      setTranslations((t) => ({ ...t, [m.id]: { text: s.translation.translated, lang: s.translation.target_lang, provider: s.translation.provider } }));
+    } catch {
+      // button state resets; the server returns a clear error for unsupported languages
+    } finally {
+      setTranslating(null);
+    }
+  };
+
   return (
     <div className="chat-layout">
       <div className="card chat-list" style={{ marginBottom: 0 }}>
@@ -727,12 +753,24 @@ export default function ChatPage() {
                 )}
               </div>
             )}
-            <input
-              placeholder="Search in conversation…"
-              value={msgQuery}
-              onChange={(e) => searchMessages(e.target.value)}
-              style={{ fontSize: 13 }}
-            />
+            <div className="row" style={{ gap: 6 }}>
+              <input
+                placeholder="Search in conversation…"
+                value={msgQuery}
+                onChange={(e) => searchMessages(e.target.value)}
+                style={{ fontSize: 13, flex: 1 }}
+              />
+              <select value={translateLang} onChange={(e) => setTranslateLang(e.target.value)} aria-label="Translation language">
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="de">Deutsch</option>
+                <option value="pt">Português</option>
+                <option value="ar">العربية</option>
+                <option value="hi">हिन्दी</option>
+                <option value="ja">日本語</option>
+                <option value="zh">中文</option>
+              </select>
+            </div>
             {msgHits && (
               <div className="card" style={{ padding: 8, maxHeight: 180, overflowY: "auto" }}>
                 {msgHits.length === 0 && <div className="muted" style={{ fontSize: 12 }}>No matches</div>}
@@ -811,12 +849,26 @@ export default function ChatPage() {
                     <button className="secondary small" style={{ padding: "1px 6px" }}
                       title={m.pinned ? "Unpin" : "Pin"}
                       onClick={() => togglePin(m)}>{m.pinned ? "📌" : "📍"}</button>
+                    {!m.is_encrypted && m.body && (
+                      <button className="secondary small" style={{ padding: "1px 6px" }}
+                        title={`Translate to ${translateLang}`}
+                        disabled={translating === m.id}
+                        onClick={() => translateMessage(m)}>
+                        {translating === m.id ? "…" : "🌐"}
+                      </button>
+                    )}
                     {!m.is_encrypted && (
                       <button className="secondary small" style={{ padding: "1px 6px" }}
                         title="Forward"
                         onClick={() => setForwardingId(m.id)}>↪</button>
                     )}
                   </div>
+                  {translations[m.id] && (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 2, borderInlineStart: "2px solid var(--accent, #4f8cff)", paddingLeft: 6 }}>
+                      🌐 {translations[m.id].text}
+                      <span style={{ fontSize: 10 }}> · {translations[m.id].lang} · {translations[m.id].provider}</span>
+                    </div>
+                  )}
                   {m.reactions && Object.keys(m.reactions).length > 0 && (
                     <div className="row" style={{ marginTop: 2, gap: 4 }}>
                       {Object.entries(m.reactions).map(([emoji, count]) => (

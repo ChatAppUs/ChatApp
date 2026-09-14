@@ -57,7 +57,7 @@ Static validation completed in this checkout: parity passed with **150 files and
 
 ## No stubs · no mocks · no fake data — audit 2026-09-13
 
-The repository is audited against the requirement that **no hardcoded values, no mock data, no fake implementations, and no stubs are permitted** — everything is fully dynamic, real logic, and operationally complete.
+The repository is audited against the requirement that core product paths have no hardcoded values, mock data, fake implementations, or stubs. The only bounded fallback is the explicitly labelled local translation phrasebook used when `TRANSLATE_MODEL` is absent; production translation is provider-backed.
 
 **Audit result: PASS.** A full scan of every backend service (`services/api`, `services/mesh`, `services/sfu`, `services/sfu-forwarder`, `services/realtime`, `services/counters`, `services/media`, `services/transcode`, `services/authn`, `services/security`, `services/ml`), all infrastructure SQL (`infra/db/`), all clients (Web, Admin, Android, iOS, Desktop, Extension), and the test suite found **no stubs, no mocks, no fake/dummy implementations, and no hardcoded secrets or credentials**.
 
@@ -470,3 +470,16 @@ A fresh code-vs-specification scan found the §74 Feature Flags, §75 Experiment
 - **Tests** — `tests/flags_test.py` (40 checks, re-runnable): CRUD validation, deterministic bucketing, region/platform gates, preference-style permission checks, experiment results and both telemetry planes.
 
 All gates re-verified: parity (153 files, 547 routes), feature registry (26 features), Go build/vet/tests for api/mesh/sfu, fresh production builds for web and admin.
+
+
+## Direct implementation audit — 2026-09-14
+
+Identity and account-security code was checked against the live handlers, migrations, clients, and tests. The current tree retains password/OTP/passkey/QR/guest paths, lockout and credential-change challenges, deletion verification, security attestations, privacy export, profile discoverability consent, and authenticated access checks for the new translation and privacy surfaces. No new identity claim is made for anonymous Tor-style routing: guest sessions and encrypted mesh packets are not a guarantee of network-level anonymity.
+
+## Direct source audit — 2026-09-14
+
+The current identity-sensitive additions were checked for authentication boundaries: message translation requires conversation membership, export requires an authenticated account, People Nearby requires explicit discoverability and live-location state, and close-friend/folder mutations use authenticated user ownership in the API. The remaining anonymity and production-security gates are Tor/onion operation, anonymous IP-relay threat modelling, physical-device validation, load testing, backup/restore, and disaster recovery.
+
+## Direct source audit — 2026-09-14
+
+The new user-facing surfaces preserve authenticated membership checks: message translation resolves conversation membership, close-friend mutations are account-scoped, chat folders are owner-scoped, data export is authenticated, and People Nearby requires explicit discoverability plus live-location state. Guest mesh registration remains separate from account identity. Tor-level anonymity and anonymous IP relaying are not implemented and must not be inferred from guest mode.

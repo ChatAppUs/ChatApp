@@ -163,6 +163,7 @@ func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, erro
 	}
 	p.Payload = ct
 	p.Nonce = nonce
+	n.routes.Seen(p.ID)
 	n.queue.Enqueue(p)
 	n.flush()
 	return p.ID, nil
@@ -178,6 +179,7 @@ func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (str
 	}
 	p.Payload = ct
 	p.Nonce = nonce
+	n.routes.Seen(p.ID)
 	n.queue.Enqueue(p)
 	n.flush()
 	return p.ID, nil
@@ -205,6 +207,7 @@ func (n *Node) route(p *Packet) {
 	}
 	p.TTL--
 	p.Hops++
+	n.queue.Enqueue(p)
 	n.flush()
 }
 

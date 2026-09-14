@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, API_URL, getAccessToken } from "@/lib/api";
 import { passkeySupported, registerPasskey } from "@/lib/passkey";
 import AccountSafety from "@/components/AccountSafety";
 import ScreenTimePanel from "@/components/ScreenTime";
@@ -350,6 +350,32 @@ export default function SettingsPage() {
       </div>
 
       <AccountSafety />
+      <div className="card col">
+        <h3 style={{ marginTop: 0 }}>Your data</h3>
+        <p className="muted">Download a portable JSON copy of every message you have sent or received (GDPR-style export).</p>
+        <button
+          onClick={async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/me/export`, {
+                headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
+              });
+              if (!res.ok) throw new Error(`export failed (${res.status})`);
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "chatapp-export.json";
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch (e) {
+              setStatus(e instanceof Error ? e.message : "export failed");
+            }
+          }}
+        >
+          Download my message archive
+        </button>
+      </div>
+
       <AccountDeletion />
       <div className="card col">
         <h3 style={{ marginTop: 0 }}>Change password</h3>

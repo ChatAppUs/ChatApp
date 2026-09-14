@@ -165,6 +165,8 @@ services:
 
   ml:
     build: ./services/ml
+    environment:
+      TRANSLATE_MODEL: ${TRANSLATE_MODEL:-}
     ports:
       - "8200:8200"
 

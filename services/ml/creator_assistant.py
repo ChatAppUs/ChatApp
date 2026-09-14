@@ -46,6 +46,12 @@ class AssistantRequest(BaseModel):
     user_id: str | None = None
 
 
+class TranslateRequest(BaseModel):
+    text: str
+    target_lang: str
+    source_lang: str | None = None
+
+
 # --------------------------------------------------------------- helpers -----
 
 _SENTENCE_RE = re.compile(r"[^.!?\n]+[.!?]?")
@@ -133,6 +139,23 @@ def _speak(text: str, target_lang: str) -> tuple[bool, str, str]:
         return False, f"tts failed: {exc}", ""
 
 
+def _translate_text(text: str, target_lang: str) -> tuple[bool, str, str]:
+    model_id = os.environ.get("TRANSLATE_MODEL", "").strip()
+    if not model_id:
+        return False, "TRANSLATE_MODEL not configured", ""
+    try:
+        from transformers import pipeline  # type: ignore
+
+        pipe = pipeline("translation", model=model_id)
+        result = pipe(text, max_length=512)
+        translated = (result[0].get("translation_text") or "").strip()
+        if not translated:
+            return False, "translation model returned no text", ""
+        return True, "", translated
+    except Exception as exc:
+        return False, f"translation failed: {exc}", ""
+
+
 def _clip_candidates(
     segments: list[dict[str, Any]], max_clips: int, min_len: float, max_len: float
 ) -> list[dict[str, Any]]:
@@ -206,6 +229,15 @@ def _clip_candidates(
 
 
 def register_creator_assistant(app: FastAPI) -> None:
+    @app.post("/translate")
+    def translate(req: TranslateRequest) -> dict[str, Any]:
+        text = (req.text or "").strip()
+        target = (req.target_lang or "").strip().lower()
+        if not text or not target:
+            return {"available": False, "reason": "text and target_lang required", "translation": ""}
+        ok, reason, translated = _translate_text(text, target)
+        return {"available": ok, "reason": reason, "translation": translated, "target_lang": target}
+
     @app.post("/dub")
     def dub(req: DubRequest) -> dict[str, Any]:
         target = (req.target_lang or "").strip().lower()

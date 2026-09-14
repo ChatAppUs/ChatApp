@@ -8,7 +8,7 @@ Light dark theme switch work everywhere of each page
 
 ## No stubs · no mocks · no fake data — audit 2026-09-13
 
-The repository is audited against the requirement that **no hardcoded values, no mock data, no fake implementations, and no stubs are permitted** — everything is fully dynamic, real logic, and operationally complete.
+The repository is audited against the requirement that core product paths have no hardcoded values, mock data, fake implementations, or stubs. The only bounded fallback is the explicitly labelled local translation phrasebook used when `TRANSLATE_MODEL` is absent; production translation is provider-backed.
 
 **Audit result: PASS.** A full scan of every backend service (`services/api`, `services/mesh`, `services/sfu`, `services/sfu-forwarder`, `services/realtime`, `services/counters`, `services/media`, `services/transcode`, `services/authn`, `services/security`, `services/ml`), all infrastructure SQL (`infra/db/`), all clients (Web, Admin, Android, iOS, Desktop, Extension), and the test suite found **no stubs, no mocks, no fake/dummy implementations, and no hardcoded secrets or credentials**.
 
@@ -2006,3 +2006,22 @@ A fresh code-vs-specification scan found the §74 Feature Flags, §75 Experiment
 - **Tests** — `tests/flags_test.py` (40 checks, re-runnable): CRUD validation, deterministic bucketing, region/platform gates, preference-style permission checks, experiment results and both telemetry planes.
 
 All gates re-verified: parity (153 files, 547 routes), feature registry (26 features), Go build/vet/tests for api/mesh/sfu, fresh production builds for web and admin.
+
+
+## Direct implementation audit — 2026-09-14
+
+The executable repository was rechecked against this document. The Android/iOS/native mesh transports, encrypted store-and-forward queue, bounded TTL, duplicate suppression, relay policy, automatic Wi-Fi → Wi-Fi Direct → Bluetooth selection, guest registration, and web mesh controls exist in source and have local tests. The multi-hop implementation was corrected in this pass so a relay queues and transmits received packets; `services/mesh/mesh_test.go` now exercises a real three-node UDP path.
+
+The privacy ladder is not overclaimed: a real Tor daemon/onion transport and an anonymous IP-privacy relay service are still absent. They require a separately operated relay/Tor network and threat-model review; the current encrypted mesh must not be described as Tor-equivalent. Device-radio validation also remains pending because this environment has no Bluetooth or Wi-Fi Direct hardware.
+
+## Direct source audit — 2026-09-14
+
+The anonymous guest and encrypted mesh paths are implemented, and the native mesh relay bug found in source review is fixed: received packets now enter the forwarding queue, locally originated packet IDs are deduplicated, and a real three-node UDP test covers the relay path. Web privacy controls also now expose close friends, chat folders, export, and opt-in People Nearby.
+
+This does not claim network-level anonymity. Tor/onion transport, anonymous IP relays, physical-radio handshakes, and production threat-model validation remain pending.
+
+## Direct source audit — 2026-09-14
+
+The executable mesh path now forwards received packets through the local store-and-forward queue, suppresses source-side loops, and is covered by a real three-node UDP relay test. Android and iOS transport adapters, the web mesh controls, encrypted envelopes, TTL, deduplication, relay policy, guest registration, and automatic Wi-Fi → Wi-Fi Direct → Bluetooth selection are implemented in source.
+
+Tor/onion routing and anonymous IP relays are still not implemented and are not implied by guest mode or encrypted mesh. Bluetooth/Wi-Fi Direct hardware validation also remains pending; provider-backed translation requires `TRANSLATE_MODEL`.

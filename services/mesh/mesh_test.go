@@ -151,6 +151,59 @@ func TestNodeSendDeliver(t *testing.T) {
 	}
 }
 
+func TestNodeMultiHopRelay(t *testing.T) {
+	key, err := NewIdentityKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr1, err := NewUDPTransport(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tr1.Close()
+	tr2, err := NewUDPTransport(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tr2.Close()
+	tr3, err := NewUDPTransport(0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tr3.Close()
+
+	received := make(chan string, 1)
+	n1 := NewNode(NodeConfig{DeviceID: "hop-1", Key: &key, Transport: tr1})
+	n2 := NewNode(NodeConfig{DeviceID: "hop-2", Key: &key, Transport: tr2})
+	n3 := NewNode(NodeConfig{
+		DeviceID:  "hop-3",
+		Key:       &key,
+		Transport: tr3,
+		Handler: func(_ *Packet, plaintext []byte) {
+			received <- string(plaintext)
+		},
+	})
+	defer n1.Stop()
+	defer n2.Stop()
+	defer n3.Stop()
+
+	n1.routes.Upsert(&Beacon{DeviceID: "hop-2", Addr: "127.0.0.1" + tr2.Addr()[strings.LastIndex(tr2.Addr(), ":"):], Transport: "local_wifi"})
+	n1.routes.SetRelay("hop-2", true)
+	n2.routes.Upsert(&Beacon{DeviceID: "hop-3", Addr: "127.0.0.1" + tr3.Addr()[strings.LastIndex(tr3.Addr(), ":"):], Transport: "local_wifi"})
+
+	if _, err := n1.Send(KindMessage, "hop-3", []byte("multi-hop delivery")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-received:
+		if got != "multi-hop delivery" {
+			t.Fatalf("received %q", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("message was not delivered through the relay")
+	}
+}
+
 // TestHopsForDevices verifies the hop budget grows with device count so the
 // mesh can span larger networks (coverage scales with device count).
 func TestHopsForDevices(t *testing.T) {

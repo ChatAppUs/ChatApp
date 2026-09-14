@@ -205,6 +205,7 @@ var translateDict = map[string]map[string]string{
 	"ar": {"hello": "مرحبا", "hi": "مرحبا", "good morning": "صباح الخير", "good night": "تصبح على خير", "thank you": "شكرا", "thanks": "شكرا", "yes": "نعم", "no": "لا", "goodbye": "وداعا", "bye": "وداعا", "how are you": "كيف حالك", "love": "حب", "friend": "صديق", "welcome": "أهلا بك"},
 	"hi": {"hello": "नमस्ते", "hi": "नमस्ते", "good morning": "सुप्रभात", "good night": "शुभ रात्रि", "thank you": "धन्यवाद", "thanks": "धन्यवाद", "yes": "हाँ", "no": "नहीं", "goodbye": "अलविदा", "bye": "अलविदा", "how are you": "कैसे हो", "love": "प्यार", "friend": "दोस्त", "welcome": "स्वागत है"},
 	"ja": {"hello": "こんにちは", "hi": "やあ", "good morning": "おはよう", "good night": "おやすみ", "thank you": "ありがとう", "thanks": "ありがとう", "yes": "はい", "no": "いいえ", "goodbye": "さようなら", "bye": "じゃあね", "how are you": "元気ですか", "love": "愛", "friend": "友達", "welcome": "ようこそ"},
+	"zh": {"hello": "你好", "hi": "嗨", "good morning": "早上好", "good night": "晚安", "thank you": "谢谢", "thanks": "谢谢", "yes": "是", "no": "不", "goodbye": "再见", "bye": "拜拜", "how are you": "你好吗", "love": "爱", "friend": "朋友", "welcome": "欢迎"},
 }
 
 var targetLangRe = regexp.MustCompile(`^[a-z]{2}(-[a-zA-Z]{2})?$`)
@@ -267,18 +268,34 @@ func (a *App) handleTranslateMessage(w http.ResponseWriter, r *http.Request) {
 			"message_id": msgID, "target_lang": req.TargetLang, "translated": cached, "provider": "cache"}})
 		return
 	}
-	translated, ok := translateLocal(body, req.TargetLang)
-	if !ok {
-		writeErr(w, http.StatusBadRequest, "unsupported target language")
-		return
+	var model struct {
+		Available   bool   `json:"available"`
+		Translation string `json:"translation"`
+	}
+	var translated string
+	provider := ""
+	if err := a.mlPost(r.Context(), "/translate", map[string]any{
+		"text": body, "target_lang": req.TargetLang,
+	}, &model); err == nil && model.Available && strings.TrimSpace(model.Translation) != "" {
+		translated = strings.TrimSpace(model.Translation)
+		provider = "ml"
+	}
+	if provider == "" {
+		var ok bool
+		translated, ok = translateLocal(body, req.TargetLang)
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "unsupported target language")
+			return
+		}
+		provider = "local-dict-v1"
 	}
 	_, _ = a.db.Exec(r.Context(),
 		`INSERT INTO message_translations (message_id, lang, translated_text, engine)
-		 VALUES ($1,$2,$3,'local-dict-v1')
-		 ON CONFLICT (message_id, lang) DO UPDATE SET translated_text=EXCLUDED.translated_text`,
-		msgID, req.TargetLang, translated)
+		 VALUES ($1,$2,$3,$4)
+		 ON CONFLICT (message_id, lang) DO UPDATE SET translated_text=EXCLUDED.translated_text, engine=EXCLUDED.engine`,
+		msgID, req.TargetLang, translated, provider)
 	writeJSON(w, http.StatusOK, map[string]any{"translation": map[string]any{
-		"message_id": msgID, "target_lang": req.TargetLang, "translated": translated, "provider": "local-dict-v1"}})
+		"message_id": msgID, "target_lang": req.TargetLang, "translated": translated, "provider": provider}})
 }
 
 func (a *App) handleMessageTranslations(w http.ResponseWriter, r *http.Request) {
