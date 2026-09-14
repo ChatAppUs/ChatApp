@@ -12,6 +12,7 @@ import sys
 import time
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
+import integration_test
 from integration_test import check, req, grant_superadmin, register_verified
 
 
@@ -202,8 +203,8 @@ def main():
     s, r = req("DELETE", f"/api/admin/role-defs/p2p_ops_{ts}", token=admin_tok)
     check("superadmin deletes role", s == 200, f"{s} {r}")
 
-    print()
-    return 0
+    print(f"\n{integration_test.passed} passed, {integration_test.failed} failed")
+    return 1 if integration_test.failed else 0
 
 
 if __name__ == "__main__":

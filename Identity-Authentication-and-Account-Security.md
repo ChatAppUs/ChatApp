@@ -451,3 +451,9 @@ The eighth independent audit found that all checked-in Go modules require Go 1.2
 ## Audit addendum — 2026-09-14, notification preference enforcement pass
 
 Ninth independent audit of this document against the source tree. The identity/authentication surface (registration OTP gates, password policy + change with challenge + contact freeze + session revocation, 2FA TOTP + recovery codes, passkeys, admin RBAC, rate limiters, session/device management) was re-verified line by line and remains implemented as documented. The one new fix in this pass is outside authentication but security-relevant: notification delivery now honours the user's per-kind preference matrix at every write path and at the storage layer (migration `038`), closing a §33 preference-check gap. All verification gates pass on a fresh checkout; environment-dependent validation remains as previously recorded.
+
+---
+
+## Addendum — 2026-09-14 (tenth audit)
+
+Notification preference controls (§33) are now enforced on the read path: kinds a user has muted are excluded from the in-app list even if the row was written before the mute, and reversing a repost withdraws its notification. The two E2E suites that silently exited 0 on failure now propagate failures to CI, so regression of the security-adjacent notification surface cannot be masked.

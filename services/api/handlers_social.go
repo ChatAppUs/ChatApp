@@ -972,9 +972,13 @@ func (a *App) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	limit, offset := pageParams(r)
+	// §33: kinds the user has muted stay hidden from the list even if a row
+	// was fanned out while the kind was still enabled.
 	rows, err := a.db.Query(r.Context(),
-		`SELECT id, kind, payload, read_at, created_at FROM notifications
-                 WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`,
+		`SELECT n.id, n.kind, n.payload, n.read_at, n.created_at FROM notifications n
+                 LEFT JOIN notification_settings s ON s.user_id = n.user_id AND s.kind = n.kind
+                 WHERE n.user_id = $1 AND COALESCE(s.enabled, TRUE)
+                 ORDER BY n.id DESC LIMIT $2 OFFSET $3`,
 		userIDFrom(r), limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to load notifications")

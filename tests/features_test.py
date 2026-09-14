@@ -14,6 +14,7 @@ import time
 import websockets
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
+import integration_test
 from integration_test import WS, check, req
 from gaps6_test import register as otp_register, uid
 
@@ -132,8 +133,8 @@ def main():
     s, r = req("POST", f"/api/reels/{reel_id}/watch", {
         "watched_ms": -5, "duration_ms": 5000}, token=alice_tok)
     check("negative watch rejected", s == 400, f"{s} {r}")
-    s, r = req("POST", f"/api/reels/{gid}/watch", {"watched_ms": 10, "duration_ms": 10},
-               token=alice_tok)
+    s, r = req("POST", f"/api/reels/{gid}/watch", {"watched_ms": 10, "duration_ms": 10,
+               "completed": True}, token=alice_tok)
     check("watch on non-reel 404", s == 404, f"{s} {r}")
     s, r = req("GET", "/api/fyp?limit=50", token=alice_tok)
     check("fyp returns ranked reels", s == 200 and isinstance(r.get("posts"), list), f"{s} {r}")
@@ -269,8 +270,8 @@ def main():
     s, r = req("DELETE", f"/api/bots/{bot_id}", token=alice_tok)
     check("bot delete", s == 200, f"{s} {r}")
 
-    print()
-    return 0
+    print(f"\n{integration_test.passed} passed, {integration_test.failed} failed")
+    return 1 if integration_test.failed else 0
 
 
 if __name__ == "__main__":

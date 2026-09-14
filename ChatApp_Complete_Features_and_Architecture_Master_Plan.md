@@ -2816,3 +2816,9 @@ The eighth independent audit found that all checked-in Go modules require Go 1.2
 ## Audit addendum — 2026-09-14, notification preference enforcement pass
 
 Ninth independent audit of this plan against the source tree. New fix: §33's preference-check stage is now real — the `notification_settings` matrix gates every in-app and push notification write (`services/api/notify.go`, `handlers_push.go`), with storage-layer enforcement in migration `038_notification_preference_invariant.sql` and integration coverage in `tests/integration_test.py`. Comment replies now notify the parent-comment author under the documented `replies` kind. Re-verified in this pass: events (timezone-aware `TIMESTAMPTZ` + RSVP), search authorization (`public` or own posts only), channels semantics, story archive, chain watchers, counters flush wiring, metrics endpoint, lockfile pinning. Environment-dependent surfaces remain as previously recorded.
+
+---
+
+## Addendum — 2026-09-14 (tenth audit)
+
+Parity fix recorded: un-reposting a post now withdraws the notification the repost fanned out, and the in-app notification list hides kinds the recipient muted, completing the read side of the §33 preference pipeline. The features and finance end-to-end suites no longer exit 0 unconditionally; CI now fails when their checks fail.

@@ -29,6 +29,9 @@ func (a *App) handleUnrepost(w http.ResponseWriter, r *http.Request) {
 	if res.RowsAffected() > 0 {
 		_, _ = tx.Exec(r.Context(),
 			`UPDATE posts SET share_count = GREATEST(share_count-1, 0) WHERE id=$1`, origID)
+		// Withdraw the fan-out notification the repost created for the author.
+		_, _ = tx.Exec(r.Context(),
+			`DELETE FROM notifications WHERE kind='repost' AND payload->>'post_id' = $1 AND payload->>'actor_id' = $2`, origID, uid)
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "unrepost failed")

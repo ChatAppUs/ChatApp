@@ -1987,3 +1987,9 @@ The eighth independent audit found that all checked-in Go modules require Go 1.2
 ## Audit addendum — 2026-09-14, notification preference enforcement pass
 
 Ninth independent audit re-walked this document against the source tree. Finding: the per-kind notification preference matrix was stored but never consulted — §33's *preference check* stage was skipped by every writer, so muted notification kinds were still delivered. Now enforced at every write path and at the storage layer (migration `038`), with integration coverage proving mute → silence → re-enable → delivery. The anonymous/guest, one-time invite (`max_uses`), store-and-forward mesh, and transport-priority surfaces were re-verified against the code in this pass and remain implemented as documented. Remaining pending surfaces are unchanged: on-device radio validation, provider-backed AI execution, load/DR and production deployment validation.
+
+---
+
+## Addendum — 2026-09-14 (tenth audit)
+
+The notification preference matrix is now enforced on the read side too: muted kinds never appear in `GET /api/notifications`, and un-reposting withdraws the notification that was fanned out while the kind was still enabled. Two end-to-end suites no longer mask failures (they exit non-zero when checks fail), and the counters/TURN data-plane launch requirements are documented so the anonymous-traffic telemetry pipeline can be reproduced locally.

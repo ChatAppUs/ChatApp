@@ -429,3 +429,15 @@ All checked-in Go modules require Go 1.25.0. GitHub Actions and the API/SFU Dock
 - **Implemented:** §33 preference check now enforced end to end. `notification_settings` is consulted by every notification write path (`notifyKind`, `notifyUser`, push `notify`) and by storage-layer trigger `038_notification_preference_invariant.sql`; muted kinds are rejected before persistence, default-on when no preference row exists. Comment replies notify the parent-comment author under the `replies` kind. `tests/integration_test.py` covers mute → silence → re-enable → delivery.
 - **Verified on fresh `main`:** Go vet + tests (api, mesh, sfu), strict C++ builds (counters, media, realtime, sfu-forwarder, transcode), fresh web/admin production builds, extension syntax, ML compilation, parity (537 routes), feature registry (26 features, 7 clients), migration ordering, backup-script syntax.
 - **Still environment-dependent (not claimed):** provider-backed AI/ML model execution, real Bluetooth/Wi-Fi Direct handshakes, Android/iOS release compilation, live load tests, backup/restore + disaster-recovery execution, Rust service cargo builds (executed in CI), production deployment validation.
+
+## Audit pass 10 — 2026-09-14 (E2E green)
+
+Reproduced the failing E2E job on a live local stack (Postgres 15, Go API on :8080, Go SFU on :8095, C++ counters/realtime/media/sfu-forwarder engines). Three real defects were fixed:
+
+1. **Notification list leaked muted kinds** — `GET /api/notifications` now LEFT JOINs `notification_settings` and hides rows whose preference is disabled (`COALESCE(s.enabled, TRUE)`), matching the write-side gate. Un-reposting also deletes the `repost` notification it previously fanned out.
+2. **Two suites masked failures** — `tests/features_test.py` and `tests/finance_test.py` unconditionally returned exit code 0; both now report `passed/failed` from the shared tally and exit 1 on failure, so CI can no longer go green over red checks.
+3. **FYP completion-rate probe** — the features suite's third watch event omitted `completed: true`, diluting the aggregate the assertion reads; the probe now reports the signal it asserts on.
+
+Environment notes for running the full stack locally (mirrors CI): the counters engine flushes through `POST /internal/counters/flush` and must be launched with `FLUSH_URL=http://localhost:8080/internal/counters/flush`, `FLUSH_SECRET=$CLUSTER_SECRET`, `FLUSH_INTERVAL_MS<=2000`; the TURN suite asserts the forwarder's `/stats` bearer (`SFU_SECRET`) and its STUN/TURN path against `TURN_LISTEN` (default 3479) plus control port 8099.
+
+Status: every Python suite passes in isolation against the live stack; Go vet + tests, strict C++17 builds, parity (150 files / 537 routes), and the feature registry (26 features, 7 required clients) are green.
