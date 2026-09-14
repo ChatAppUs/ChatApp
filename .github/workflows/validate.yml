@@ -122,7 +122,9 @@ jobs:
       SFU_INTERNAL_URL: http://localhost:8095
       SFU_PUBLIC_URL: ws://localhost:8095/ws
       SFU_HOST: localhost
-      TURN_FORWARDER: http://localhost:8099
+      # TURN_FORWARDER is a host:port consumed by the API's ICE builder;
+      # 8099 is the forwarder's HTTP control port, while 3479 serves TURN.
+      TURN_FORWARDER: localhost:3479
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

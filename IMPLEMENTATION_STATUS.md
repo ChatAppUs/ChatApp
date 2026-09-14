@@ -413,3 +413,8 @@ host, which makes this look like ample memory). Not a code defect; it must be co
 (`WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL` unset, so those endpoints report
 `available:false` and fabricate nothing); live SMTP/SMS/ML providers; Tor/multi-hop IP-privacy
 transport; production load, backup/restore and disaster-recovery validation.
+
+
+### 2026-09-14 TURN CI wiring audit
+
+The end-to-end workflow now passes `localhost:3479` as `TURN_FORWARDER`, matching the C++ relay’s TURN listener. The forwarder control port `8099` remains dedicated to readiness checks and is no longer advertised as a TURN endpoint.

@@ -1975,3 +1975,7 @@ The sixth independent source audit found that the C++ TURN forwarder compiled in
 container image and Compose service. `services/sfu-forwarder/Dockerfile` and the corresponding
 `sfu-forwarder` Compose entry are now implemented with TURN ports 3479 TCP/UDP and control port
 8099; the API is wired to prefer `sfu-forwarder:3479` while retaining the embedded relay fallback.
+
+## Implementation audit addendum — 2026-09-14, TURN CI wiring pass
+
+The seventh independent audit found that the end-to-end workflow supplied the C++ TURN forwarder HTTP control port (`8099`) as `TURN_FORWARDER`. Because the API consumes a host:port TURN address and prepends `turn:`, CI would advertise an invalid relay. The workflow now uses `localhost:3479`, the forwarder’s actual TURN listener, while retaining `8099` only for readiness checks.
