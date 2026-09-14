@@ -30,9 +30,7 @@ func (a *App) handleLikeComment(w http.ResponseWriter, r *http.Request) {
 		payload, _ := json.Marshal(map[string]string{
 			"comment_id": commentID, "post_id": postID, "actor_id": uid,
 		})
-		_, _ = a.db.Exec(r.Context(),
-			`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'comment_like',$2)`,
-			authorID, payload)
+			a.notifyKind(authorID, "comment_like", payload)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

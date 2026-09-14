@@ -544,7 +544,4 @@ func (a *App) notifyCounterparty(ctx context.Context, tradeID, actorID, kind str
 	a.notifyUser(ctx, target, kind, map[string]string{"trade_id": tradeID})
 }
 
-func (a *App) notifyUser(ctx context.Context, userID, kind string, payload map[string]string) {
-	_, _ = a.db.Exec(ctx,
-		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,$2,$3)`, userID, kind, payload)
-}
+// notifyUser moved to notify.go (§33 preference gate).

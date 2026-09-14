@@ -1983,3 +1983,7 @@ The seventh independent audit found that the end-to-end workflow supplied the C+
 ## Implementation audit addendum — 2026-09-14, Go toolchain alignment pass
 
 The eighth independent audit found that all checked-in Go modules require Go 1.25.0 while CI and the API/SFU Docker build stages were pinned to an older Go toolchain. CI now uses Go 1.25, and both Go Docker builders use `golang:1.25-alpine`, eliminating the toolchain drift.
+
+## Audit addendum — 2026-09-14, notification preference enforcement pass
+
+Ninth independent audit re-walked this document against the source tree. Finding: the per-kind notification preference matrix was stored but never consulted — §33's *preference check* stage was skipped by every writer, so muted notification kinds were still delivered. Now enforced at every write path and at the storage layer (migration `038`), with integration coverage proving mute → silence → re-enable → delivery. The anonymous/guest, one-time invite (`max_uses`), store-and-forward mesh, and transport-priority surfaces were re-verified against the code in this pass and remain implemented as documented. Remaining pending surfaces are unchanged: on-device radio validation, provider-backed AI execution, load/DR and production deployment validation.

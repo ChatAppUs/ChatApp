@@ -531,12 +531,75 @@ def social2_flow(alice_tok, bob_tok, conv):
     rc = next((c for c in r.get("comments", []) if c["id"] == rid), None)
     check("reply has parent_id", rc and rc.get("parent_id") == cid, f"{rc}")
 
+    # §33 preference gate: disabling a kind must suppress further notifications
+    # of that kind (both delivery and the list view), while other kinds pass.
+    s, r = req("POST", f"/api/posts/{post_id}/repost", {}, token=bob_tok)
+    check("repost for preference gate", s in (200, 201), f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("repost notifies author",
+          any(n["kind"] == "repost" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("PUT", "/api/me/notification-settings/repost", {"enabled": False}, token=alice_tok)
+    check("disable repost notifications", s == 200, f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("disabled kind hidden from list",
+          all(n["kind"] != "repost" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("DELETE", f"/api/posts/{post_id}/repost", token=bob_tok)
+    check("unrepost", s == 200, f"{s} {r}")
+    s, r = req("POST", f"/api/posts/{post_id}/repost", {}, token=bob_tok)
+    check("repost after mute", s in (200, 201), f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("muted kind not re-delivered",
+          all(n["kind"] != "repost" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("PUT", "/api/me/notification-settings/repost", {"enabled": True}, token=alice_tok)
+    check("re-enable repost notifications", s == 200, f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("re-enabled kind visible again",
+          any(n["kind"] == "repost" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("DELETE", f"/api/posts/{post_id}/repost", token=bob_tok)
+    check("cleanup repost", s == 200, f"{s} {r}")
+    # §33 preference check: a disabled notification kind must not be written.
+    s, r = req("PUT", "/api/me/notification-settings/repost", {"enabled": False}, token=alice_tok)
+    check("disable repost notifications", s == 200, f"{s} {r}")
+    s, r = req("POST", f"/api/posts/{post_id}/repost", {}, token=bob_tok)
+    check("repost with kind disabled", s in (200, 201), f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("disabled kind not notified",
+          not any(n["kind"] == "repost" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("DELETE", f"/api/posts/{post_id}/repost", token=bob_tok)
+    check("cleanup unrepost", s == 200, f"{s} {r}")
+    s, r = req("PUT", "/api/me/notification-settings/repost", {"enabled": True}, token=alice_tok)
+    check("reenable repost notifications", s == 200, f"{s} {r}")
+    s, r = req("POST", f"/api/posts/{post_id}/repost", {}, token=bob_tok)
+    check("repost with kind enabled", s in (200, 201), f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("enabled kind notifies again",
+          any(n["kind"] == "repost" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("DELETE", f"/api/posts/{post_id}/repost", token=bob_tok)
+    check("cleanup unrepost 2", s == 200, f"{s} {r}")
     # notifications mark read
     s, r = req("POST", "/api/notifications/read", {}, token=alice_tok)
     check("mark notifications read", s == 200, f"{s} {r}")
     s, r = req("GET", "/api/notifications", token=alice_tok)
     check("all notifications read",
           all(n.get("read_at") for n in r.get("notifications", [])), f"{s}")
+    # notification preference matrix (§33: preference check happens before delivery)
+    s, r = req("PUT", "/api/me/notification-settings/replies", {"enabled": False}, token=alice_tok)
+    check("disable replies notif kind", s == 200, f"{s} {r}")
+    s, r = req("POST", f"/api/posts/{post_id}/comments",
+               {"body": f"pref probe {int(time.time())}", "parent_id": cid}, token=bob_tok)
+    check("pref probe reply sent", s in (200, 201), f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("disabled kind not delivered",
+          all(n["kind"] != "replies" for n in r.get("notifications", [])), f"{s}")
+    s, r = req("PUT", "/api/me/notification-settings/replies", {"enabled": True}, token=alice_tok)
+    check("re-enable replies notif kind", s == 200, f"{s} {r}")
+    # After re-enabling, a fresh reply MUST be delivered (proves the gate opens).
+    s, r = req("POST", f"/api/posts/{post_id}/comments",
+               {"body": f"pref probe 2 {int(time.time())}", "parent_id": cid}, token=bob_tok)
+    check("pref probe 2 reply sent", s in (200, 201), f"{s} {r}")
+    s, r = req("GET", "/api/notifications", token=alice_tok)
+    check("re-enabled kind delivered",
+          any(n["kind"] == "replies" for n in r.get("notifications", [])), f"{s}")
 
     # message search
     s, r = req("GET", f"/api/conversations/{conv}/search?q=pin", token=alice_tok)

@@ -752,6 +752,16 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "comment failed")
 		return
 	}
+	// §33/gap9: a threaded reply notifies the parent-comment author (kind
+	// "replies" — honouring the per-user notification preference matrix).
+	if req.ParentID != "" {
+		var parentAuthor string
+		if err := tx.QueryRow(r.Context(),
+			`SELECT author_id FROM comments WHERE id=$1 AND author_id <> $2`,
+			req.ParentID, uid).Scan(&parentAuthor); err == nil && parentAuthor != "" {
+			a.notifyKind(parentAuthor, "replies", map[string]string{"comment_id": commentID, "post_id": postID, "by": uid})
+		}
+	}
 	// resolve @mentions
 	seen := map[string]bool{}
 	for _, m := range mentionRe.FindAllStringSubmatch(req.Body, -1) {
@@ -771,12 +781,7 @@ func (a *App) handleAddComment(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "comment failed")
 			return
 		}
-		if _, err := tx.Exec(r.Context(),
-			`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'mention',$2)`,
-			mentionedID, map[string]string{"comment_id": commentID, "post_id": postID, "by": uid}); err != nil {
-			writeErr(w, http.StatusInternalServerError, "comment failed")
-			return
-		}
+		a.notifyKind(mentionedID, "mention", map[string]string{"comment_id": commentID, "post_id": postID, "by": uid})
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "comment failed")

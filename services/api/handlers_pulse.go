@@ -202,19 +202,18 @@ func (a *App) handlePulseCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var parentAuthor string
 	if parent != nil {
-		if _, err := tx.Exec(r.Context(),
-			`INSERT INTO notifications (user_id, kind, payload)
-			 SELECT author_id, 'pulse_reply', jsonb_build_object('post_id',$1::text)
-			   FROM pulse_posts WHERE id=$2 AND author_id <> $3`,
-			id, *parent, uid); err != nil {
-			writeErr(w, http.StatusInternalServerError, "post failed")
-			return
-		}
+		_ = tx.QueryRow(r.Context(),
+			`SELECT author_id FROM pulse_posts WHERE id=$1 AND author_id <> $2`,
+			*parent, uid).Scan(&parentAuthor)
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "post failed")
 		return
+	}
+	if parentAuthor != "" {
+		a.notifyKind(parentAuthor, "pulse_reply", map[string]any{"post_id": id})
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }

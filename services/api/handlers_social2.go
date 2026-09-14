@@ -204,8 +204,7 @@ func (a *App) handleStoryReact(w http.ResponseWriter, r *http.Request) {
 	}
 	if authorID != uid {
 		payload, _ := json.Marshal(map[string]string{"story_id": storyID, "actor_id": uid, "emoji": emoji})
-		_, _ = a.db.Exec(r.Context(),
-			`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'story_reaction',$2)`, authorID, payload)
+		a.notifyKind(authorID, "story_reaction", payload)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

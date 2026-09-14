@@ -557,8 +557,7 @@ func (a *App) handleRepost(w http.ResponseWriter, r *http.Request) {
 	var authorID string
 	if err := a.db.QueryRow(r.Context(), `SELECT author_id FROM posts WHERE id=$1`, origID).Scan(&authorID); err == nil && authorID != uid {
 		payload, _ := json.Marshal(map[string]string{"post_id": origID, "actor_id": uid})
-		_, _ = a.db.Exec(r.Context(),
-			`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'repost',$2)`, authorID, payload)
+		a.notifyKind(authorID, "repost", payload)
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }

@@ -191,9 +191,7 @@ func (a *App) handleP2PTransfer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "transfer failed")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'payment_received',$2)`,
-		recipientID, map[string]string{"from": uid, "amount": req.Amount, "asset": strings.ToUpper(req.Asset)})
+	a.notifyKind(recipientID, "payment_received", map[string]string{"from": uid, "amount": req.Amount, "asset": strings.ToUpper(req.Asset)})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent", "tx_id": txID})
 }
 

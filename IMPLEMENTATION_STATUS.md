@@ -423,3 +423,9 @@ The end-to-end workflow now passes `localhost:3479` as `TURN_FORWARDER`, matchin
 ### 2026-09-14 Go toolchain alignment audit
 
 All checked-in Go modules require Go 1.25.0. GitHub Actions and the API/SFU Docker build stages now use Go 1.25, so CI and container builds no longer depend on automatic toolchain substitution from an older Go declaration.
+
+### 2026-09-14 notification preference enforcement audit
+
+- **Implemented:** §33 preference check now enforced end to end. `notification_settings` is consulted by every notification write path (`notifyKind`, `notifyUser`, push `notify`) and by storage-layer trigger `038_notification_preference_invariant.sql`; muted kinds are rejected before persistence, default-on when no preference row exists. Comment replies notify the parent-comment author under the `replies` kind. `tests/integration_test.py` covers mute → silence → re-enable → delivery.
+- **Verified on fresh `main`:** Go vet + tests (api, mesh, sfu), strict C++ builds (counters, media, realtime, sfu-forwarder, transcode), fresh web/admin production builds, extension syntax, ML compilation, parity (537 routes), feature registry (26 features, 7 clients), migration ordering, backup-script syntax.
+- **Still environment-dependent (not claimed):** provider-backed AI/ML model execution, real Bluetooth/Wi-Fi Direct handshakes, Android/iOS release compilation, live load tests, backup/restore + disaster-recovery execution, Rust service cargo builds (executed in CI), production deployment validation.

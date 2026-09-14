@@ -278,9 +278,7 @@ func (a *App) handleLuckyDrawBuyTickets(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "purchase failed")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'luckydraw_ticket',$2)`,
-		uid, map[string]any{"draw_id": req.DrawID, "count": req.Count})
+	a.notifyKind(uid, "luckydraw_ticket", map[string]any{"draw_id": req.DrawID, "count": req.Count})
 	_, _ = a.db.Exec(r.Context(),
 		`INSERT INTO lucky_draw_audit (draw_id, actor_id, action, detail)
 		 VALUES ($1,$2,'ticket_purchase', $3)`,
@@ -904,9 +902,7 @@ func (a *App) handleAdminLuckyDrawSettle(w http.ResponseWriter, r *http.Request)
 		map[string]any{"winners": len(list)})
 	// Notify winners.
 	for _, win := range list {
-		_, _ = a.db.Exec(r.Context(),
-			`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'luckydraw_win',$2)`,
-			win.acc, map[string]any{"draw_id": id, "prize_usd": win.prize})
+			a.notifyKind(win.acc, "luckydraw_win", map[string]any{"draw_id": id, "prize_usd": win.prize})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "settled", "winners": len(list)})
 }

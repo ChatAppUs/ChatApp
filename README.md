@@ -566,3 +566,9 @@ The seventh independent audit found that the end-to-end workflow supplied the C+
 ## Implementation audit addendum — 2026-09-14, Go toolchain alignment pass
 
 The eighth independent audit found that all checked-in Go modules require Go 1.25.0 while CI and the API/SFU Docker build stages were pinned to an older Go toolchain. CI now uses Go 1.25, and both Go Docker builders use `golang:1.25-alpine`, eliminating the toolchain drift.
+
+## Implementation audit addendum — 2026-09-14, notification preference enforcement pass
+
+The ninth independent audit re-walked the five specification files against the source tree and found that the per-kind notification preference matrix (Master Documentation §33, gap pack 9) was stored and served by `GET/PUT /api/me/notification-settings` but never consulted: every `INSERT INTO notifications` wrote the row regardless, so muting a kind silenced nothing. All write paths now flow through preference-gated funnels (`services/api/notify.go` `notifyKind`/`notifyUser`, plus the push fan-out `notify` in `handlers_push.go`), and migration `038_notification_preference_invariant.sql` enforces the same rule at the storage layer, so current and future writers cannot bypass it. A reply to your comment now also notifies the parent-comment author under the documented `replies` kind. Integration coverage in `tests/integration_test.py` proves muted kinds are not delivered and re-enabled kinds are.
+
+All gates re-verified on a fresh checkout of `main`: parity (150 files, 537 registered routes, all clients), feature registry (26 features, 7 required clients), Go vet + tests for api/mesh/sfu (Go 1.25.1), strict C++ builds for counters/media/realtime/sfu-forwarder/transcode, fresh production builds for web and admin, extension syntax, ML compilation, and backup-script syntax.

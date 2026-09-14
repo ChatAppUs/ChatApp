@@ -2812,3 +2812,7 @@ The seventh independent audit found that the end-to-end workflow supplied the C+
 ## Implementation audit addendum — 2026-09-14, Go toolchain alignment pass
 
 The eighth independent audit found that all checked-in Go modules require Go 1.25.0 while CI and the API/SFU Docker build stages were pinned to an older Go toolchain. CI now uses Go 1.25, and both Go Docker builders use `golang:1.25-alpine`, eliminating the toolchain drift.
+
+## Audit addendum — 2026-09-14, notification preference enforcement pass
+
+Ninth independent audit of this plan against the source tree. New fix: §33's preference-check stage is now real — the `notification_settings` matrix gates every in-app and push notification write (`services/api/notify.go`, `handlers_push.go`), with storage-layer enforcement in migration `038_notification_preference_invariant.sql` and integration coverage in `tests/integration_test.py`. Comment replies now notify the parent-comment author under the documented `replies` kind. Re-verified in this pass: events (timezone-aware `TIMESTAMPTZ` + RSVP), search authorization (`public` or own posts only), channels semantics, story archive, chain watchers, counters flush wiring, metrics endpoint, lockfile pinning. Environment-dependent surfaces remain as previously recorded.

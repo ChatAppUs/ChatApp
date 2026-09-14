@@ -447,3 +447,7 @@ The seventh independent audit found that the end-to-end workflow supplied the C+
 ## Implementation audit addendum — 2026-09-14, Go toolchain alignment pass
 
 The eighth independent audit found that all checked-in Go modules require Go 1.25.0 while CI and the API/SFU Docker build stages were pinned to an older Go toolchain. CI now uses Go 1.25, and both Go Docker builders use `golang:1.25-alpine`, eliminating the toolchain drift.
+
+## Audit addendum — 2026-09-14, notification preference enforcement pass
+
+Ninth independent audit of this document against the source tree. The identity/authentication surface (registration OTP gates, password policy + change with challenge + contact freeze + session revocation, 2FA TOTP + recovery codes, passkeys, admin RBAC, rate limiters, session/device management) was re-verified line by line and remains implemented as documented. The one new fix in this pass is outside authentication but security-relevant: notification delivery now honours the user's per-kind preference matrix at every write path and at the storage layer (migration `038`), closing a §33 preference-check gap. All verification gates pass on a fresh checkout; environment-dependent validation remains as previously recorded.

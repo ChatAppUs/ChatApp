@@ -312,6 +312,9 @@ func (a *App) queuePush(ctx context.Context, userID, kind, title, body string, d
 // notify is the single funnel for user notifications: in-app row, realtime
 // WS event, and a queued push for offline devices.
 func (a *App) notify(ctx context.Context, userID, kind, title, body string, payload map[string]any) {
+	if !a.notificationEnabled(ctx, userID, kind) {
+		return
+	}
 	_, _ = a.db.Exec(ctx,
 		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,$2,$3)`, userID, kind, payload)
 	wsPayload, _ := json.Marshal(map[string]any{

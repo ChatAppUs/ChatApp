@@ -356,9 +356,7 @@ func (a *App) handleAdminReviewKYC(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "review failed")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'kyc_decision',$2)`,
-		targetUser, map[string]string{"decision": req.Decision})
+	a.notifyKind(targetUser, "kyc_decision", map[string]string{"decision": req.Decision})
 	a.audit(r.Context(), userIDFrom(r), "kyc_"+req.Decision, targetUser, map[string]any{"note": req.Note})
 	writeJSON(w, http.StatusOK, map[string]string{"status": req.Decision})
 }

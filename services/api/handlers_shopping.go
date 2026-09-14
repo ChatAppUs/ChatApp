@@ -440,10 +440,8 @@ func (a *App) handleLiveCheckout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "checkout failed")
 		return
 	}
-	_, _ = a.db.Exec(r.Context(),
-		`INSERT INTO notifications (user_id, kind, payload) VALUES ($1,'liveshop_order',$2)`,
-		seller, map[string]any{"order_id": orderID, "product_id": req.ProductID,
-			"quantity": req.Quantity, "net_usd": netToSeller})
+	a.notifyKind(seller, "liveshop_order", map[string]any{"order_id": orderID, "product_id": req.ProductID,
+		"quantity": req.Quantity, "net_usd": netToSeller})
 	a.audit(r.Context(), uid, "liveshop.checkout", orderID,
 		map[string]any{"product_id": req.ProductID, "total_usd": total, "fee_usd": fee})
 	writeJSON(w, http.StatusCreated, map[string]any{
