@@ -1957,4 +1957,4 @@ A fresh reset to `origin/main` re-audited this document against the executable s
 
 The admin console now also consumes the five previously UI-less admin endpoints (content-abuse log, custom-emoji add/delete, group scale report, organization verification, merchant tier upsert).
 
-Still not implemented and honestly marked as future work (per the networking priority list): IP-privacy priorities 4–6 — Privacy Relay, Multi-hop Routing beyond the store-and-forward hop budget, and Tor onion transport. Web parity is now 92 files / 379 route refs (150 files / 537 routes overall).
+Still not implemented and honestly marked as future work (per the networking priority list): IP-privacy priorities 4–6 — Privacy Relay, Multi-hop Routing beyond the store-and-forward hop budget, and Tor onion transport. Web parity is now 92 files / 379 route refs (150 files / 537 routes overall). A 2026-09-14 reset to `20effb6` re-verified §5.1 transport priority order in `services/mesh/native_transport.go` (Wi-Fi/Wi-Fi Direct → Bluetooth → store-and-forward) against this document's priority ladder, and one-time connection links are covered by `conversation_invites.max_uses`.

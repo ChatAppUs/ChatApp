@@ -409,3 +409,12 @@ Validation after the changes: `go test -count=1` and `go vet` pass for `services
 ## Implementation audit addendum — 2026-09-13, web mesh parity and admin console closure pass
 
 A fresh reset to `origin/main` at commit `aaf447b` re-checked this specification against the executable source. All identity, authentication, and account-security surfaces remain implemented as previously verified: identifier-based login with 5-failure/48-hour lockout, single-use recovery codes, stateless authenticator-loss recovery claims with 48-hour withdrawal freezes, session list/remote revoke, passkeys, Google OAuth, QR login, trusted recovery, app lock, screen time, and `/api/me/export`. The admin console gained UI coverage for the security-relevant admin surfaces (security attestation audit, content-abuse log, sanctions import) that previously had no operator view. No new source-level gap in this specification's scope was found. Provider-backed authentication, live PostgreSQL verification, and native-device validation remain environment-dependent.
+
+A 2026-09-14 reset to `origin/main` at commit `20effb6` re-checked this specification against the
+source once more. The authenticated credential-change path was re-verified end to end in
+`services/api/handlers_credential_security.go`: password/email/phone operations all run inside one
+transaction with a row lock, require the current password plus the fresh contact-channel challenge
+and face-match attestation, revoke all sessions, and set the 48-hour withdrawal freeze in the same
+commit. Combined with the earlier passes, every endpoint listed in §4.1–§5.10 remains implemented.
+Environment-dependent items (provider-backed OAuth against live Google, SMTP/SMS delivery, and
+native-device validation) remain outstanding and are not marked complete.

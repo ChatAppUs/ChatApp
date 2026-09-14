@@ -3787,4 +3787,27 @@ Validation after the changes: fresh `npm ci && npm run build` passes for web (54
 
 ## Implementation audit addendum — 2026-09-13, web mesh parity and admin console closure pass
 
-A fresh reset to `origin/main` at commit `aaf447b` re-walked the 129-section specification. Two parity gaps were found and closed: the web client had no mesh surface (§15 offline mesh: Android/iOS yes, web no) — `apps/web/src/app/mesh/page.tsx` now drives all six `/api/mesh/*` endpoints; and five admin endpoints (content-abuse log, custom-emoji, group scale report, organization verification, merchant tier upsert) had no admin-UI consumer — the Safety tab and a new Platform tab now cover them. Validation: web (54 routes) and admin (5 routes) fresh builds pass; parity **150 files / 537 registered routes** (web 92 files / 379 refs, admin 77 refs); registry 26 features / 7 required clients; `go test -count=1` passes on Go 1.25.1 for `services/api`. Tor/multi-hop IP privacy, fuzzing, tracing, and alerting remain honestly marked as future work; device builds, live integrations, and production load/backup/DR validation remain environment-gated.
+A fresh reset to `origin/main` at commit `aaf447b` re-walked the 129-section specification. Two parity gaps were found and closed: the web client had no mesh surface (§15 offline mesh: Android/iOS yes, web no) — `apps/web/src/app/mesh/page.tsx` now drives all six `/api/mesh/*` endpoints; and five admin endpoints (content-abuse log, custom-emoji, group scale report, organization verification, merchant tier upsert) had no admin-UI consumer — the Safety tab and a new Platform tab now cover them. Validation: web (62 routes) and admin (2 routes: `/` and `/dashboard`) fresh builds pass; parity **150 files / 537 registered routes** (web 92 files / 379 refs, admin 77 refs); registry 26 features / 7 required clients; `go test -count=1` passes on Go 1.25.1 for `services/api`. Tor/multi-hop IP privacy, fuzzing, tracing, and alerting remain honestly marked as future work; device builds, live integrations, and production load/backup/DR validation remain environment-gated.
+
+## Audit addendum — 2026-09-14, independent pass
+
+A fresh reset to `origin/main` at commit `20effb6` re-walked all 129 sections against the executable
+source. Corrections to the most recent figures in this document: the web client builds **62 routes**
+(not 54) and the admin console **2 routes** (`/` and `/dashboard`; not 5); the router source now
+contains 633 `HandleFunc` registrations, of which 537 are `/api` routes counted by parity. Earlier
+per-pass numbers remain as the historical audit trail.
+
+Re-verified implemented this pass: channel posting restrictions, LuckyDraw per-user caps and
+unique-winner selection, P2P escrow disputes, four search surfaces (users, messages, posts, forums),
+the full credential-change transaction (challenge + attestation + session revocation + 48-hour
+freeze), referral attribution, tipping, creator payouts and wallet withdrawals with admin review,
+one-time invite links, story archive, AI dubbing/clips plus the in-app assistant backed by the
+FastAPI ML service (`/rank`, `/moderate`, `/captions`, `/embed`, `/rank/watch`), process metrics on
+`GET /metrics`, and 36 forward-only migrations (210 tables, no DROP statements, ordering enforced in
+CI). Parity stands at **150 files / 537 registered routes**; the feature registry passes with 26
+features across 7 required clients.
+
+Remaining future work (unchanged, honestly marked): Tor onion transport and multi-hop IP-privacy
+routing, fuzz targets, distributed tracing, alerting pipelines. Remaining environment gates:
+Android/iOS release builds and radio handshakes, live PostgreSQL and SMTP/SMS/ML provider
+integrations, and production load, backup/restore, and disaster-recovery certification.

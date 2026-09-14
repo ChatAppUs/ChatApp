@@ -247,3 +247,29 @@ Validation after the changes: `go test -count=1` and `go vet` pass for `services
 - Admin console closed the last UI-less admin endpoints: content-abuse log, custom-emoji management (Safety tab), group scale report, organization verification, merchant tier upsert (new Platform tab).
 - Verified green this pass: fresh `npm ci && npm run build` for web (54 routes) and admin (5 routes); feature registry (26 features, 7 required clients); `go test -count=1` for `services/api` on Go 1.25.1.
 - Still future work, not marked complete: Tor/multi-hop IP-privacy transport, fuzzing, tracing, alerting pipelines; Android/iOS release builds and radio handshakes; live PostgreSQL/provider integrations; production load, backup/restore, and disaster-recovery validation.
+
+## 2026-09-14 audit (fresh reset to `20effb6`)
+
+Deep re-scan of all five root specifications against the executable source. Corrections: the web
+client builds **62 routes** and the admin console **2 routes** (`/`, `/dashboard`) — earlier notes
+saying 53/54 web and 5 admin were stale. The router has 633 `HandleFunc` registrations (537 `/api`
+routes counted by parity); parity is **150 files / 537 registered routes** (web 92 files / 379 refs,
+admin 8 files / 77 refs); the feature registry passes with 26 features across 7 required clients;
+migrations stand at 36 forward-only files / 210 tables.
+
+Re-verified implemented: channel posting rules; LuckyDraw per-user caps and unique-winner rule; P2P
+escrow with dispute resolution; users/messages/posts/forums search; the credential-change
+transaction (current password + contact challenge + face-match attestation + session revocation +
+48-hour withdrawal freeze in one commit); referral attribution; tipping; creator payouts and wallet
+withdrawals with admin review; one-time invite links (`conversation_invites.max_uses`); story
+archive; AI dubbing/clips and the in-app assistant with FastAPI ML backing; `GET /metrics` process
+metrics; 414 `ON CONFLICT` idempotent-write sites across SQL and Go.
+
+Verified green this pass: `go test -count=1` for `services/api`, `services/mesh`, `services/sfu` on
+Go 1.25.1; fresh `npm ci && npm run build` for web and admin; parity and feature-registry validators;
+Python ML compilation; extension JavaScript syntax; backup-script syntax.
+
+Still future work, not marked complete: Tor/multi-hop IP-privacy transport, fuzz targets, tracing,
+alerting pipelines; Android/iOS release builds and Bluetooth/Wi-Fi Direct handshakes; live
+PostgreSQL/SMTP/SMS/ML provider integrations; production load, backup/restore, and disaster-recovery
+validation.

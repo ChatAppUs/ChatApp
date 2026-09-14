@@ -2752,3 +2752,27 @@ Validation after the changes: `go test -count=1` and `go vet` pass for `services
 ## Implementation audit addendum — 2026-09-13, web mesh parity and admin console closure pass
 
 A fresh reset to `origin/main` at commit `aaf447b` re-checked the §75 required-execution list and parity gates. New closure work this pass: the web client gained the offline-mesh UI (`/mesh`, driving all six `/api/mesh/*` endpoints with a device key header) that Android and iOS already had, and the admin console now consumes the previously UI-less admin endpoints (content-abuse log, custom-emoji, group scale report, organization verification, merchant tier upsert). Parity stands at **150 files / 537 registered routes** with the feature registry passing. Tor/multi-hop IP privacy (§ networking priorities 4–6 in Anonymous.md), fuzzing, tracing, and alerting remain explicitly unimplemented future work; device builds, live integrations, and production load/DR validation remain environment-gated.
+
+## Audit addendum — 2026-09-14, independent pass
+
+A fresh reset to `origin/main` at commit `20effb6` re-walked the §75 required-execution list and all
+domain checklists against the executable source, without relying on AGENTS.md or earlier audit notes.
+Corrections to this document's latest figures: the web client builds **62 routes** (not 53/54) and the
+admin console builds **2 routes** (`/` login and `/dashboard`; not 5). Earlier per-pass numbers in this
+file are retained as the historical audit trail.
+
+No new source-level gap was found this pass. Re-verified as implemented: channel posting rules,
+LuckyDraw per-user caps and unique-winner rule, P2P escrow with dispute resolution, users/messages/
+posts/forums search, password change with session revocation + 48-hour withdrawal freeze
+(`handleCredentialChange`), referral attribution, tipping, creator payouts and wallet withdrawals with
+admin review, one-time group invite links (`max_uses`), story archive, AI dubbing/clips and the
+in-app assistant with the FastAPI ML backing, Prometheus-style process metrics on `GET /metrics`
+(request/error counters, WS gauge, runtime gauges), and 36 forward-only migrations totalling 210
+tables. Parity stands at **150 files / 537 registered routes** (web 92 files / 379 refs, admin
+8 files / 77 refs); the feature registry passes with 26 features across 7 required clients.
+
+Still future work, honestly marked: Tor onion transport and multi-hop IP-privacy routing beyond the
+store-and-forward hop budget (Anonymous.md networking priorities 4–6), fuzz targets, distributed
+tracing, and alerting pipelines. Still environment-gated: Android/iOS release builds and Bluetooth/
+Wi-Fi Direct hardware handshakes, live PostgreSQL and provider integrations (SMTP/SMS/ML), and
+production load, backup/restore, and disaster-recovery certification.
