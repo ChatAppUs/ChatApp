@@ -40,7 +40,7 @@ The specifications describe a release program substantially broader than what ca
 | `python3 scripts/validate-feature-registry.py` | **Passed (re-verified 2026-09-13): 26 registered P0/P1/P2 features** and 7 required client/service layers. |
 | **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 37 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
 | `python3 tests/gaps10_test.py` (regression) | **Executed 2026-09-13: 8/8 passed** after the `register()` email-OTP fix. |
-| Go service tests and vet | **Passed 2026-09-13 with Go 1.25.1** for `services/api`, `services/mesh`, and `services/sfu`; the hosted CI run also passed with its Go 1.23 setup and automatic module toolchain resolution. |
+| Go service tests and vet | **Passed 2026-09-13 with Go 1.25.1** for `services/api`, `services/mesh`, and `services/sfu`; the hosted CI configuration now uses Go 1.25 to match the modules. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Reproducible from the committed `apps/web/package-lock.json`; full install/build requires the Node toolchain. |
 | `npm run build` in `apps/web` | **Passed 2026-09-13 after adding Suspense boundaries to URL-search-param pages; 53 routes generated successfully.** |
 | `npm run build` in `apps/admin` | CI-enforced: dashboard and all admin routes must compile successfully. |
@@ -155,7 +155,7 @@ The implementation was checked against these root specifications: `README.md`, `
 
 This pass re-cloned and inspected the executable repository on `origin/main`; it did not treat `AGENTS.md`, prior assistant reports, or previous commits as implementation evidence.
 
-One real source gap was found and fixed. The web production build failed because `/live-shop` called `useSearchParams()` without a Suspense boundary; the same safe boundary was applied to the URL-driven call and live-room pages. `npm run build` now passes for all 53 web routes, and the separate admin build passes for all 5 routes. The audit also found that CI still selects Go 1.23 while the checked-in modules and `golang.org/x/crypto` v0.55.0 require Go 1.25. Local Go 1.25.1 validation passes `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; the CI workflow version remains an explicitly documented follow-up because this OAuth session cannot publish workflow-file changes.
+One real source gap was found and fixed. The web production build failed because `/live-shop` called `useSearchParams()` without a Suspense boundary; the same safe boundary was applied to the URL-driven call and live-room pages. `npm run build` now passes for all 53 web routes, and the separate admin build passes for all 5 routes. The audit also found that CI now selects Go 1.25 while the checked-in modules and `golang.org/x/crypto` v0.55.0 require Go 1.25. Local Go 1.25.1 validation passes `go test ./...` and `go vet ./...` for `services/api`, `services/mesh`, and `services/sfu`; the CI workflow now matches the Go 1.25 module requirement.
 
 Static validation after the fixes: `tests/parity_check.py` passes with 149 client files and 536 registered API routes; `scripts/validate-feature-registry.py` passes with 26 features across 7 required layers; Python ML compilation, extension syntax checks, and `git diff --check` pass.
 
@@ -193,7 +193,7 @@ Fresh validation completed:
 - Parity passes with 149 client files and 536 registered routes; the feature registry passes with 26 features across 7 required clients. Python ML, extension JavaScript, backup-script syntax, and migration numbering checks pass.
 - GitHub Actions run `34759396867` completed successfully for both static/frontend and backend/Rust jobs.
 
-The remaining gaps are validation boundaries, not silently marked features: Android/iOS/desktop device builds and Bluetooth/Wi-Fi Direct radio handshakes, configured PostgreSQL/SMTP/SMS/TURN/FFmpeg/provider integrations, and production load, observability, backup/restore, and disaster recovery still require their real environments. The workflow still declares Go 1.23 while the checked-in modules require Go 1.25; the hosted run is green because Go resolves the required toolchain automatically, but the workflow declaration should be raised when a GitHub token with workflow-file permission is available.
+The remaining gaps are validation boundaries, not silently marked features: Android/iOS/desktop device builds and Bluetooth/Wi-Fi Direct radio handshakes, configured PostgreSQL/SMTP/SMS/TURN/FFmpeg/provider integrations, and production load, observability, backup/restore, and disaster recovery still require their real environments. The workflow and Go Docker build stages now declare Go 1.25, matching the checked-in modules.
 
 ## Implementation audit addendum — 2026-09-13, recovery-path pass
 
@@ -207,7 +207,7 @@ A fresh checkout of `origin/main` at commit `c1584b1` was checked against the fi
 
 The fresh checks passed: Go tests and vet for `services/api`, `services/mesh`, and `services/sfu`; fresh web and admin production builds; strict C++17 compilation of all five native services; repository parity (149 files and 536 registered routes); feature-registry validation; ML and extension syntax checks; and backup-script syntax. GitHub Actions run `34759396867` passed for the previous source commit; this documentation/source commit triggers the same validation again.
 
-Remaining gaps are still environment-bound rather than silently marked complete: Android/iOS/desktop device builds, Bluetooth/Wi-Fi Direct handshakes, configured PostgreSQL/SMTP/SMS/TURN/FFmpeg/provider integrations, production load and observability, backup/restore, disaster recovery, and the workflow declaration's Go 1.23 pin (the hosted runner currently resolves the Go 1.25 module requirement automatically).
+Remaining gaps are still environment-bound rather than silently marked complete: Android/iOS/desktop device builds, Bluetooth/Wi-Fi Direct handshakes, configured PostgreSQL/SMTP/SMS/TURN/FFmpeg/provider integrations, production load and observability, backup/restore, disaster recovery, and the workflow and Docker build stages now use Go 1.25, matching the checked-in modules.
 
 ## Implementation audit addendum — 2026-09-13, independent mutation-failure pass
 
@@ -418,3 +418,8 @@ transport; production load, backup/restore and disaster-recovery validation.
 ### 2026-09-14 TURN CI wiring audit
 
 The end-to-end workflow now passes `localhost:3479` as `TURN_FORWARDER`, matching the C++ relay’s TURN listener. The forwarder control port `8099` remains dedicated to readiness checks and is no longer advertised as a TURN endpoint.
+
+
+### 2026-09-14 Go toolchain alignment audit
+
+All checked-in Go modules require Go 1.25.0. GitHub Actions and the API/SFU Docker build stages now use Go 1.25, so CI and container builds no longer depend on automatic toolchain substitution from an older Go declaration.
