@@ -40,6 +40,10 @@ type Packet struct {
 	Payload   []byte     `json:"payload"`
 	Nonce     []byte     `json:"nonce"`
 	CreatedAt int64      `json:"created_at"`
+	// Seq is a per-sender monotonic sequence number used by receivers'
+	// replay filter (see replay.go). Zero means the sender predates
+	// sequence numbering; those packets are accepted without replay checks.
+	Seq int64 `json:"seq,omitempty"`
 }
 
 // NewPacket creates a packet with a fresh random id and the given TTL.

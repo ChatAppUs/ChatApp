@@ -54,3 +54,13 @@ func Decrypt(key *IdentityKey, ciphertext, nonce []byte) ([]byte, error) {
 	}
 	return plaintext, nil
 }
+
+// MustKey generates an identity key or panics. For simulators and tools;
+// library code should use NewIdentityKey and handle the error.
+func MustKey() *IdentityKey {
+	k, err := NewIdentityKey()
+	if err != nil {
+		panic(err)
+	}
+	return &k
+}

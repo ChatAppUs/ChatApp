@@ -77,14 +77,29 @@ Three more routing findings from this audit are now implemented in the Go engine
 
 New tests cover score ordering, expiry, best-relay selection, signed-beacon round trips, tamper rejection and key-pinning mismatch rejection. All mesh tests, vet and formatting pass under Go 1.25.1.
 
+### 7. Per-peer session keys, replay protection and duplicate delivery (this pass)
+
+Using only the Go standard library (`crypto/ecdh`, `crypto/hkdf`, `crypto/aes`):
+
+- **Per-peer session keys.** Each node holds an X25519 key-agreement pair whose public half is advertised inside the signed beacon (authenticated by the Ed25519 signature, so a man-in-the-middle cannot substitute it). Unicast payloads are encrypted with an AES-256 key derived via HKDF-SHA256 from the X25519 shared secret, replacing the pre-shared payload key for the hardened path. Senders fall back to the pre-shared key for peers without an advertised key (legacy/native interop), and receivers try session first, then pre-shared, so both paths coexist on the wire. A third party holding only the pre-shared key cannot open session-key payloads (tested).
+- **Key rotation.** `RotateSessions()` regenerates the X25519 pair and bumps an epoch advertised in beacons; peers re-derive on the next beacon and traffic degrades gracefully to the pre-shared key in between (no lost packets).
+- **Replay protection.** Senders stamp packets with a monotonic per-sender sequence number; receivers keep an IPsec-style 1024-slot sliding bitmap window per source and reject duplicates and sequences below the window base — closing the hole where a captured packet re-injected after dedup-cache expiry would be accepted. The check runs after successful decryption so forged packets cannot flush the window.
+- **Duplicate local delivery fixed.** A destination reachable by paths of different lengths had its handler invoked once per TTL-improved copy; delivery now happens exactly once per packet id (regression-tested on a two-path topology; this also removes the grid-flood deadlock).
+
+New tests cover session-key symmetry, rotation invalidation, authenticated exchange (pre-shared key cannot decrypt), replay filtering and inbound replay rejection. The full mesh suite, vet and formatting pass under Go 1.27.1; `services/api` and `services/sfu` Go tests also pass.
+
+Native adoption note: the Android/iOS mesh engines still use the pre-shared-key path; adopting the signed-beacon KEM advertisement and the same HKDF derivation is the follow-up that upgrades mobile traffic to per-peer sessions.
+
+Also in this pass, using the same engine: honest call feasibility (`CallFeasible` reports `direct`/`multihop`/`unreachable` from live route state so clients degrade to voice notes instead of pretending the mesh sustains a live call), per-source relay token-bucket quotas (burst 200, refill 50/s) for abuse prevention, and a deterministic simulation harness (`SimBus`, chain/partition-heal/100-node-grid tests plus a `cmd/meshsim` 500/5,000/50,000-node sweep CLI) that drives the production node code over explicit adjacencies.
+
 ## What is still not implemented or not proven
 
 These are not hidden by the code fixes above:
 
 1. **Real-time offline voice/video.** The mesh can carry control packets and delayed payloads, but a 500-device intermittent radio chain is not a real-time media network. Live voice/video needs codec adaptation, congestion control, jitter buffering, loss recovery, relay scheduling, call membership churn handling and a hard fallback to voice notes or delayed messaging.
 2. **Automatic physical-radio mesh formation.** Android Wi-Fi Direct/Bluetooth and iOS local-Wi-Fi/BLE code still require physical-device testing, permission handling, background execution, OS power-policy validation and automatic peer/route formation tests. iOS does not expose Android-style generic Wi-Fi Direct APIs.
-3. **Remaining device-identity hardening.** Beacons are now Ed25519-signed with trust-on-first-use key pinning, which removes beacon spoofing for known peers. Still open for a hostile multi-hop network: per-peer session key agreement (the payload AEAD remains a pre-shared key), key rotation and revocation, replay protection and privacy-preserving stable identifiers.
-4. **Scale evidence.** The finite hop budget, queue size, radio bandwidth, battery, OS limits and topology determine capacity. “500 devices” and “infinite distance” are not source-code features. They require simulation, soak tests and field measurements.
+3. **Remaining device-identity hardening.** Beacons are Ed25519-signed with trust-on-first-use key pinning, which removes beacon spoofing for known peers. Per-peer session keys, replay protection and rotation are now implemented in the Go engine (see §7 below); still open for a hostile multi-hop network: adopting the session-key derivation in the Android/iOS native engines, key revocation and privacy-preserving stable identifiers.
+4. **Scale evidence.** The finite hop budget, queue size, radio bandwidth, battery, OS limits and topology determine capacity. “500 devices” and “infinite distance” are not source-code features. Deterministic simulation now covers chains, partitions, healing and a 100-device grid delivery (§7); the 5,000- and 50,000-node sweeps and physical field measurements remain.
 5. **Provider-backed ML.** The API supports a configured translation/ML provider and a bounded local phrasebook fallback. Arbitrary-language, high-quality translation still requires a configured model/provider and compute; the fallback is not a substitute for TikTok/Facebook-grade ML.
 6. **Recommendation and creator depth.** FYP/ranking, search, trends, effects, music licensing, creator analytics, subscriptions, rewards, commerce fraud controls and ad optimisation are not equivalent to mature competitor systems merely because route names exist.
 7. **Trust and safety operations.** Automated moderation, human review, appeals, child safety, spam/fraud/coordination detection, legal-request workflows, transparency reports and regional policy operations remain deployment work.

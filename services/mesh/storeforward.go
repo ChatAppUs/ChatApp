@@ -71,6 +71,19 @@ func (q *Queue) Remove(id string) {
 	}
 }
 
+// Peek reports whether any packet for dst is waiting in the queue (evidence
+// of an active multi-hop route, used for call-feasibility decisions).
+func (q *Queue) Peek(dst string) (*Packet, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, p := range q.items {
+		if p.Dst == dst {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
 // Len returns the current queue length.
 func (q *Queue) Len() int {
 	q.mu.Lock()

@@ -339,7 +339,7 @@ func TestSignedBeaconVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := &Beacon{DeviceID: "dev-1", Kind: "relay", Transport: "local_wifi", Addr: "d:1", Seq: 1}
-	sb, err := sk.SignBeacon(b)
+	sb, err := sk.SignBeacon(b, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,15 +359,45 @@ func TestSignedBeaconVerification(t *testing.T) {
 	// Impersonation: a different key claiming the pinned device id.
 	attacker, _ := NewSigningKey()
 	evil := &Beacon{DeviceID: "dev-1", Kind: "relay", Transport: "local_wifi", Addr: "evil:1", Seq: 2}
-	sb2, _ := attacker.SignBeacon(evil)
+	sb2, _ := attacker.SignBeacon(evil, nil, 0)
 	if _, err := VerifySignedBeacon(sb2, known); err != ErrKeyMismatch {
 		t.Fatalf("expected ErrKeyMismatch for impersonated beacon, got %v", err)
 	}
 
 	// Tampering: a valid key with an altered payload.
-	sb3, _ := sk.SignBeacon(b)
+	sb3, _ := sk.SignBeacon(b, nil, 0)
 	sb3.Beacon.Addr = "tampered:1"
 	if _, err := VerifySignedBeacon(sb3, known); err == nil {
 		t.Fatal("tampered beacon accepted")
+	}
+}
+
+// TestCallFeasibleStates verifies the three call-feasibility states against
+// route-table contents, driving the explicit voice-note fallback policy.
+func TestCallFeasibleStates(t *testing.T) {
+	key, err := NewIdentityKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := NewNode(NodeConfig{DeviceID: "caller", Key: &key, Transport: nil})
+	defer n.Stop()
+
+	// No neighbours: unreachable → the client must offer the voice-note path.
+	if got := n.CallFeasible("far"); got != CallUnreachable {
+		t.Fatalf("expected unreachable with no neighbours, got %q", got)
+	}
+	if !n.ShouldFallBackToVoiceNote("far") {
+		t.Fatal("expected voice-note fallback for an unreachable destination")
+	}
+	// Fresh direct neighbour: a live call may proceed.
+	n.routes.Upsert(&Beacon{DeviceID: "near", Kind: "member", Transport: "local_wifi", Addr: "u:near"})
+	if got := n.CallFeasible("near"); got != CallDirect {
+		t.Fatalf("expected direct, got %q", got)
+	}
+	// Stale direct neighbour with only relay-consenting others: multihop.
+	n.routes.Expire(0)
+	n.routes.Upsert(&Beacon{DeviceID: "relay1", Kind: "relay", Transport: "local_wifi", Addr: "u:r1"})
+	if got := n.CallFeasible("far"); got != CallMultihop {
+		t.Fatalf("expected multihop, got %q", got)
 	}
 }

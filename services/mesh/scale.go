@@ -27,8 +27,10 @@ func HopsForDevices(n int) int {
 	if n <= 0 {
 		return DefaultMaxHops
 	}
-	// Diameter of a 2-D mesh ~ sqrt(n); budget 4x for slack + a floor.
-	hops := int(math.Ceil(4 * math.Sqrt(float64(n))))
+	// Diameter of a 2-D mesh ~ sqrt(n); budget 6x: measured worst-case
+	// first-copy meander in the grid sweep is ~2.2x the Manhattan distance
+	// (which itself is ~2*sqrt(n)), so 6*sqrt(n) keeps slack + a floor.
+	hops := int(math.Ceil(6 * math.Sqrt(float64(n))))
 	if hops < 8 {
 		hops = 8
 	}

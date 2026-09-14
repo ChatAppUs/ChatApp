@@ -476,3 +476,7 @@ Latest source evidence, validation, dependency reduction and remaining unproven 
 ## Deep source-and-documentation audit — 2026-09-14
 
 The current status includes a cross-platform AES-GCM mesh envelope, native forwarding queue fixes, group metadata preservation, removal of the mesh `x/crypto` dependency and a deterministic interop test. A follow-up pass added Ed25519-signed beacons with trust-on-first-use key pinning, deterministic route scoring and neighbour route expiry. Full findings and unproven release gates are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+## Mesh hardening pass — 2026-09-14
+
+Implemented and tested in `services/mesh` (standard library only): per-peer X25519 session keys with HKDF-SHA256 derivation advertised inside Ed25519-signed beacons (unicast payloads no longer rely on the pre-shared key), epoch-based session rotation, post-decrypt sliding-window replay protection, a duplicate-local-delivery fix (exactly one handler invocation per packet id), honest `direct`/`multihop`/`unreachable` call feasibility, per-source relay token-bucket quotas, and a deterministic simulation harness covering chain delivery, partition-and-heal and a 100-node grid with a 500/5k/50k sweep CLI. Validation: Go 1.27.1 mesh/api/sfu `go test`, `go vet`, `gofmt`; route parity; feature registry. Native Android/iOS adoption of the session-key envelope, key revocation, physical-radio validation and production operations remain pending rather than falsely marked complete.

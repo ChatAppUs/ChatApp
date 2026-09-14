@@ -32,29 +32,56 @@ func NewSigningKey() (*SigningKey, error) {
 	return &SigningKey{Public: pub, Private: priv}, nil
 }
 
-// SignedBeacon is a discovery beacon plus the signer's public key and an
-// Ed25519 signature over the canonical beacon encoding.
+// SignedBeacon is a discovery beacon plus the signer's public key, the
+// signer's X25519 key-agreement advertisement and an Ed25519 signature over
+// all three. Signing the KEM advertisement together with the beacon binds the
+// session-key exchange to the device identity, so a man-in-the-middle cannot
+// substitute its own key-agreement key on a replayed beacon.
 type SignedBeacon struct {
-	Beacon Beacon `json:"beacon"`
-	PubKey []byte `json:"pub_key"`
-	Sig    []byte `json:"sig"`
+	Beacon   Beacon `json:"beacon"`
+	PubKey   []byte `json:"pub_key"`
+	KEMPub   []byte `json:"kem_pub,omitempty"`
+	KEMEpoch int64  `json:"kem_epoch,omitempty"`
+	Sig      []byte `json:"sig"`
+}
+
+// signedPayload is the canonical, signature-covered projection of a
+// SignedBeacon (everything except Sig itself).
+type signedPayload struct {
+	Beacon   Beacon `json:"beacon"`
+	PubKey   []byte `json:"pub_key"`
+	KEMPub   []byte `json:"kem_pub,omitempty"`
+	KEMEpoch int64  `json:"kem_epoch,omitempty"`
+}
+
+func (sb *SignedBeacon) payload() ([]byte, error) {
+	return json.Marshal(signedPayload{
+		Beacon:   sb.Beacon,
+		PubKey:   sb.PubKey,
+		KEMPub:   sb.KEMPub,
+		KEMEpoch: sb.KEMEpoch,
+	})
 }
 
 // ErrKeyMismatch is returned when a beacon claims a known device id but is
 // signed by a different key than the pinned one.
 var ErrKeyMismatch = errors.New("mesh: beacon key does not match pinned device key")
 
-// SignBeacon signs b with this device's key.
-func (k *SigningKey) SignBeacon(b *Beacon) (*SignedBeacon, error) {
-	payload, err := MarshalBeacon(b)
+// SignBeacon signs b — together with this device's key-agreement
+// advertisement (kemPub/kemEpoch) — with this device's Ed25519 key.
+func (k *SigningKey) SignBeacon(b *Beacon, kemPub []byte, kemEpoch int64) (*SignedBeacon, error) {
+	sb := &SignedBeacon{
+		Beacon:   *b,
+		PubKey:   append([]byte(nil), k.Public...),
+		KEMPub:   append([]byte(nil), kemPub...),
+		KEMEpoch: kemEpoch,
+	}
+	payload, err := sb.payload()
 	if err != nil {
 		return nil, err
 	}
-	return &SignedBeacon{
-		Beacon: *b,
-		PubKey: append([]byte(nil), k.Public...),
-		Sig:    ed25519.Sign(k.Private, payload),
-	}, nil
+	sb.Sig = ed25519.Sign(k.Private, payload)
+	return sb, nil
 }
 
 // MarshalSignedBeacon serializes a signed beacon.
@@ -75,7 +102,7 @@ func VerifySignedBeacon(sb *SignedBeacon, known map[string][]byte) (*Beacon, err
 	if sb == nil || len(sb.PubKey) != ed25519.PublicKeySize || len(sb.Sig) == 0 {
 		return nil, errors.New("mesh: incomplete signed beacon")
 	}
-	payload, err := MarshalBeacon(&sb.Beacon)
+	payload, err := sb.payload()
 	if err != nil {
 		return nil, err
 	}

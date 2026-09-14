@@ -76,3 +76,7 @@ The direct source findings and completed cross-platform packet fixes are reconci
 ## Deep source-and-documentation audit — 2026-09-14
 
 The current pass fixes the native packet nonce/tag/group metadata and forwarding defects while preserving the honest limits on live calls, distance and radio execution. See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+## Session security and scale-harness pass — 2026-09-14
+
+The Go engine now derives per-peer unicast session keys with X25519 (standard library `crypto/ecdh`) plus HKDF-SHA256, advertised inside the Ed25519-signed beacons, with epoch rotation; a post-decrypt per-source sliding window rejects replays; duplicate local delivery is fixed; `CallFeasible` reports `direct`/`multihop`/`unreachable` so clients fall back to voice notes when topology cannot sustain a live call; relay quotas bound per-source flooding; and a deterministic simulator exercises chain, partition-heal and 100-node grid topologies through the production code, with a 500/5,000/50,000-node sweep CLI. The physical limits in this document are unchanged: five kilometres still requires a connected relay chain, live calls still need a fresh direct neighbour or degrade, and "infinite distance" remains physically impossible. Native Android/iOS engines still use the pre-shared-key path until they adopt the same derivation.

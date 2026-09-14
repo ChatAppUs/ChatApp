@@ -17,6 +17,7 @@ type RouteTable struct {
 	mu      sync.Mutex
 	neigh   map[string]*Neighbor // device id -> neighbor
 	seen    map[string]time.Time // packet id -> first seen (dedup)
+	bestTTL map[string]int       // packet id -> highest TTL forwarded so far
 	maxSeen int
 }
 
@@ -34,6 +35,7 @@ func NewRouteTable() *RouteTable {
 	return &RouteTable{
 		neigh:   make(map[string]*Neighbor),
 		seen:    make(map[string]time.Time),
+		bestTTL: make(map[string]int),
 		maxSeen: 10000,
 	}
 }
@@ -72,6 +74,46 @@ func (rt *RouteTable) Neighbors() []*Neighbor {
 		out = append(out, &cp)
 	}
 	return out
+}
+
+// SeenBetter is dedup with reach improvement: the first copy of a packet is
+// forwarded; later copies are dropped UNLESS they carry strictly more
+// remaining TTL than any copy seen before — that copy can reach nodes the
+// earlier, more meandering copies could not, so it is forwarded too.
+//
+// It reports two facts the caller needs:
+//
+//	improve — this copy should be forwarded (first copy, or strictly better
+//	          reach than any copy seen before).
+//	first   — this is the FIRST copy of this packet id ever seen. Only the
+//	          first copy may be delivered to the application: without this
+//	          rule, every TTL-improved duplicate would be handed to the
+//	          handler again (duplicate delivery bug).
+func (rt *RouteTable) SeenBetter(id string, ttl int) (improve, first bool) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if best, ok := rt.bestTTL[id]; ok && ttl <= best {
+		return false, false
+	}
+	rt.bestTTL[id] = ttl
+	_, seenBefore := rt.seen[id]
+	if !seenBefore {
+		rt.seen[id] = time.Now()
+		if len(rt.seen) > rt.maxSeen {
+			oldest := time.Now()
+			var oldestKey string
+			for k, v := range rt.seen {
+				if v.Before(oldest) {
+					oldest = v
+					oldestKey = k
+				}
+			}
+			if oldestKey != "" {
+				delete(rt.seen, oldestKey)
+			}
+		}
+	}
+	return true, !seenBefore
 }
 
 // Seen reports whether a packet id was already processed (dedup) and records
@@ -165,3 +207,12 @@ func (rt *RouteTable) Expire(maxAge time.Duration) {
 
 // TTLExpired reports whether a packet's TTL has been exhausted.
 func TTLExpired(p *Packet) bool { return p.TTL <= 0 }
+
+// Knows reports whether the packet id was already processed, without recording
+// it (diagnostics for simulators and tooling).
+func (rt *RouteTable) Knows(id string) bool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	_, ok := rt.seen[id]
+	return ok
+}
