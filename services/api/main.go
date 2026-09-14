@@ -105,15 +105,17 @@ func main() {
 	// Rate limiters for abuse-sensitive public endpoints (per client IP).
 	// Generous enough for legitimate bursts, tight enough to blunt
 	// credential stuffing, SMS bombing and reset-token brute force.
-	loginLimiter := newRateLimiter(15, 5)
-	recoveryLimiter := newRateLimiter(5, 2)
-	registerLimiter := newRateLimiter(10, 3)
-	resetLimiter := newRateLimiter(5, 2)
-	smsSendLimiter := newRateLimiter(5, 2)
-	smsCheckLimiter := newRateLimiter(15, 5)
-	oauthLimiter := newRateLimiter(60, 20)
-	qrLimiter := newRateLimiter(20, 5)
-	guestLimiter := newRateLimiter(30, 10)
+	// Each pair passes through rateLimitScale so a test harness can raise the
+	// ceiling via RATE_LIMIT_SCALE; unset means these exact hardened values.
+	loginLimiter := newRateLimiter(rateLimitScale(15, 5))
+	recoveryLimiter := newRateLimiter(rateLimitScale(5, 2))
+	registerLimiter := newRateLimiter(rateLimitScale(10, 3))
+	resetLimiter := newRateLimiter(rateLimitScale(5, 2))
+	smsSendLimiter := newRateLimiter(rateLimitScale(5, 2))
+	smsCheckLimiter := newRateLimiter(rateLimitScale(15, 5))
+	oauthLimiter := newRateLimiter(rateLimitScale(60, 20))
+	qrLimiter := newRateLimiter(rateLimitScale(20, 5))
+	guestLimiter := newRateLimiter(rateLimitScale(30, 10))
 
 	// public
 	mux.HandleFunc("GET /metrics", app.handleMetrics)

@@ -2,10 +2,38 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// rateLimitScale multiplies the per-minute and burst limits of the auth
+// limiters. It exists so a test harness can exercise many accounts back to back
+// without being throttled by the abuse controls it is not testing; production
+// leaves RATE_LIMIT_SCALE unset and gets the hardened defaults verbatim.
+//
+// A value below 1 is ignored: scaling abuse controls *down* would only ever be
+// unsafe, so it is rejected rather than honoured.
+func rateLimitScale(perMinute, burst int) (int, int) {
+	raw := strings.TrimSpace(os.Getenv("RATE_LIMIT_SCALE"))
+	if raw == "" {
+		return perMinute, burst
+	}
+	scale, err := strconv.ParseFloat(raw, 64)
+	if err != nil || scale < 1 {
+		return perMinute, burst
+	}
+	scaled := func(v int) int {
+		n := int(float64(v) * scale)
+		if n < v {
+			return v
+		}
+		return n
+	}
+	return scaled(perMinute), scaled(burst)
+}
 
 // ---- Per-IP token-bucket rate limiting ----
 

@@ -13,7 +13,7 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 
 The 129-section specification was re-walked against the source tree. Six specified surfaces had
 **no implementation** (zero routes, tables or client references) and are now implemented on the
-backend and in the web client — parity route count 506 → **536**, migrations 35 → **36** (210 tables):
+backend and in the web client — parity route count 506 → **537**, migrations 35 → **37** (210 tables):
 
 - **Forums / communities** (§75 item 24) — `infra/db/036_platform_gaps.sql`,
   `services/api/handlers_forums.go`, `apps/web/src/app/forums/page.tsx`
@@ -167,7 +167,7 @@ Users can use the app **two ways** — fully anonymous, or with a registered mem
 | TURN | `services/sfu-forwarder` | **C++** | Self-contained TURN relay (:3479/:8099) for NAT traversal |
 | SFU | `services/sfu` | **Go** (Pion | Group calls, meetings, live broadcasting + embedded STUN/TURN (:8095) |
 | ML | `services/ml` | **Python/FastAPI** | Reels ranking, KYC auto-verify (score + checks), media moderation, embeddings, captions |
-| DB | Postgres 16 | SQL | Primary store (36 migrations, double-entry ledger, 210 tables) |
+| DB | Postgres 16 | SQL | Primary store (37 migrations, double-entry ledger, 210 tables) |
 | Cache | Redis 7 | — | FYP feed cache (15 s TTL), price cache, rate limiting, sessions |
 
 No SQLite anywhere. All value moves through a **double-entry ledger** with idempotent
@@ -3803,7 +3803,7 @@ the full credential-change transaction (challenge + attestation + session revoca
 freeze), referral attribution, tipping, creator payouts and wallet withdrawals with admin review,
 one-time invite links, story archive, AI dubbing/clips plus the in-app assistant backed by the
 FastAPI ML service (`/rank`, `/moderate`, `/captions`, `/embed`, `/rank/watch`), process metrics on
-`GET /metrics`, and 36 forward-only migrations (210 tables, no DROP statements, ordering enforced in
+`GET /metrics`, and 37 forward-only migrations (210 tables, no DROP statements, ordering enforced in
 CI). Parity stands at **150 files / 537 registered routes**; the feature registry passes with 26
 features across 7 required clients.
 

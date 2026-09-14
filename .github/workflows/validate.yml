@@ -74,3 +74,90 @@ jobs:
           for service in services/authn services/security; do
             (cd "$service" && cargo test --locked)
           done
+
+  # Database-backed end-to-end suites. Static analysis, a green build and unit
+  # tests cannot see the class of defect these cover: a response-writer wrapper
+  # that breaks the WebSocket hijack, a SQL statement that aborts its
+  # transaction, a swallowed in-transaction error, a wrong status code, or an
+  # authorization path that lets one user touch another's data. Two such
+  # regressions previously reached `main` while this workflow stayed green
+  # (ticket purchase returned 500 on every purchase; every WebSocket upgrade
+  # returned 500), so these suites are now a required job.
+  e2e-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: chatapp
+          POSTGRES_PASSWORD: chatapp
+          POSTGRES_DB: chatapp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chatapp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgres://chatapp:chatapp@localhost:5432/chatapp?sslmode=disable
+      JWT_SECRET: ci-jwt-secret-ci-jwt-secret-ci-jwt-secret
+      SIGNING_SECRET: ci-signing-secret-ci-signing-secret-ci
+      AUTHN_SECRET: ci-authn-secret-ci-authn-secret-ci-authn
+      WALLET_MASTER_SEED: ci-wallet-seed-ci-wallet-seed-ci-wallets
+      SFU_SECRET: ci-sfu-secret-ci-sfu-secret-ci-sfu-secret
+      TURN_SECRET: ci-turn-secret-ci-turn-secret-ci-turn-sec
+      COUNTERS_SECRET: ci-counters-secret-ci-counters-secret
+      CLUSTER_SECRET: ci-cluster-secret-ci-cluster-secret
+      # The suites create many accounts back to back; raise the abuse-control
+      # ceilings (production default is unset = hardened values) so the tests
+      # exercise behaviour rather than each other's rate limits.
+      RATE_LIMIT_SCALE: 200
+      CHATAPP_BASE: http://localhost:8080
+      CHATAPP_WS: ws://localhost:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          # websockets: realtime suite; cryptography: WebAuthn/passkey flow.
+          python -m pip install --quiet websockets cryptography
+      - name: Apply every migration to a fresh database
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in $(ls infra/db/*.sql | sort); do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - name: Build and start the API
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd services/api && go build -o /tmp/api .)
+          /tmp/api > /tmp/api.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -sf "$CHATAPP_BASE/ready" >/dev/null; then echo "api ready"; exit 0; fi
+            sleep 1
+          done
+          echo "api did not become ready"; tail -50 /tmp/api.log; exit 1
+      - name: Run end-to-end suites against the live API
+        shell: bash
+        run: |
+          set -euo pipefail
+          for t in guest_mesh_test platform_gaps_test gaps6_test features_test \
+                   staking_test luckydraw_test counters_test gaps10_test; do
+            echo "=== $t ==="
+            python3 "tests/$t.py"
+          done
+      - name: API log on failure
+        if: failure()
+        run: tail -200 /tmp/api.log

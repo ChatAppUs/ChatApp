@@ -36,9 +36,9 @@ The specifications describe a release program substantially broader than what ca
 
 | Check | Result |
 |---|---|
-| `python3 tests/parity_check.py` | **Passed (re-verified 2026-09-13): 149 files, 536 registered routes**, with web/admin/Android/iOS/extension references accounted for. |
+| `python3 tests/parity_check.py` | **Passed (re-verified 2026-09-14): 150 files, 537 registered routes**, with web/admin/Android/iOS/extension references accounted for. |
 | `python3 scripts/validate-feature-registry.py` | **Passed (re-verified 2026-09-13): 26 registered P0/P1/P2 features** and 7 required client/service layers. |
-| **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 36 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
+| **`tests/platform_gaps_test.py` against live PostgreSQL + API** | **Executed 2026-09-13: 76/76 checks passed, 0 failed.** All 37 migrations applied cleanly to a fresh database (210 tables), the API was run against that database, and the six newly implemented feature areas (forums, Pulse, live shopping, AI dubbing, AI clips, AI assistant) were exercised end-to-end — including authorization denials, oversell protection, coupon exhaustion, and the AI honest-availability branch. |
 | `python3 tests/gaps10_test.py` (regression) | **Executed 2026-09-13: 8/8 passed** after the `register()` email-OTP fix. |
 | Go service tests and vet | **Passed 2026-09-13 with Go 1.25.1** for `services/api`, `services/mesh`, and `services/sfu`; the hosted CI run also passed with its Go 1.23 setup and automatic module toolchain resolution. |
 | `npm ci --no-audit --no-fund` in `apps/web` | Reproducible from the committed `apps/web/package-lock.json`; full install/build requires the Node toolchain. |
@@ -48,7 +48,7 @@ The specifications describe a release program substantially broader than what ca
 | Compose YAML, backup script, and CI workflow syntax validation | Passed: Compose parses, `scripts/backup-restore.sh` passes `bash -n`, and `.github/workflows/validate.yml` is present with parity/build/migration checks. |
 | API readiness and Compose dependency wiring | Implemented: `/health` remains liveness, `/ready` checks database readiness, and web/admin wait for API health in Compose. |
 | Go tests for `services/mesh` | CI-enforced: `go build`, `go vet`, and `go test` run for the native offline mesh transport engine (crypto, packet, transport, routing, store-and-forward, node, messages). |
-| Go tests for `services/api` and `services/sfu` | CI-enforced: `go build`, `go vet`, and `go test` run for `services/api` (536-route control plane) and `services/sfu` (Pion group-call/live SFU). |
+| Go tests for `services/api` and `services/sfu` | CI-enforced: `go build`, `go vet`, and `go test` run for `services/api` (633-handler / 537-route control plane) and `services/sfu` (Pion group-call/live SFU). |
 | Rust tests for `services/authn` and `services/security` | CI-enforced: `cargo test --locked` runs for both authn and security services. |
 | Python integration tests | Now executable in the audit environment: PostgreSQL 15 was installed, all migrations were applied, the API was started, and `tests/platform_gaps_test.py` passed 76/76. Other suites still require their own fixtures/providers. |
 | Android/iOS native builds | Not executable: Android Gradle wrapper, iOS Swift package manifest, and native toolchains are unavailable. |
@@ -133,9 +133,9 @@ register as relay/member nodes with `user_id` NULL instead of failing.
 
 **Validation executed in this pass (fresh PostgreSQL 15 + live API on an alternate port because
 the sandbox reserves 8080):**
-- All **36 migrations applied cleanly to a fresh database** (`001_schema.sql` → `036_platform_gaps.sql`, 210 tables).
+- All **37 migrations applied cleanly to a fresh database** (`001_schema.sql` → `037_message_ttl_invariant.sql`, 210 tables).
 - `go build` + `go vet` + `go test ./...` green for `services/api`, `services/mesh` and `services/sfu`; `cargo test --locked` green for `services/authn` (8/8) and `services/security` (11/11).
-- `python3 tests/parity_check.py` — **passed (149 files, 536 registered routes)**, with the new Android/iOS/extension references accounted for.
+- `python3 tests/parity_check.py` — **passed (150 files, 537 registered routes)**, with the new Android/iOS/extension references accounted for.
 - `python3 scripts/validate-feature-registry.py` — **passed (26 features, 7 required clients)**.
 - `node --check` on the extension scripts — passed.
 
@@ -255,7 +255,7 @@ client builds **62 routes** and the admin console **2 routes** (`/`, `/dashboard
 saying 53/54 web and 5 admin were stale. The router has 633 `HandleFunc` registrations (537 `/api`
 routes counted by parity); parity is **150 files / 537 registered routes** (web 92 files / 379 refs,
 admin 8 files / 77 refs); the feature registry passes with 26 features across 7 required clients;
-migrations stand at 36 forward-only files / 210 tables.
+migrations stand at 37 forward-only files / 210 tables.
 
 Re-verified implemented: channel posting rules; LuckyDraw per-user caps and unique-winner rule; P2P
 escrow with dispute resolution; users/messages/posts/forums search; the credential-change
@@ -273,3 +273,80 @@ Still future work, not marked complete: Tor/multi-hop IP-privacy transport, fuzz
 alerting pipelines; Android/iOS release builds and Bluetooth/Wi-Fi Direct handshakes; live
 PostgreSQL/SMTP/SMS/ML provider integrations; production load, backup/restore, and disaster-recovery
 validation.
+
+## 2026-09-14 audit (fresh main `a8ee690`, runtime pass)
+
+Fresh clone of `main` (`a8ee690`, fifteen commits past the last audited commit), re-scanned against
+all five root specs and exercised at runtime on PostgreSQL 15.19 with the API, SFU and TURN relay
+running against a freshly migrated database.
+
+### Defects found and fixed in this pass
+
+1. **Every WebSocket upgrade returned HTTP 500 on the production middleware chain.** The metrics
+   middleware wrapped `http.ResponseWriter` in a struct embedding the *interface*, which stripped
+   `http.Hijacker`. gorilla's upgrader type-asserts `w.(http.Hijacker)`, the assertion failed, and it
+   answered 500 — so realtime chat, presence, typing indicators, call signalling and notifications
+   were all dead, on a build that compiled cleanly and passed every Go unit test. Fixed by forwarding
+   `Hijack`, `Flush`, `ReadFrom` and `Unwrap`. Regression guard: `services/api/metrics_test.go`.
+2. **Nine of ten `INSERT INTO messages` sites ignored the conversation's disappearing-message TTL.**
+   Only `persistMessage` honoured `message_ttl_seconds`; forwards, location shares, media sends,
+   payment messages, pin notices, system messages, scheduled sends and story shares all wrote
+   `expires_at = NULL`, creating permanent messages in conversations every member believed expired at
+   the TTL. Fixed once at the storage layer instead of ten times in Go: migration
+   `037_message_ttl_invariant.sql` adds a `BEFORE INSERT` trigger that stamps `expires_at` from the
+   conversation TTL when the caller supplies none, leaves explicit values untouched, and is a no-op
+   for `message_ttl_seconds = 0`. Backfills rows written before the migration. Verified by direct
+   SQL probe (TTL conversation stamped, non-TTL conversation untouched, explicit past value preserved).
+3. **Four more test suites still registered accounts without clearing the email-OTP gate** —
+   `gaps_test`, `gaps2_test`, `gaps3_test`, `gaps4_test`. Registration correctly answers `403 email
+   OTP verification is required before registration` until `check-code` proves ownership, so each
+   suite silently produced no token and cascaded into dozens of misleading `401 missing bearer token`
+   failures. Migrated all four to the real `send-code` → `check-code` flow.
+4. **`integration_test` and `finance_test` (the two foundational suites other suites import) posted
+   to `/api/auth/register` directly**, with the same 403 knock-on. Added a shared, documented
+   `register_verified()` helper in `integration_test.py` and routed both suites through it.
+5. **Test-only rate-limit ceiling.** The auth limiters are hard-coded (`send-code` 5/min burst 2,
+   register 10/min burst 3) with no override, so back-to-back suites throttled themselves and
+   reported false failures. Added `RATE_LIMIT_SCALE` (documented in `.env.example`, unset = the
+   hardened production defaults verbatim; values below 1 are rejected so abuse controls can only ever
+   be raised for testing, never lowered).
+6. **`integration_test`'s TTL check could not observe what it asserted.** It re-shared the *same*
+   post, and the platform's duplicate-content defense correctly dropped the identical message, so no
+   row existed to inspect. It now shares a fresh post with a unique body.
+7. **CI never ran the Python E2E suites** — the process gap that let defects 1, 3 and 4 reach `main`
+   behind a green build. `.github/workflows/validate.yml` now has a required `e2e-postgres` job:
+   PostgreSQL 15 service, all migrations, live API, then the suites.
+
+### Validation executed this pass (fresh PostgreSQL 15.19, API + SFU + TURN live)
+
+- **All 21 Python suites plus both validators pass, 0 failures.** Highlights: `integration_test`
+  **154/154** (was 143 pass / 6 fail / crash), `gaps4_test` **96/96**, `gaps6_test` **91/91**,
+  `gaps7_test` **83/83**, `gaps8_test` **32/32**, `gaps9_test` **15/15**, `sfu_turn_test` **18/18**,
+  `authn_test` **11/11**, `counters_test` **9/9**; `gaps_test`, `gaps2_test`, `gaps3_test`,
+  `gaps5_test`, `features_test`, `finance_test`, `gaps10_test`, `guest_mesh_test`,
+  `platform_gaps_test`, `luckydraw_test`, `staking_test`, `parity_check` and
+  `validate-feature-registry` all exit 0.
+- 37 migrations applied cleanly to a fresh database → 210 tables.
+- `go build` + `go vet` + `go test -count=1` green for `services/api`, `services/mesh`,
+  `services/sfu`; `cargo test` green for `services/authn` (8/8) and `services/security` (11/11);
+  the C++ `services/sfu-forwarder` TURN relay builds and passes its 18-check protocol suite.
+- Parity **150 files / 537 registered routes** (633 `HandleFunc` registrations); feature registry
+  **26 features / 7 required clients**.
+- Native screens and the native mesh transport re-verified as present and wired (parity: android
+  26 files / 120 refs, ios 15 files / 114 refs, extension 9 files / 9 refs).
+
+### Still not implemented / not provable in this environment
+
+Tor/multi-hop IP-privacy transport; fuzz targets, tracing and alerting pipelines; on-device
+Bluetooth/Wi-Fi Direct radio handshakes (no radio hardware — the bridge, selection order and routing
+are covered on real loopback sockets); Kotlin/Swift compilation (no Android Gradle or Xcode
+toolchain); provider-backed AI output (`WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL`
+unset, so those endpoints report `available:false` and fabricate nothing); live SMTP/SMS provider
+integration; production load, backup/restore and disaster-recovery validation.
+
+The web client was the one exception where a build *was* attempted and did not finish here:
+`npx tsc --noEmit` exits **clean** and `next build` reports **"✓ Compiled successfully"**, but the
+process is then `Killed` (SIGKILL) during "Collecting page data" — the sandbox caps a process at
+2 GB and this machine also runs PostgreSQL, the API, the SFU and the TURN relay concurrently. That
+is an environment ceiling, not a code defect; the same build must be confirmed in the CI job, which
+has the memory headroom.

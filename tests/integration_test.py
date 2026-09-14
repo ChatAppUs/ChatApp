@@ -17,6 +17,37 @@ import websockets
 
 BASE = os.environ.get("CHATAPP_BASE", "http://localhost:8080")
 WS = os.environ.get("CHATAPP_WS", "ws://localhost:8080")
+
+
+def register_verified(username, email=None, password="Passw0rd!123", **extra):
+    """Create an account through the real email-OTP gate.
+
+    The Identity & Account Security spec requires a verified email before an
+    account exists: POST /api/auth/register answers 403 with
+    "email OTP verification is required before registration" until
+    /api/auth/email/check-code has proved ownership. Callers that post to
+    /api/auth/register directly therefore get no token and every later call
+    fails with 401, so registration must go through send-code -> check-code
+    using the development-returned code (the OTP engine is self-built; no mock).
+
+    Prefer this helper over calling /api/auth/register by hand in any suite.
+    """
+    email = email or f"{username}@test.dev"
+    for _ in range(6):
+        s, r = req("POST", "/api/auth/email/send-code", {"email": email})
+        if s == 429:  # resend cooldown - wait it out
+            time.sleep(12)
+            continue
+        if s != 200 or not r.get("dev_code"):
+            return s, r
+        s, r = req("POST", "/api/auth/email/check-code",
+                   {"email": email, "code": r.get("dev_code")})
+        if s != 200:
+            return s, r
+        body = {"username": username, "email": email, "password": password}
+        body.update(extra)
+        return req("POST", "/api/auth/register", body)
+    return 429, {"error": "persistent otp cooldown"}
 passed = failed = 0
 
 
@@ -60,16 +91,14 @@ def main():
     bob = f"bob{ts}"
 
     # --- auth ---
-    s, r = req("POST", "/api/auth/register", {
-        "username": alice, "email": f"{alice}@test.dev", "password": "Passw0rd!123",
-        "display_name": "Alice", "country_code": "US"})
+    # Registration must clear the email-OTP gate first; posting straight to
+    # /api/auth/register is rejected with 403 (see register_verified).
+    s, r = register_verified(alice, display_name="Alice", country_code="US")
     check("register alice", s in (200, 201) and r.get("access_token"), f"{s} {r}")
     alice_tok = r.get("access_token")
     alice_id = r.get("user_id")
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": bob, "email": f"{bob}@test.dev", "password": "Passw0rd!123",
-        "display_name": "Bob", "country_code": "GB"})
+    s, r = register_verified(bob, display_name="Bob", country_code="GB")
     check("register bob", s in (200, 201), f"{s} {r}")
     bob_tok = r.get("access_token")
     bob_id = r.get("user_id")
@@ -532,7 +561,17 @@ def social2_flow(alice_tok, bob_tok, conv):
     check("set ttl", s == 200 and r.get("ttl_seconds") == 3600, f"{s} {r}")
     s, r = req("GET", f"/api/conversations/{conv}/ttl", token=bob_tok)
     check("get ttl", s == 200 and r.get("ttl_seconds") == 3600, f"{s} {r}")
-    s, r = req("POST", f"/api/posts/{post_id}/share", {"conversation_id": conv}, token=bob_tok)
+    # A second share of the *same* post carries identical text, and the platform's
+    # duplicate-content defense (persistMessage -> contentWriteAllowed) correctly
+    # drops it, so a re-share cannot demonstrate TTL stamping. Share a fresh post
+    # with a unique body instead: the resulting message text is unique, so the
+    # write goes through and the conversation TTL must be stamped onto it.
+    s, r = req("POST", "/api/posts",
+               {"body": f"ttl probe {int(time.time())}", "visibility": "public"}, token=alice_tok)
+    check("ttl probe post created", s in (200, 201) and r.get("id"), f"{s} {r}")
+    ttl_post_id = r.get("id")
+    s, r = req("POST", f"/api/posts/{ttl_post_id}/share",
+               {"conversation_id": conv}, token=bob_tok)
     check("share with ttl active", s == 200, f"{s} {r}")
     s, r = req("GET", f"/api/conversations/{conv}/messages", token=alice_tok)
     ttl_msgs = [m for m in r.get("messages", []) if m.get("expires_at")]
@@ -633,9 +672,8 @@ def cluster_flow(admin_tok):
     check("cluster remove", s == 200, f"{s} {r}")
 
     # non-admin cannot manage fleet
-    s, r = req("POST", "/api/auth/register",
-               {"username": f"plain{int(time.time())}", "email": f"plain{int(time.time())}@test.dev",
-                "password": "Passw0rd!x", "display_name": "Plain"})
+    plain_name = f"plain{int(time.time())}"
+    s, r = register_verified(plain_name, password="Passw0rd!x", display_name="Plain")
     plain_tok = r.get("access_token")
     s, r = req("GET", "/api/cluster/nodes", token=plain_tok)
     check("cluster nodes forbidden for non-admin", s == 401, f"{s} {r}")

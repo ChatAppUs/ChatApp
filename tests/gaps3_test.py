@@ -16,11 +16,26 @@ from integration_test import check, req, grant_superadmin
 
 
 def register(name):
-    # Register is rate-limited (10/min); retry with backoff so back-to-back
-    # suite runs don't cascade into spurious failures.
+    """Register through the real email-OTP gate (see gaps6_test.register)."""
+    email = f"{name}@test.dev"
     for _ in range(6):
+        s, r = req("POST", "/api/auth/email/send-code", {"email": email})
+        if s == 429:
+            time.sleep(12)
+            continue
+        if s != 200:
+            check(f"register email otp send {name}", False, f"{s} {r}")
+            return None
+        code = r.get("dev_code")
+        if not code:
+            check(f"register email otp dev_code {name}", False, f"{s} {r}")
+            return None
+        s, r = req("POST", "/api/auth/email/check-code", {"email": email, "code": code})
+        if s != 200:
+            check(f"register email otp verify {name}", False, f"{s} {r}")
+            return None
         s, r = req("POST", "/api/auth/register", {
-            "username": name, "email": f"{name}@test.dev", "password": "Passw0rd!123",
+            "username": name, "email": email, "password": "Passw0rd!123",
             "country_code": "US"})
         if s == 429:
             time.sleep(12)

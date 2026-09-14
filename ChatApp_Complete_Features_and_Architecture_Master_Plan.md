@@ -15,7 +15,7 @@ The repository implementation is tracked by `feature-registry.json`, validated b
 This pass cross-checked every requirement against the executable source tree and found six
 feature areas described in this plan that had **no implementation at all** — zero routes, zero
 tables, zero client references. All six are now implemented on the backend and in the web client
-(parity route count 506 → **536**; migrations 35 → **36**, 210 tables):
+(parity route count 506 → **537**; migrations 35 → **37**, 210 tables):
 
 | Section in this plan | Feature | Status now | Evidence |
 |---|---|---|---|
@@ -2767,7 +2767,7 @@ posts/forums search, password change with session revocation + 48-hour withdrawa
 (`handleCredentialChange`), referral attribution, tipping, creator payouts and wallet withdrawals with
 admin review, one-time group invite links (`max_uses`), story archive, AI dubbing/clips and the
 in-app assistant with the FastAPI ML backing, Prometheus-style process metrics on `GET /metrics`
-(request/error counters, WS gauge, runtime gauges), and 36 forward-only migrations totalling 210
+(request/error counters, WS gauge, runtime gauges), and 37 forward-only migrations totalling 210
 tables. Parity stands at **150 files / 537 registered routes** (web 92 files / 379 refs, admin
 8 files / 77 refs); the feature registry passes with 26 features across 7 required clients.
 

@@ -12,7 +12,7 @@ import sys
 import time
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from integration_test import check, req, grant_superadmin
+from integration_test import check, req, grant_superadmin, register_verified
 
 
 def db(sql):
@@ -38,15 +38,11 @@ def main():
     alice = f"finA{ts}"
     bob = f"finB{ts}"
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": alice, "email": f"{alice}@test.dev", "password": "Passw0rd!123",
-        "country_code": "US"})
+    s, r = register_verified(alice, country_code="US")
     check("fin register alice", s in (200, 201), f"{s} {r}")
     alice_tok = r.get("access_token")
 
-    s, r = req("POST", "/api/auth/register", {
-        "username": bob, "email": f"{bob}@test.dev", "password": "Passw0rd!123",
-        "country_code": "NG"})
+    s, r = register_verified(bob, country_code="NG")
     check("fin register bob", s in (200, 201), f"{s} {r}")
     bob_tok = r.get("access_token")
 

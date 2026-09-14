@@ -89,7 +89,7 @@ The only items not executable in this checkout are those requiring external runt
 | TURN | `services/sfu-forwarder` | **C++** | Self-contained TURN relay (:3479/:8099) for NAT traversal |
 | SFU | `services/sfu` | **Go** (Pion | Group calls, meetings, live broadcasting + embedded STUN/TURN (:8095) |
 | ML | `services/ml` | **Python/FastAPI** | Reels ranking, KYC auto-verify (score + checks), media moderation, embeddings, captions |
-| DB | Postgres 16 | SQL | Primary store (36 migrations, double-entry ledger, 210 tables) |
+| DB | Postgres 16 | SQL | Primary store (37 migrations, double-entry ledger, 210 tables) |
 | Cache | Redis 7 | — | FYP feed cache (15 s TTL), price cache, rate limiting, sessions |
 
 No SQLite anywhere. All value moves through a **double-entry ledger** with idempotent

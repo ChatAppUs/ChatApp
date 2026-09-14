@@ -35,11 +35,41 @@ WHERE u.username='{username}' AND wa.asset='{asset}' AND wa.chain='{chain}';
 
 
 def register(name):
-    s, r = req("POST", "/api/auth/register", {
-        "username": name, "email": f"{name}@test.dev", "password": "Passw0rd!123",
-        "country_code": "US"})
-    check(f"register {name}", s in (200, 201), f"{s} {r}")
-    return r.get("access_token")
+    """Register an account through the real email-OTP gate.
+
+    The Identity spec requires a verified email/phone before account creation,
+    so this completes the actual `send-code` -> `check-code` flow using the
+    development-returned code (the OTP engine is self-built; no mock). Registration
+    hits `/api/auth/register` directly and is rejected with 403 until the email is
+    verified, so skipping this step makes every downstream call fail with 401.
+    """
+    email = f"{name}@test.dev"
+    for attempt in range(6):
+        s, r = req("POST", "/api/auth/email/send-code", {"email": email})
+        if s == 429:  # resend cooldown - wait it out
+            time.sleep(12)
+            continue
+        if s != 200:
+            check(f"register email otp send {name}", False, f"{s} {r}")
+            return None
+        code = r.get("dev_code")
+        if not code:
+            check(f"register email otp dev_code {name}", False, f"{s} {r}")
+            return None
+        s, r = req("POST", "/api/auth/email/check-code", {"email": email, "code": code})
+        if s != 200:
+            check(f"register email otp verify {name}", False, f"{s} {r}")
+            return None
+        s, r = req("POST", "/api/auth/register", {
+            "username": name, "email": email, "password": "Passw0rd!123",
+            "country_code": "US"})
+        if s == 429:
+            time.sleep(12)
+            continue
+        check(f"register {name}", s in (200, 201), f"{s} {r}")
+        return r.get("access_token")
+    check(f"register {name}", False, "persistent 429")
+    return None
 
 
 def main():
