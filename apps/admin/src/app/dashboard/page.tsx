@@ -6,6 +6,7 @@ import { adminApi, clearAdminSession, getAdminToken } from "@/lib/api";
 import { WithdrawalsTab, RolesTab, RatesTab, DisputesTab, MerchantsTab, CardsTab, TransfersTab, StakingTab, PricesTab } from "@/components/FinanceTabs";
 import { LuckyDrawTab } from "@/components/LuckyDrawTab";
 import { SafetyTab, DerivedRatesTab } from "@/components/SafetyTabs";
+import { FlagsTab } from "@/components/FlagsTab";
 
 interface Stats {
   users: number;
@@ -81,7 +82,7 @@ interface SecurityAttestation {
   expires_at: string;
 }
 
-type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "security" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments" | "luckydraw" | "platform";
+type Tab = "stats" | "users" | "reports" | "kyc" | "ads" | "security" | "tokens" | "withdrawals" | "roles" | "rates" | "disputes" | "merchants" | "cards" | "transfers" | "staking" | "prices" | "safety" | "derived-rates" | "moments" | "luckydraw" | "platform" | "flags";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -146,7 +147,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        {(["stats", "users", "reports", "kyc", "ads", "security", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments", "luckydraw", "platform"] as const).map((k) => (
+        {(["stats", "users", "reports", "kyc", "ads", "security", "tokens", "withdrawals", "roles", "rates", "disputes", "merchants", "cards", "transfers", "staking", "prices", "safety", "derived-rates", "moments", "luckydraw", "platform", "flags"] as const).map((k) => (
           <button key={k} className={tab === k ? "small" : "secondary small"} onClick={() => setTab(k)}>
             {k}
           </button>
@@ -338,6 +339,7 @@ export default function DashboardPage() {
       {tab === "moments" && <MomentsTab act={act} />}
       {tab === "luckydraw" && <LuckyDrawTab act={act} />}
       {tab === "platform" && <PlatformTab act={act} />}
+      {tab === "flags" && <FlagsTab act={act} />}
     </>
   );
 }

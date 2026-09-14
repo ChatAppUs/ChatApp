@@ -256,6 +256,49 @@ export class SfuCall {
     this.ws?.close();
   }
 
+  /** Full §73 connection stats from the inbound RTCP stream, for the
+   *  call-quality telemetry beacon. Returns null when no live connection. */
+  async connectionStats(): Promise<{
+    packet_loss_pct: number; jitter_ms: number; rtt_ms: number;
+    bitrate_kbps: number; frame_rate: number; resolution: string;
+  } | null> {
+    if (!this.pc) return null;
+    const stats = await this.pc.getStats().catch(() => null);
+    if (!stats) return null;
+    let out: {
+      packet_loss_pct: number; jitter_ms: number; rtt_ms: number;
+      bitrate_kbps: number; frame_rate: number; resolution: string;
+    } | null = null;
+    stats.forEach((s) => {
+      if (s.type !== "inbound-rtp") return;
+      const t = s as RTCInboundRtpStreamStats & {
+        jitter?: number; framesPerSecond?: number;
+        frameWidth?: number; frameHeight?: number;
+        bytesReceived?: number; timestamp?: number;
+      };
+      const packets = (t.packetsReceived ?? 0) + (t.packetsLost ?? 0);
+      if (packets === 0) return;
+      const prev = this.lastStatsTs && this.lastStatsBytes;
+      const kbps = prev && t.timestamp && this.lastStatsTs! < t.timestamp
+        ? Math.round(((t.bytesReceived ?? 0) - this.lastStatsBytes!) * 8 /
+            ((t.timestamp - this.lastStatsTs!) / 1000) / 1024)
+        : 0;
+      this.lastStatsTs = t.timestamp;
+      this.lastStatsBytes = t.bytesReceived ?? 0;
+      out = {
+        packet_loss_pct: Math.round(((t.packetsLost ?? 0) / packets) * 10000) / 100,
+        jitter_ms: Math.round((t.jitter ?? 0) * 1000),
+        rtt_ms: 0,
+        bitrate_kbps: kbps,
+        frame_rate: Math.round(t.framesPerSecond ?? 0),
+        resolution: t.frameWidth ? `${t.frameWidth}x${t.frameHeight}` : "",
+      };
+    });
+    return out;
+  }
+  private lastStatsTs: number | null = null;
+  private lastStatsBytes: number | null = null;
+
   /** Estimated network quality: good | fair | poor | unknown. imo-style
    *  call-quality badge polled from RTCP inbound-rtp packet loss / jitter. */
   async networkQuality(): Promise<"good" | "fair" | "poor" | "unknown"> {

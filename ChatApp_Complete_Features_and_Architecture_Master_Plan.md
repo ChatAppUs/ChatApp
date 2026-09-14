@@ -2822,3 +2822,16 @@ Ninth independent audit of this plan against the source tree. New fix: §33's pr
 ## Addendum — 2026-09-14 (tenth audit)
 
 Parity fix recorded: un-reposting a post now withdraws the notification the repost fanned out, and the in-app notification list hides kinds the recipient muted, completing the read side of the §33 preference pipeline. The features and finance end-to-end suites no longer exit 0 unconditionally; CI now fails when their checks fail.
+
+## Eleventh independent audit — feature flags, experiments, and telemetry plane (2026-09-14)
+
+A fresh code-vs-specification scan found the §74 Feature Flags, §75 Experimentation, §72 Video QoE Monitoring and §73 Call Quality Monitoring sections specified but absent from the running system. All four are now implemented end-to-end and verified:
+
+- **§74 Feature flags** — `feature_flags` table (migration `039`), admin CRUD at `POST/PUT/DELETE /api/admin/flags` gated by the new `platform.manage` permission, evaluation at `GET /api/me/flags` with a stable FNV-1a bucket per (user, flag) so a user always lands in the same variant, plus percentage (0–100), region and platform gates. Web client helper `apps/web/src/lib/flags.ts`.
+- **§75 Experimentation** — experiments attach to a flag (`POST /api/admin/experiments`), `GET /api/me/experiments` resolves the caller's variant, and `GET /api/admin/experiments/{key}/results` reports per-variant outcome metrics (users, reports, completion rate, avg watch time, avg abandon time) — deliberately not engagement-only.
+- **§72 Video QoE** — `video_qoe_events` + `POST /api/telemetry/qoe` (202 Accepted) + `GET /api/admin/qoe/summary` with p50/p95 startup, buffering, failure and completion rates. The web reel player measures real startup time (play intent → first `playing` event), buffering spells and completion, and beacons them un-mount.
+- **§73 Call quality** — `call_quality_events` + `POST /api/telemetry/call-quality` + `GET /api/admin/call-quality/summary` (packet loss, jitter, RTT, bitrate, frame rate). The web call page polls `getStats()` every 5 s and reports the last sample on leave.
+- **Admin console** — new "flags" tab manages flags and experiments and renders both telemetry summaries.
+- **Tests** — `tests/flags_test.py` (40 checks, re-runnable): CRUD validation, deterministic bucketing, region/platform gates, preference-style permission checks, experiment results and both telemetry planes.
+
+All gates re-verified: parity (153 files, 547 routes), feature registry (26 features), Go build/vet/tests for api/mesh/sfu, fresh production builds for web and admin.

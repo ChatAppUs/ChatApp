@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { api, getAccessToken, getUserId, uploadMedia, wsURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { MeshCall, SignalPayload, VideoFilter, VIDEO_FILTERS } from "@/lib/webrtc";
+import { reportCallQuality } from "@/lib/telemetry";
 
 type Recording = { id: string; username: string; media_url: string; duration_s: number; created_at: string };
 
@@ -94,8 +95,38 @@ function CallContent() {
       ws.onclose = () => setStatus("ended");
     })();
 
+    // §73 call-quality sampling: poll real RTCP inbound stats every 5s and
+    // report the final sample on teardown (no synthesised values).
+    let last: Record<string, unknown> = {};
+    let lastBytes = 0;
+    const qTimer = window.setInterval(async () => {
+      const pc = (callRef.current as unknown as { pc?: RTCPeerConnection })?.pc;
+      if (!pc) return;
+      const stats = await pc.getStats().catch(() => null);
+      if (!stats) return;
+      stats.forEach((s) => {
+        if (s.type !== "inbound-rtp") return;
+        const t = s as RTCInboundRtpStreamStats & {
+          roundTripTime?: number; framesPerSecond?: number; bytesReceived?: number;
+        };
+        const packets = (t.packetsReceived ?? 0) + (t.packetsLost ?? 0);
+        const bytes = t.bytesReceived ?? 0;
+        last = {
+          room_id: roomId,
+          packet_loss_pct: packets ? Math.round(((t.packetsLost ?? 0) / packets) * 10000) / 100 : undefined,
+          jitter_ms: t.jitter != null ? Math.round(t.jitter * 1000) : undefined,
+          rtt_ms: t.roundTripTime != null ? Math.round(t.roundTripTime * 1000) : undefined,
+          bitrate_kbps: Math.max(0, Math.round(((bytes - lastBytes) * 8) / 5 / 1000)),
+          resolution: t.frameWidth ? `${t.frameWidth}x${t.frameHeight}` : undefined,
+          frame_rate: t.framesPerSecond != null ? Math.round(t.framesPerSecond) : undefined,
+        };
+        lastBytes = bytes;
+      });
+    }, 5000);
     return () => {
       cancelled = true;
+      window.clearInterval(qTimer);
+      if (Object.keys(last).length) reportCallQuality(last);
       callRef.current?.leave();
       streamRef.current?.getTracks().forEach((tr) => tr.stop());
       ws?.close();

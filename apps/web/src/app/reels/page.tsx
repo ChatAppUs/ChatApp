@@ -9,11 +9,13 @@ import Composer from "@/components/Composer";
 import PhotoDeck from "@/components/PhotoDeck";
 import { DuetStitchModal, RemixModal, ReelAnalytics, RemixList, RemixPlayer } from "@/components/ReelExtras";
 import CommunityNotes from "@/components/CommunityNotes";
+import { reportQoE } from "@/lib/telemetry";
 
 function Reel({ post }: { post: Post }) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewed = useRef(false);
+  const startupReported = useRef(false);
   const SPEEDS = [0.5, 1, 1.5, 2];
   const [liked, setLiked] = useState(post.liked_by_me);
   const [likes, setLikes] = useState(post.like_count);
@@ -33,9 +35,31 @@ function Reel({ post }: { post: Post }) {
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
+    // §72 QoE beacons: startup time, buffering, completion.
+    const qoe = { playIntent: 0, startupMs: 0, bufferMs: 0, bufferingEvents: 0, waitSince: 0 };
+    const onPlaying = () => {
+      if (qoe.playIntent && !qoe.startupMs) {
+        qoe.startupMs = performance.now() - qoe.playIntent;
+        qoe.playIntent = 0;
+      }
+    };
+    const onWaiting = () => {
+      qoe.bufferingEvents += 1;
+      qoe.waitSince = performance.now();
+    };
+    const onPlayingAfterWait = () => {
+      if (qoe.waitSince) {
+        qoe.bufferMs += performance.now() - qoe.waitSince;
+        qoe.waitSince = 0;
+      }
+    };
+    el.addEventListener("playing", onPlaying);
+    el.addEventListener("playing", onPlayingAfterWait);
+    el.addEventListener("waiting", onWaiting);
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
+          if (!qoe.playIntent && !qoe.startupMs) qoe.playIntent = performance.now();
           el.play().catch(() => {});
           if (!viewed.current) {
             viewed.current = true;
@@ -48,7 +72,22 @@ function Reel({ post }: { post: Post }) {
       { threshold: 0.6 }
     );
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("playing", onPlayingAfterWait);
+      el.removeEventListener("waiting", onWaiting);
+      if (qoe.startupMs || qoe.bufferMs || el.currentTime > 0) {
+        reportQoE({
+          video_id: post.id,
+          startup_ms: qoe.startupMs ? Math.round(qoe.startupMs) : undefined,
+          buffer_ms: Math.round(qoe.bufferMs),
+          buffering_events: qoe.bufferingEvents,
+          completed: el.duration > 0 && el.currentTime >= el.duration * 0.9,
+          watch_ms: Math.round(el.currentTime * 1000),
+        });
+      }
+    };
   }, [post.id]);
 
   const toggleLike = async () => {
