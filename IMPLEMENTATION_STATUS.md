@@ -400,9 +400,10 @@ instead of using the imported `BASE`, so the suite broke under any other API por
 
 ### Still not implemented / not provable in this environment
 
-- **No packaged build for the C++ services.** They compile only via a bare `g++` invocation:
-there is no Makefile, Dockerfile or compose entry, so they are not deployable as images and CI
-compiles the source without producing documented artifacts.
+- **Native packaging is implemented.** All five C++ data planes now have Docker build definitions;
+the previously missing `services/sfu-forwarder/Dockerfile` and its `sfu-forwarder` Docker Compose
+service expose TURN on 3479 TCP/UDP and the control port on 8099. Live registry, provider, and
+production deployment validation remains environment-dependent.
 - **The web production build cannot complete here.** `next build` reports "✓ Compiled successfully"
 and is then SIGKILLed (exit 137) during "Collecting page data". Root cause measured directly:
 `/sys/fs/cgroup/memory.max` is **2 GiB** for the whole container (`free -m` advertises the 386 GiB

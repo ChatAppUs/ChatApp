@@ -549,9 +549,12 @@ Five gaps were found and closed:
   the docs claiming strict C++17 compilation passes. The job now compiles all five.
 - **`tests/gaps2_test.py` hard-coded `localhost:8080`** instead of the configured `BASE`.
 
-Remaining known-partial items: the C++ services have **no packaged build** (bare `g++` only — no
-Makefile/Dockerfile/compose entry); the web production build cannot finish in this sandbox because
+Remaining known-partial items: the web production build cannot finish in this sandbox because
 `/sys/fs/cgroup/memory.max` caps the whole container at 2 GiB (`free -m` reports the 386 GiB host),
 so `next build` is SIGKILLed during "Collecting page data" after compiling successfully — CI must
 confirm it; and on-device radio handshakes, Kotlin/Swift compilation, provider-backed AI output,
 live SMTP/SMS/ML, Tor transport and production load/backup/DR remain environment-gated.
+
+## Implementation audit addendum — 2026-09-14, native packaging pass
+
+The sixth independent source audit found that the C++ TURN forwarder compiled in CI but lacked a container image and Compose service. `services/sfu-forwarder/Dockerfile` and the corresponding `sfu-forwarder` Compose entry are now implemented with TURN ports 3479 TCP/UDP and control port 8099; the API is wired to prefer `sfu-forwarder:3479` while retaining the embedded relay fallback.

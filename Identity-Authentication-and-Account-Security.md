@@ -435,3 +435,7 @@ call/broadcast suite. It now runs all 20 suites. The media plane had also never 
 so any suite touching calls would have failed on `502 media service unavailable` — the Go SFU and
 the C++ TURN relay now start and are readiness-checked. A separate ranking defect in `/api/fyp`
 (unrelated to authentication) was found and fixed in the same pass; see `IMPLEMENTATION_STATUS.md`.
+
+## Implementation audit addendum — 2026-09-14, native packaging pass
+
+The sixth independent source audit found that the C++ TURN forwarder compiled in CI but lacked a container image and Compose service. `services/sfu-forwarder/Dockerfile` and the corresponding `sfu-forwarder` Compose entry are now implemented with TURN ports 3479 TCP/UDP and control port 8099; the API is wired to prefer `sfu-forwarder:3479` while retaining the embedded relay fallback.

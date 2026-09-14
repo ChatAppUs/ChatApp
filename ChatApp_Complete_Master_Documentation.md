@@ -3836,9 +3836,12 @@ Defects found and closed:
   plane. CI now compiles all five under strict C++17.
 - **`tests/gaps2_test.py` hard-coded `localhost:8080`** instead of the configured `BASE`.
 
-Known-partial, stated plainly: the C++ services are **not packaged** — a bare `g++` invocation is the
-only build path, with no Makefile, Dockerfile or compose entry, so they cannot be deployed as images
-and CI compiles the source without producing documented artifacts. The web production build cannot
+The C++ services are now packaged with Dockerfiles and Docker Compose entries, including the
+previously missing `sfu-forwarder` image and its TURN ports. The web production build cannot
 complete in this environment: `/sys/fs/cgroup/memory.max` caps the whole container at 2 GiB
 (`free -m` reports the 386 GiB host), so `next build` compiles successfully and is then SIGKILLed
 during "Collecting page data".
+
+## Implementation audit addendum — 2026-09-14, native packaging pass
+
+The sixth independent source audit found that the C++ TURN forwarder compiled in CI but lacked a container image and Compose service. `services/sfu-forwarder/Dockerfile` and the corresponding `sfu-forwarder` Compose entry are now implemented with TURN ports 3479 TCP/UDP and control port 8099; the API is wired to prefer `sfu-forwarder:3479` while retaining the embedded relay fallback.

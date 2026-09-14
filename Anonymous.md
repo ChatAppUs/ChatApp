@@ -1969,3 +1969,9 @@ candidates and truncates after ranking. The offline data plane itself is unchang
 priority ladder in §5.1 still resolves Wi-Fi / Wi-Fi Direct → Bluetooth → store-and-forward, and
 `AutoTransport` keeps packets queued when no radio is reachable. Radio handshakes still require
 real devices.
+## Implementation audit addendum — 2026-09-14, native packaging pass
+
+The sixth independent source audit found that the C++ TURN forwarder compiled in CI but lacked a
+container image and Compose service. `services/sfu-forwarder/Dockerfile` and the corresponding
+`sfu-forwarder` Compose entry are now implemented with TURN ports 3479 TCP/UDP and control port
+8099; the API is wired to prefer `sfu-forwarder:3479` while retaining the embedded relay fallback.

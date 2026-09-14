@@ -37,6 +37,7 @@ services:
       SFU_HOST: ${SFU_HOST:-localhost}
       SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
       TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
+      TURN_FORWARDER: ${TURN_FORWARDER:-sfu-forwarder:3479}
       SECURITY_SERVICE_URL: http://security:8090
       CLUSTER_SECRET: ${CLUSTER_SECRET:-}
       REALTIME_RELAY_URL: http://realtime:8301
@@ -75,6 +76,21 @@ services:
     ports:
       - "8095:8095"
       - "3478:3478/udp"
+
+  # C++ TURN relay forwarder for NAT traversal. The API prefers this relay
+  # when TURN_FORWARDER is set and keeps the embedded SFU relay as fallback.
+  sfu-forwarder:
+    build: ./services/sfu-forwarder
+    environment:
+      TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
+      SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
+      PUBLIC_IP: ${SFU_PUBLIC_IP:-127.0.0.1}
+      TURN_LISTEN: "3479"
+      CONTROL_PORT: "8099"
+    ports:
+      - "3479:3479/tcp"
+      - "3479:3479/udp"
+      - "8099:8099"
 
   security:
     build: ./services/security
