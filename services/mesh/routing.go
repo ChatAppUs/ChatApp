@@ -49,6 +49,7 @@ func (rt *RouteTable) Upsert(b *Beacon) {
 	}
 	n.Addr = b.Addr
 	n.Transport = b.Transport
+	n.RelayOK = b.Kind == "relay"
 	n.LastSeen = time.Now()
 }
 

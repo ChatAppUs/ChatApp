@@ -59,6 +59,34 @@ func TestRouteTableDedup(t *testing.T) {
 	}
 }
 
+func TestRelayBeaconOptIn(t *testing.T) {
+	rt := NewRouteTable()
+	rt.Upsert(&Beacon{DeviceID: "relay-1", Kind: "relay", Addr: "127.0.0.1:1"})
+	neighbors := rt.Neighbors()
+	if len(neighbors) != 1 || !neighbors[0].RelayOK {
+		t.Fatal("relay beacon should opt the neighbor into forwarding")
+	}
+	rt.Upsert(&Beacon{DeviceID: "member-1", Kind: "member", Addr: "127.0.0.1:2"})
+	neighbors = rt.Neighbors()
+	if len(neighbors) != 2 {
+		t.Fatalf("expected two neighbors, got %d", len(neighbors))
+	}
+	for _, neighbor := range neighbors {
+		if neighbor.DeviceID == "member-1" && neighbor.RelayOK {
+			t.Fatal("member beacon must not opt into forwarding")
+		}
+	}
+}
+func TestNodeWithoutTransportFailsClosed(t *testing.T) {
+	key, _ := NewIdentityKey()
+	n := NewNode(NodeConfig{DeviceID: "offline", Key: &key})
+	n.Start()
+	if _, err := n.Send(KindMessage, "peer", []byte("queued")); err != nil {
+		t.Fatal(err)
+	}
+	n.Stop()
+}
+
 // TestStoreForward verifies the queue enqueues, expires, and removes.
 func TestStoreForward(t *testing.T) {
 	q := NewQueue(10, time.Hour)

@@ -63,6 +63,10 @@ After moving to the Go standard library, `services/mesh/go.mod` no longer requir
 
 Android and iOS now encode/decode the optional `group_id` field rather than silently turning group traffic into an unscoped packet.
 
+### 5. Relay admission and nil-transport safety
+
+Beacon processing now honours the advertised `relay` versus `member` role, so a relay can forward without hidden test-only policy mutation. Node startup, transport selection and queue flushing now fail closed when a transport is absent instead of dereferencing a nil transport.
+
 ## What is still not implemented or not proven
 
 These are not hidden by the code fixes above:
@@ -83,6 +87,7 @@ These are not hidden by the code fixes above:
 - Mesh cryptography dependency: Go standard library AES-GCM replaced the mesh module's `x/crypto` dependency.
 - Native envelope mismatch: nonce, tag and group metadata are now represented consistently.
 - Basic native forwarding correctness: queue re-entry and source deduplication are now implemented.
+- Go relay admission now honours beacon role, and nil transports fail closed during startup, selection and flushing.
 
 ### Can be reduced with more first-party code
 

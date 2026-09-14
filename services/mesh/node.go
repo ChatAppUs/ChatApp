@@ -82,7 +82,12 @@ func NewNode(cfg NodeConfig) *Node {
 }
 
 // Start begins the discovery beacon loop.
-func (n *Node) Start() { go n.beaconLoop() }
+func (n *Node) Start() {
+	if n.transport == nil {
+		return
+	}
+	go n.beaconLoop()
+}
 
 // Stop halts the node.
 func (n *Node) Stop() {
@@ -131,6 +136,9 @@ func (n *Node) beaconLoop() {
 // an AutoTransport this follows the Anonymous.md §5.3 fallback order; with a
 // single link it is that link's name.
 func (n *Node) transportName() string {
+	if n.transport == nil {
+		return "none"
+	}
 	if named, ok := n.transport.(interface{ Active() string }); ok {
 		return named.Active()
 	}
@@ -213,6 +221,9 @@ func (n *Node) route(p *Packet) {
 
 // flush attempts to deliver queued packets to known neighbors.
 func (n *Node) flush() {
+	if n.transport == nil {
+		return
+	}
 	for _, p := range n.queue.Pending(time.Now()) {
 		for _, nb := range n.routes.Neighbors() {
 			if !nb.RelayOK && nb.DeviceID != p.Dst {
