@@ -297,7 +297,7 @@ static void handleClient(int fd) {
                     if (written != contentLength) {
                         // Truncate back so a torn chunk never corrupts the file;
                         // the client re-sends the whole chunk.
-                        ::truncate(part.c_str(), received);
+                        (void)!::truncate(part.c_str(), received);
                         respond(fd, 400, "Bad Request", "{\"error\":\"incomplete chunk\"}");
                     } else {
                         respond(fd, 200, "OK", "{\"upload_id\":\"" + id + "\",\"received\":" +
