@@ -100,8 +100,8 @@ class MeshEngine(
     // ---- discovery -------------------------------------------------------
 
     /** Records a neighbour from a discovery beacon (device id + reachable addr). */
-    fun upsertNeighbor(deviceId: String, addr: String, transport: String, now: Long = System.currentTimeMillis()) {
-        neighbors[deviceId] = MeshNeighbor(deviceId, addr, transport, relayOk = true, lastSeen = now)
+    fun upsertNeighbor(deviceId: String, addr: String, transport: String, relayOk: Boolean = true, now: Long = System.currentTimeMillis()) {
+        neighbors[deviceId] = MeshNeighbor(deviceId, addr, transport, relayOk = relayOk, lastSeen = now)
     }
 
     fun neighborList(): List<MeshNeighbor> = neighbors.values.toList()
@@ -169,7 +169,7 @@ class MeshEngine(
      */
     fun handleInbound(addr: String, data: ByteArray, now: Long = System.currentTimeMillis()): MeshPacket? {
         parseBeacon(data)?.let { b ->
-            upsertNeighbor(b.first, addr, b.second, now)
+            upsertNeighbor(b.first, addr, b.second, b.third, now)
             return null
         }
         val p = MeshPacketCodec.decode(data) ?: return null
@@ -227,10 +227,10 @@ class MeshEngine(
         return b.joinToString("") { "%02x".format(it) }
     }
 
-    private fun parseBeacon(data: ByteArray): Pair<String, String>? = try {
+    private fun parseBeacon(data: ByteArray): Triple<String, String, Boolean>? = try {
         val o = JSONObject(String(data))
         val id = o.optString("device_id")
-        if (id.isEmpty()) null else id to o.optString("transport", "local_wifi")
+        if (id.isEmpty()) null else Triple(id, o.optString("transport", "local_wifi"), o.optString("kind", "member") == "relay")
     } catch (_: Exception) {
         null
     }

@@ -92,10 +92,10 @@ final class MeshEngine {
 
     // MARK: discovery
 
-    func upsertNeighbor(deviceId: String, addr: String, transport: String, now: Date = Date()) {
+    func upsertNeighbor(deviceId: String, addr: String, transport: String, relayOk: Bool = true, now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
         neighbors[deviceId] = MeshNeighbor(deviceId: deviceId, addr: addr,
-                                           transport: transport, relayOk: true, lastSeen: now)
+                                           transport: transport, relayOk: relayOk, lastSeen: now)
     }
 
     func neighborList() -> [MeshNeighbor] {
@@ -162,7 +162,7 @@ final class MeshEngine {
     @discardableResult
     func handleInbound(addr: String, data: Data, now: Date = Date()) -> MeshPacket? {
         if let b = parseBeacon(data) {
-            upsertNeighbor(deviceId: b.0, addr: addr, transport: b.1, now: now)
+            upsertNeighbor(deviceId: b.0, addr: addr, transport: b.1, relayOk: b.2, now: now)
             return nil
         }
         guard let p = MeshPacketCodec.decode(data) else { return nil }
@@ -209,10 +209,10 @@ final class MeshEngine {
         return sent
     }
 
-    private func parseBeacon(_ data: Data) -> (String, String)? {
+    private func parseBeacon(_ data: Data) -> (String, String, Bool)? {
         guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = o["device_id"] as? String, !id.isEmpty else { return nil }
-        return (id, (o["transport"] as? String) ?? "local_wifi")
+        return (id, (o["transport"] as? String) ?? "local_wifi", (o["kind"] as? String) == "relay")
     }
 }
 
