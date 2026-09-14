@@ -70,6 +70,20 @@ func deref(s *string) string {
 func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	limit, offset := pageParams(r)
+	// The diversity/dedup reranker below removes candidates (shared remix roots,
+	// per-author consecutive-run cap), and the SQL LIMIT used to be applied
+	// before it — so a page could come back short of the requested size. A short
+	// page then tripped injectFYPExploration's `len(posts) < 9` guard and the
+	// guaranteed exploration slot silently disappeared with it. Fetch a wider
+	// candidate window and truncate after ranking, so `limit` means "up to N
+	// ranked reels" rather than "N candidates before filtering".
+	candidates := limit * 3
+	if candidates < 30 {
+		candidates = 30
+	}
+	if candidates > 150 {
+		candidates = 150
+	}
 	cacheKey := fmt.Sprintf("fyp:%s:%d:%d", uid, limit, offset)
 	if cached, ok := a.cache.get(r.Context(), cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
@@ -118,7 +132,7 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 		   * (CASE WHEN pf.author_id IS NOT NULL THEN 1.5 ELSE 1.0 END)
 		   / (1.0 + EXTRACT(EPOCH FROM (now()-p.created_at))/86400.0)
 		 ) DESC
-		 LIMIT $2 OFFSET $3`, uid, limit, offset)
+		 LIMIT $2 OFFSET $3`, uid, candidates, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "feed failed")
 		return
@@ -151,6 +165,11 @@ func (a *App) handleFYP(w http.ResponseWriter, r *http.Request) {
 	// final ranked order so they land on deterministic positions.
 	a.mlRerankFYP(uid, posts)
 	posts = diversifyFYP(posts)
+	// Truncate to the requested page size *after* ranking, then splice the
+	// exploration slots into the final page.
+	if len(posts) > limit {
+		posts = posts[:limit]
+	}
 	posts = a.injectFYPExploration(r, uid, posts)
 	body, err := json.Marshal(map[string]any{"posts": posts})
 	if err != nil {

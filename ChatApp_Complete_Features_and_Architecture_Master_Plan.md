@@ -2776,3 +2776,27 @@ store-and-forward hop budget (Anonymous.md networking priorities 4–6), fuzz ta
 tracing, and alerting pipelines. Still environment-gated: Android/iOS release builds and Bluetooth/
 Wi-Fi Direct hardware handshakes, live PostgreSQL and provider integrations (SMTP/SMS/ML), and
 production load, backup/restore, and disaster-recovery certification.
+
+### 2026-09-14 final pass (fresh main `19241d1`)
+
+**All 20 Python suites pass, 0 failures** against a live API, real PostgreSQL 15.19, the Go SFU and
+the C++ TURN relay; parity **150 files / 537 registered routes**; 37 migrations clean → 210 tables.
+
+Defects found and closed in this pass:
+
+- **`/api/fyp` under-filled its page and dropped the exploration slot.** `diversifyFYP` (remix-root
+  dedup + two-consecutive-per-author cap) ran *after* the SQL `LIMIT`, so filtering could return
+  fewer than `limit` posts; a page under nine posts then tripped `injectFYPExploration`'s early
+  return. Measured before: `?limit=9` → 8 posts, no `explore` entry. Now the handler over-fetches a
+  candidate window and truncates after ranking.
+- **The `e2e-postgres` CI job ran only eight hand-picked suites** — `integration_test` and every
+  call/broadcast suite were missing. It now loops over `tests/*_test.py` (all 20).
+- **The media plane was never started in CI**; without the SFU/TURN relay every call path answers
+  `502 media service unavailable`, which is why those suites had been omitted. Both now start in CI.
+- **No CI step compiled the C++ data planes** even though this plan allocates the ultra-low-latency
+  planes to C++. All five now compile under strict C++17 in CI.
+- **`tests/gaps2_test.py` hard-coded `localhost:8080`** rather than the configured `BASE`.
+
+Known-partial: the C++ services have **no packaged build** (bare `g++` invocation only — no
+Makefile, Dockerfile or compose entry); and the web production build cannot complete in the 2 GiB
+sandbox cgroup, so CI must confirm it.

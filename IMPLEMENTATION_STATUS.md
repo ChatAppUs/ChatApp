@@ -4,7 +4,7 @@ This status is derived from the five root specifications and the current source 
 
 ## Summary
 
-The repository contains an implemented multi-platform ChatApp product surface. The API registers **536 routes** (the parity-scan figure; the router source contains 632 `HandleFunc` registrations including non-`/api` endpoints) across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, privacy, forums, Pulse, live shopping, and AI creator/assistant tools. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
+The repository contains an implemented multi-platform ChatApp product surface. The API registers **537 routes** (the parity-scan figure; the router source contains 633 `HandleFunc` registrations including non-`/api` endpoints) across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, privacy, forums, Pulse, live shopping, and AI creator/assistant tools. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
 
 The specifications describe a release program substantially broader than what can be proven by static inspection alone. Features are therefore marked **Implemented**, **Implemented with runtime validation pending**, or **Not proven complete** rather than being represented as complete merely because a route or page exists.
 
@@ -350,3 +350,65 @@ process is then `Killed` (SIGKILL) during "Collecting page data" — the sandbox
 2 GB and this machine also runs PostgreSQL, the API, the SFU and the TURN relay concurrently. That
 is an environment ceiling, not a code defect; the same build must be confirmed in the CI job, which
 has the memory headroom.
+
+## 2026-09-14 audit — final pass (fresh main `19241d1`)
+
+Re-cloned `main` at `19241d1bcbec70e53289e2ce41ab21a2782e1138` (identical to the previous
+pass's push, so no other agent had committed since) and re-ran every check against the real
+code, a live API, a real PostgreSQL 15.19, the Go SFU, and the C++ TURN relay.
+
+### Defects found and fixed in this pass
+
+1. **`/api/fyp` returned a short page and silently dropped its exploration slot.** The
+diversity/dedup reranker (`diversifyFYP`: one survivor per remix root, at most two consecutive
+reels per author) ran *after* the SQL `LIMIT`, so filtering could pull the page below the
+requested size. A page shorter than nine posts then tripped `injectFYPExploration`'s
+`len(posts) < 9` early return, so the guaranteed exploration slot disappeared with it. Measured
+before the fix: `?limit=9` returned **8** posts with no `explore` entry, `?limit=25` returned 24.
+The handler now fetches a wider candidate window and truncates to the requested page size *after*
+ranking, so `limit` means "up to N ranked reels". After the fix `?limit=9` returns 10 with the
+exploration slot present and `gaps6_test` is **91/91** (was 89 passed / 2 failed).
+   This is state-dependent: the previous pass saw 91/91 because that database happened to hold
+enough diverse candidates. It is a latent flake in a ranking path — exactly the class a required
+end-to-end job exists to catch.
+2. **The E2E coverage gap had not actually been closed.** The `e2e-postgres` job added in the
+previous pass listed only eight suites by hand. Omitted were `integration_test` and every
+call/broadcast suite. It now loops over `tests/*_test.py`, so all 20 suites run.
+3. **The media plane was absent from CI, so the omitted suites could not have passed.** Nothing
+started the SFU or the TURN relay; without them every call/broadcast path answers
+`502 media service unavailable` (this is exactly why `integration_test` failed 5 checks on a cold
+baseline here). The job now starts the Go SFU and the C++ forwarder and waits for both to be ready.
+4. **Nothing compiled the C++ services.** The specifications state the ultra-low-latency data
+planes are C++ and the documents claimed strict C++17 compilation passes, but no build script,
+Dockerfile or CI step did it. The job now compiles all five (`counters`, `media`, `realtime`,
+`sfu-forwarder`, `transcode`) with `-std=c++17 -O2 -Wall -Wextra -Werror -pthread`.
+5. **`tests/gaps2_test.py` hard-coded `http://localhost:8080`** for the sanctions-import call
+instead of using the imported `BASE`, so the suite broke under any other API port.
+
+### Validation executed this pass (fresh PostgreSQL 15.19; API + Go SFU + C++ TURN relay live)
+
+- **All 20 Python suites pass, 0 failures.** `integration_test` **154/154**, `gaps6_test` **91/91**,
+  plus `authn_test`, `counters_test`, `features_test`, `finance_test`, `gaps_test`–`gaps10_test`,
+  `guest_mesh_test`, `platform_gaps_test`, `luckydraw_test`, `staking_test`, `sfu_turn_test`.
+- `parity_check` **150 files / 537 registered routes** (633 `HandleFunc` registrations);
+  `validate-feature-registry` **26 features / 7 required clients**.
+- All 37 migrations apply cleanly to a fresh database → **210 tables**.
+- `go build` + `go vet` + `go test` green for `services/api`, `services/mesh`, `services/sfu`.
+- All five C++ data planes compile under strict C++17.
+- `gofmt -l` flags ten pre-existing files, none touched by this pass; the file changed here
+  (`handlers_watch.go`) is format-clean.
+
+### Still not implemented / not provable in this environment
+
+- **No packaged build for the C++ services.** They compile only via a bare `g++` invocation:
+there is no Makefile, Dockerfile or compose entry, so they are not deployable as images and CI
+compiles the source without producing documented artifacts.
+- **The web production build cannot complete here.** `next build` reports "✓ Compiled successfully"
+and is then SIGKILLed (exit 137) during "Collecting page data". Root cause measured directly:
+`/sys/fs/cgroup/memory.max` is **2 GiB** for the whole container (`free -m` advertises the 386 GiB
+host, which makes this look like ample memory). Not a code defect; it must be confirmed in CI.
+- On-device Bluetooth/Wi-Fi Direct radio handshakes (no radio hardware); Kotlin/Swift compilation
+(no Android Gradle or Xcode toolchain); provider-backed AI output
+(`WHISPER_MODEL`/`TRANSLATE_MODEL`/`TTS_MODEL`/`ASSISTANT_MODEL` unset, so those endpoints report
+`available:false` and fabricate nothing); live SMTP/SMS/ML providers; Tor/multi-hop IP-privacy
+transport; production load, backup/restore and disaster-recovery validation.

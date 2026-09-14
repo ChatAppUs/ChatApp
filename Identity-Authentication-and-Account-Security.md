@@ -418,3 +418,20 @@ and face-match attestation, revoke all sessions, and set the 48-hour withdrawal 
 commit. Combined with the earlier passes, every endpoint listed in §4.1–§5.10 remains implemented.
 Environment-dependent items (provider-backed OAuth against live Google, SMTP/SMS delivery, and
 native-device validation) remain outstanding and are not marked complete.
+
+### 2026-09-14 final pass (fresh main `19241d1`)
+
+Re-verified against the real code with a live API and PostgreSQL 15.19. **All 20 Python suites
+pass, 0 failures** (`integration_test` 154/154, `gaps6_test` 91/91, `authn_test` 11/11), 37
+migrations clean → 210 tables, and the Go tests are green for `api`, `mesh` and `sfu`. No
+authentication or account-security contradiction was found against this specification in this pass:
+registration still gates on the email/phone OTP, sessions remain server-side and per-device
+revocable, and the financial surfaces remain KYC-gated server-side.
+
+One CI-coverage gap did affect this specification's guarantees and was closed: the `e2e-postgres`
+job ran only eight suites, omitting `integration_test` (which exercises login, refresh rotation,
+TOTP, passkeys, QR login, recovery codes, lockout and the deletion lifecycle) and every
+call/broadcast suite. It now runs all 20 suites. The media plane had also never been started in CI,
+so any suite touching calls would have failed on `502 media service unavailable` — the Go SFU and
+the C++ TURN relay now start and are readiness-checked. A separate ranking defect in `/api/fyp`
+(unrelated to authentication) was found and fixed in the same pass; see `IMPLEMENTATION_STATUS.md`.

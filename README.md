@@ -320,8 +320,8 @@ python -m uvicorn main:app --app-dir services/ml --port 8200 &
 ```
 
 Test suites (`tests/`): finance(staking, cards, p2p, convert, withdrawals), gaps→gaps10
-(every gap pack), features, integration (153 E2E checks), authn (Rust delegation),
-counters (C++ engine + flush), parity_check (536 registered routes across 149 client files),
+(every gap pack), features, integration (154 E2E checks), authn (Rust delegation),
+counters (C++ engine + flush), parity_check (537 registered routes across 150 client files),
 sfu_turn (TURN relay). Run spaced ≥1 min apart (register rate limit: 10/min).
 
 ```bash
@@ -525,3 +525,33 @@ Verification after the changes: fresh `npm ci && npm run build` passes for web (
 A fresh reset to `origin/main` at commit `aaf447b` re-walked all five root specifications against the executable source. Two parity gaps were found and closed in source: the web client had no offline-mesh UI (Android and iOS did; the backend and registry claimed coverage) — `apps/web/src/app/mesh/page.tsx` plus a navigation link now drive the six `/api/mesh/*` endpoints with an `X-Mesh-Device` key; and five admin endpoints (content-abuse log, custom-emoji management, group scale report, organization verification, merchant tier upsert) had no UI consumer — the admin app's Safety tab and a new Platform tab now cover them.
 
 Validation: fresh `npm ci && npm run build` passes for web (62 routes) and admin (2 routes: `/` and `/dashboard`); parity is **150 files / 537 registered routes** (web 92 files / 379 refs, admin 77 refs); the feature registry passes (26 features, 7 required clients); `go test -count=1` passes for `services/api` on Go 1.25.1. Remaining limitations are unchanged: Android/iOS release builds and radio handshakes, live PostgreSQL/provider integrations, Tor/multi-hop privacy transport (explicit future work), and production load/backup/DR validation require their external environments.
+
+### 2026-09-14 final pass (fresh main `19241d1`)
+
+Re-cloned `main` at `19241d1` and re-ran every suite against a live stack. **All 20 Python suites
+pass, 0 failures** (`integration_test` 154/154, `gaps6_test` 91/91, `sfu_turn_test` 18/18), parity
+is **150 files / 537 registered routes**, all 37 migrations apply cleanly → 210 tables, and the Go
+tests are green for `api`, `mesh` and `sfu`.
+
+Five gaps were found and closed:
+
+- **`/api/fyp` could return a short page and lose its exploration slot.** The diversity/dedup
+  reranker ran after the SQL `LIMIT`, so filtering could drop the page below `limit`; a page under
+  nine posts then tripped `injectFYPExploration`'s early return and the guaranteed exploration slot
+  vanished with it (`?limit=9` returned 8 posts, no `explore` entry). The handler now over-fetches
+  candidates and truncates after ranking.
+- **The `e2e-postgres` CI job still ran only eight hand-picked suites** — not `integration_test`, and
+  none of the call/broadcast suites. It now loops over `tests/*_test.py`.
+- **The media plane was never started in CI.** Without the SFU and TURN relay every call path answers
+  `502 media service unavailable`, which is why those suites had been omitted. The job now starts
+  both and waits for readiness.
+- **Nothing compiled the C++ services**, despite the specifications requiring C++ data planes and
+  the docs claiming strict C++17 compilation passes. The job now compiles all five.
+- **`tests/gaps2_test.py` hard-coded `localhost:8080`** instead of the configured `BASE`.
+
+Remaining known-partial items: the C++ services have **no packaged build** (bare `g++` only — no
+Makefile/Dockerfile/compose entry); the web production build cannot finish in this sandbox because
+`/sys/fs/cgroup/memory.max` caps the whole container at 2 GiB (`free -m` reports the 386 GiB host),
+so `next build` is SIGKILLed during "Collecting page data" after compiling successfully — CI must
+confirm it; and on-device radio handshakes, Kotlin/Swift compilation, provider-backed AI output,
+live SMTP/SMS/ML, Tor transport and production load/backup/DR remain environment-gated.

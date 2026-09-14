@@ -10,7 +10,7 @@ import sys
 import time
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from integration_test import check, req, grant_superadmin
+from integration_test import BASE, check, req, grant_superadmin
 from finance_test import db, fund
 
 
@@ -240,7 +240,7 @@ def main():
 
     csv_body = "source,name,program\nofac,Jon Badguy,SDN\nun,Jane Evildoer,UNSC\n"
     rq = urllib.request.Request(
-        "http://localhost:8080/api/admin/sanctions/import",
+        f"{BASE}/api/admin/sanctions/import",
         data=csv_body.encode(), method="POST")
     rq.add_header("Content-Type", "text/csv")
     rq.add_header("Authorization", f"Bearer {admin}")

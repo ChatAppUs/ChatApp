@@ -360,8 +360,8 @@ python -m uvicorn main:app --app-dir services/ml --port 8200 &
 ```
 
 Test suites (`tests/`): finance(staking, cards, p2p, convert, withdrawals), gaps→gaps10
-(every gap pack), features, integration (153 E2E checks), authn (Rust delegation),
-counters (C++ engine + flush), parity_check (536 registered routes across 149 client files),
+(every gap pack), features, integration (154 E2E checks), authn (Rust delegation),
+counters (C++ engine + flush), parity_check (537 registered routes across 150 client files),
 sfu_turn (TURN relay). Run spaced ≥1 min apart (register rate limit: 10/min).
 
 ```bash
@@ -3811,3 +3811,34 @@ Remaining future work (unchanged, honestly marked): Tor onion transport and mult
 routing, fuzz targets, distributed tracing, alerting pipelines. Remaining environment gates:
 Android/iOS release builds and radio handshakes, live PostgreSQL and SMTP/SMS/ML provider
 integrations, and production load, backup/restore, and disaster-recovery certification.
+
+### 2026-09-14 final pass (fresh main `19241d1`)
+
+**All 20 Python suites pass, 0 failures** against a live API, real PostgreSQL 15.19, the Go SFU and
+the C++ TURN relay; parity **150 files / 537 registered routes** (633 `HandleFunc` registrations);
+feature registry **26 features / 7 clients**; 37 migrations clean → 210 tables; `go build`/`go vet`/
+`go test` green for `api`, `mesh`, `sfu`.
+
+Defects found and closed:
+
+- **`/api/fyp` under-filled its page and silently dropped the exploration slot.** `diversifyFYP`
+  ran *after* the SQL `LIMIT`, so remix-root dedup and the two-consecutive-per-author cap could
+  return fewer than `limit` posts; under nine posts `injectFYPExploration` returned early and the
+  guaranteed exploration slot disappeared. Measured before: `?limit=9` → 8 posts, no `explore`
+  entry; `?limit=25` → 24. Now the handler over-fetches candidates and truncates after ranking
+  (`?limit=9` → 10 with the slot present; `gaps6_test` 89/2 → **91/0**). This was state-dependent —
+  the prior pass saw 91/91 because that database held more diverse candidates.
+- **The `e2e-postgres` CI job ran only eight hand-picked suites** and omitted `integration_test` plus
+  every call/broadcast suite. It now loops over `tests/*_test.py`.
+- **The media plane was never started in CI**, and without it every call path answers
+  `502 media service unavailable`. The Go SFU and C++ forwarder now start and are readiness-checked.
+- **Nothing compiled the C++ services** although this document assigns them the realtime data
+  plane. CI now compiles all five under strict C++17.
+- **`tests/gaps2_test.py` hard-coded `localhost:8080`** instead of the configured `BASE`.
+
+Known-partial, stated plainly: the C++ services are **not packaged** — a bare `g++` invocation is the
+only build path, with no Makefile, Dockerfile or compose entry, so they cannot be deployed as images
+and CI compiles the source without producing documented artifacts. The web production build cannot
+complete in this environment: `/sys/fs/cgroup/memory.max` caps the whole container at 2 GiB
+(`free -m` reports the 386 GiB host), so `next build` compiles successfully and is then SIGKILLed
+during "Collecting page data".

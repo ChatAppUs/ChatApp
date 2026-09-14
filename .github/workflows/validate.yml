@@ -116,6 +116,13 @@ jobs:
       RATE_LIMIT_SCALE: 200
       CHATAPP_BASE: http://localhost:8080
       CHATAPP_WS: ws://localhost:8080
+      # The media plane has to be reachable or every call/broadcast path answers
+      # 502 "media service unavailable". It was never started before, which is
+      # why the suite subset here avoided every call flow (see the run step).
+      SFU_INTERNAL_URL: http://localhost:8095
+      SFU_PUBLIC_URL: ws://localhost:8095/ws
+      SFU_HOST: localhost
+      TURN_FORWARDER: http://localhost:8099
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -138,6 +145,34 @@ jobs:
           for f in $(ls infra/db/*.sql | sort); do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
           done
+      - name: Build and start the Go SFU (media plane)
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd services/sfu && go build -o /tmp/sfu .)
+          /tmp/sfu > /tmp/sfu.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:8095/health >/dev/null; then echo "sfu ready"; exit 0; fi
+            sleep 1
+          done
+          echo "sfu did not become ready"; tail -50 /tmp/sfu.log; exit 1
+      - name: Compile the C++ data planes and start the TURN relay forwarder
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The specs state the ultra-low-latency data planes are C++ and that
+          # strict C++17 compilation passes; nothing verified that in CI.
+          for s in counters media realtime sfu-forwarder transcode; do
+            g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread \
+              -o "/tmp/$s" "services/$s/main.cpp"
+            echo "compiled $s"
+          done
+          /tmp/sfu-forwarder > /tmp/forwarder.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/8099) >/dev/null 2>&1; then echo "forwarder ready"; exit 0; fi
+            sleep 1
+          done
+          echo "forwarder did not become ready"; tail -50 /tmp/forwarder.log; exit 1
       - name: Build and start the API
         shell: bash
         run: |
@@ -149,14 +184,17 @@ jobs:
             sleep 1
           done
           echo "api did not become ready"; tail -50 /tmp/api.log; exit 1
-      - name: Run end-to-end suites against the live API
+      - name: Run every end-to-end suite against the live stack
         shell: bash
         run: |
           set -euo pipefail
-          for t in guest_mesh_test platform_gaps_test gaps6_test features_test \
-                   staking_test luckydraw_test counters_test gaps10_test; do
+          # Run ALL suites rather than a hand-picked subset. The previous subset
+          # omitted integration_test and every call/broadcast suite, so the whole
+          # media plane and the WebSocket/OTP paths went unexercised in CI.
+          for f in tests/*_test.py; do
+            t=$(basename "$f" .py)
             echo "=== $t ==="
-            python3 "tests/$t.py"
+            python3 "$f"
           done
       - name: API log on failure
         if: failure()
