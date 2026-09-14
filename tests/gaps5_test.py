@@ -13,6 +13,8 @@ import os
 import sys
 import threading
 import time
+import struct
+import zlib
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from integration_test import check, req, grant_superadmin
@@ -23,18 +25,31 @@ TREASURY = "00000000-0000-0000-0000-000000000000"
 
 
 def make_image(w, h, seed):
-    """A textured, sharp PNG (passes the ML doc-quality gates)."""
-    from PIL import Image
+    """A textured, sharp PNG (passes the ML doc-quality gates).
 
-    img = Image.new("L", (w, h))
-    px = img.load()
-    state = seed
-    for y in range(h):
-        for x in range(w):
+    Written with the stdlib only (zlib + struct): CI runners install just
+    websockets/cryptography, and Pillow there previously made the whole
+    suite unrunnable with ModuleNotFoundError even though the image only
+    needs to be a valid 8-bit grayscale PNG with real texture.
+    """
+    state = seed & 0x7FFFFFFF or 1
+    raw = bytearray()
+    for _y in range(h):
+        raw.append(0)  # PNG filter type 0 (None) per scanline
+        for _x in range(w):
             state = (state * 1103515245 + 12345) & 0x7FFFFFFF
-            px[x, y] = (state >> 16) % 256
+            raw.append((state >> 16) % 256)
+
+    def chunk(ctype, data):
+        c = struct.pack(">I", len(data)) + ctype + data
+        return c + struct.pack(">I", zlib.crc32(ctype + data) & 0xFFFFFFFF)
+
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)  # 8-bit grayscale
     buf = io.BytesIO()
-    img.save(buf, "PNG")
+    buf.write(b"\x89PNG\r\n\x1a\n")
+    buf.write(chunk(b"IHDR", ihdr))
+    buf.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
+    buf.write(chunk(b"IEND", b""))
     return buf.getvalue()
 
 
