@@ -3906,4 +3906,4 @@ The one-by-one Markdown review, source fixes and unresolved gates are recorded i
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-This master document is a specification and architecture record. Current implementation evidence, dependency reductions and unproven competitor-scale claims are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+This master document is a specification and architecture record. Current implementation evidence (including signed mesh beacons, route scoring and route expiry), dependency reductions and unproven competitor-scale claims are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

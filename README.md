@@ -619,7 +619,7 @@ The source is not falsely marked production-complete: Tor/onion transport, anony
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'` for the one-by-one Markdown review, competitor verdict, code-level mesh fixes, dependency reduction, validation results and remaining non-code gates.
+See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'` for the one-by-one Markdown review, competitor verdict, code-level mesh fixes (signed beacons, route scoring, route expiry), dependency reduction, validation results and remaining non-code gates.
 
 
 ## Deep source-and-documentation audit — 2026-09-14

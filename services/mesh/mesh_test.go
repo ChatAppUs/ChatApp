@@ -280,3 +280,94 @@ func TestDefaultMaxHops(t *testing.T) {
 	}
 	n2.Stop()
 }
+
+// TestNeighborScoreOrdering verifies route-quality scoring prefers relay
+// consent, then link throughput, then freshness.
+func TestNeighborScoreOrdering(t *testing.T) {
+	now := time.Now()
+	relayWifi := &Neighbor{DeviceID: "a", Transport: "wifi_direct", RelayOK: true, LastSeen: now}
+	memberBt := &Neighbor{DeviceID: "b", Transport: "bluetooth", RelayOK: false, LastSeen: now}
+	relayBtStale := &Neighbor{DeviceID: "c", Transport: "bluetooth", RelayOK: true, LastSeen: now.Add(-10 * time.Minute)}
+
+	if !(relayWifi.Score(now) > memberBt.Score(now)) {
+		t.Fatal("relay consent should outrank a non-relaying neighbor")
+	}
+	memberBtStale := &Neighbor{DeviceID: "d", Transport: "bluetooth", RelayOK: false, LastSeen: now.Add(-10 * time.Minute)}
+	if !(memberBt.Score(now) > memberBtStale.Score(now)) {
+		t.Fatal("a fresh neighbor should outrank a stale one of the same link class")
+	}
+	if !(relayBtStale.Score(now) > memberBt.Score(now)) {
+		t.Fatal("relay consent should dominate within the same link class")
+	}
+
+	rt := NewRouteTable()
+	rt.Upsert(&Beacon{DeviceID: "a", Kind: "relay", Transport: "wifi_direct", Addr: "a:1"})
+	rt.Upsert(&Beacon{DeviceID: "c", Kind: "relay", Transport: "bluetooth", Addr: "c:1"})
+	best := rt.BestRelay("")
+	if best == nil || best.DeviceID != "a" {
+		t.Fatalf("expected wifi_direct relay to win, got %+v", best)
+	}
+	if b2 := rt.BestRelay("a"); b2 == nil || b2.DeviceID != "c" {
+		t.Fatalf("expected fallback relay after exclusion, got %+v", b2)
+	}
+}
+
+// TestRouteTableExpire verifies stale neighbors are dropped so traffic stops
+// flowing to peers that left range or powered off.
+func TestRouteTableExpire(t *testing.T) {
+	rt := NewRouteTable()
+	rt.Upsert(&Beacon{DeviceID: "fresh", Kind: "relay", Transport: "local_wifi", Addr: "f:1"})
+	rt.Upsert(&Beacon{DeviceID: "gone", Kind: "relay", Transport: "local_wifi", Addr: "g:1"})
+	rt.mu.Lock()
+	rt.neigh["gone"].LastSeen = time.Now().Add(-10 * time.Minute)
+	rt.mu.Unlock()
+	rt.Expire(3 * time.Minute)
+	ids := map[string]bool{}
+	for _, n := range rt.Neighbors() {
+		ids[n.DeviceID] = true
+	}
+	if ids["gone"] || !ids["fresh"] {
+		t.Fatalf("expected stale neighbor expired and fresh kept, got %v", ids)
+	}
+}
+
+// TestSignedBeaconVerification covers round-trip signing, TOFU pinning, and
+// rejection of tampered or impersonated beacons.
+func TestSignedBeaconVerification(t *testing.T) {
+	sk, err := NewSigningKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &Beacon{DeviceID: "dev-1", Kind: "relay", Transport: "local_wifi", Addr: "d:1", Seq: 1}
+	sb, err := sk.SignBeacon(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := MarshalSignedBeacon(sb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := UnmarshalSignedBeacon(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string][]byte{}
+	if got, err := VerifySignedBeacon(parsed, known); err != nil || got.DeviceID != "dev-1" {
+		t.Fatalf("valid signed beacon rejected: %v", err)
+	}
+
+	// Impersonation: a different key claiming the pinned device id.
+	attacker, _ := NewSigningKey()
+	evil := &Beacon{DeviceID: "dev-1", Kind: "relay", Transport: "local_wifi", Addr: "evil:1", Seq: 2}
+	sb2, _ := attacker.SignBeacon(evil)
+	if _, err := VerifySignedBeacon(sb2, known); err != ErrKeyMismatch {
+		t.Fatalf("expected ErrKeyMismatch for impersonated beacon, got %v", err)
+	}
+
+	// Tampering: a valid key with an altered payload.
+	sb3, _ := sk.SignBeacon(b)
+	sb3.Beacon.Addr = "tampered:1"
+	if _, err := VerifySignedBeacon(sb3, known); err == nil {
+		t.Fatal("tampered beacon accepted")
+	}
+}

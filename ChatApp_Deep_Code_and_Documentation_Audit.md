@@ -67,13 +67,23 @@ Android and iOS now encode/decode the optional `group_id` field rather than sile
 
 Beacon processing now honours the advertised `relay` versus `member` role, so a relay can forward without hidden test-only policy mutation. Node startup, transport selection and queue flushing now fail closed when a transport is absent instead of dereferencing a nil transport.
 
+### 6. Signed device identity, route scoring and route expiry (this pass)
+
+Three more routing findings from this audit are now implemented in the Go engine, using only the standard library:
+
+- **Signed beacons.** Every Go mesh node holds an Ed25519 signing key (`signing.go`) and signs its discovery beacons. Receiving nodes verify the signature and pin the first public key seen per device id (trust-on-first-use); a later beacon claiming a known device id with a different key is rejected (`ErrKeyMismatch`), which blocks impersonation of already-known peers without any central authority. Signed and legacy unsigned beacons coexist on the wire.
+- **Route quality scoring.** `Neighbor.Score` ranks candidates by relay consent, then link throughput (`wifi_direct` > `local_wifi` > `bluetooth`, per the Anonymous.md §5.3 order), then beacon freshness; `flush` orders neighbours by score and `RouteTable.BestRelay` exposes the best relay for a destination. The packet's final destination is always tried even without relay consent.
+- **Route expiry.** `RouteTable.Expire` drops neighbours not seen within three minutes, so traffic stops flowing to devices that left range or powered down; the beacon loop prunes every cycle.
+
+New tests cover score ordering, expiry, best-relay selection, signed-beacon round trips, tamper rejection and key-pinning mismatch rejection. All mesh tests, vet and formatting pass under Go 1.25.1.
+
 ## What is still not implemented or not proven
 
 These are not hidden by the code fixes above:
 
 1. **Real-time offline voice/video.** The mesh can carry control packets and delayed payloads, but a 500-device intermittent radio chain is not a real-time media network. Live voice/video needs codec adaptation, congestion control, jitter buffering, loss recovery, relay scheduling, call membership churn handling and a hard fallback to voice notes or delayed messaging.
 2. **Automatic physical-radio mesh formation.** Android Wi-Fi Direct/Bluetooth and iOS local-Wi-Fi/BLE code still require physical-device testing, permission handling, background execution, OS power-policy validation and automatic peer/route formation tests. iOS does not expose Android-style generic Wi-Fi Direct APIs.
-3. **Secure device identity and key exchange.** AES-GCM provides authenticated encryption only when the peers already share the correct key. A production mesh still needs authenticated device identity, per-peer key agreement, rotation, revocation and replay protection. A shared static key is not sufficient for a hostile multi-hop network.
+3. **Remaining device-identity hardening.** Beacons are now Ed25519-signed with trust-on-first-use key pinning, which removes beacon spoofing for known peers. Still open for a hostile multi-hop network: per-peer session key agreement (the payload AEAD remains a pre-shared key), key rotation and revocation, replay protection and privacy-preserving stable identifiers.
 4. **Scale evidence.** The finite hop budget, queue size, radio bandwidth, battery, OS limits and topology determine capacity. “500 devices” and “infinite distance” are not source-code features. They require simulation, soak tests and field measurements.
 5. **Provider-backed ML.** The API supports a configured translation/ML provider and a bounded local phrasebook fallback. Arbitrary-language, high-quality translation still requires a configured model/provider and compute; the fallback is not a substitute for TikTok/Facebook-grade ML.
 6. **Recommendation and creator depth.** FYP/ranking, search, trends, effects, music licensing, creator analytics, subscriptions, rewards, commerce fraud controls and ad optimisation are not equivalent to mature competitor systems merely because route names exist.
@@ -88,11 +98,12 @@ These are not hidden by the code fixes above:
 - Native envelope mismatch: nonce, tag and group metadata are now represented consistently.
 - Basic native forwarding correctness: queue re-entry and source deduplication are now implemented.
 - Go relay admission now honours beacon role, and nil transports fail closed during startup, selection and flushing.
+- Signed device identity: standard-library Ed25519-signed beacons with per-device key pinning replace blind trust in advertised device ids.
+- Route selection: deterministic scoring (relay consent, link throughput, freshness) plus neighbour expiry replaced first-match forwarding.
 
 ### Can be reduced with more first-party code
 
-- Implement an authenticated device-key exchange and versioned packet envelope.
-- Add a deterministic route scorer using signal quality, battery, queue depth, bandwidth, hop count and relay consent.
+- Implement per-peer session key agreement, key rotation/revocation and a versioned packet envelope on top of the now-signed beacon identity.
 - Add a simulator for 500/5,000/50,000 nodes with partitions, churn, queue pressure and packet loss.
 - Add codec-aware voice-note transfer with resumable chunks, checksums and delayed delivery.
 - Add local search/ranking baselines, moderation rules, audit logs and an operator review queue.

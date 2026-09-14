@@ -2863,4 +2863,4 @@ Implementation claims in this plan are reconciled with the current code and vali
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-Feature registration was checked against executable routes and clients. The native mesh protocol fixes and the remaining production gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+Feature registration was checked against executable routes and clients. The native mesh protocol fixes, signed-beacon identity, route scoring/expiry and the remaining production gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

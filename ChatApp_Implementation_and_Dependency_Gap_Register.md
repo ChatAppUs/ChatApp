@@ -70,3 +70,5 @@ This register is expanded and reconciled by `file 'ChatApp_Deep_Code_and_Documen
 ## Deep source-and-documentation audit — 2026-09-14
 
 The mesh crypto/forwarding gaps identified by this register were implemented and tested in the current pass; the full source audit and remaining dependency boundaries are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+
+Follow-up pass (same day): mesh routing was hardened further with first-party code — Ed25519-signed discovery beacons with per-device key pinning, deterministic route scoring (relay consent, link throughput, freshness), and neighbour route expiry. The P1 findings on route repair/congestion and the shared payload key remain open; see the audit's "Remaining device-identity hardening" and "Real-time offline voice/video" items.

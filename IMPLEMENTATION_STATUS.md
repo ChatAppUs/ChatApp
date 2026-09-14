@@ -475,4 +475,4 @@ Latest source evidence, validation, dependency reduction and remaining unproven 
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-The current status includes a cross-platform AES-GCM mesh envelope, native forwarding queue fixes, group metadata preservation, removal of the mesh `x/crypto` dependency and a deterministic interop test. Full findings and unproven release gates are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+The current status includes a cross-platform AES-GCM mesh envelope, native forwarding queue fixes, group metadata preservation, removal of the mesh `x/crypto` dependency and a deterministic interop test. A follow-up pass added Ed25519-signed beacons with trust-on-first-use key pinning, deterministic route scoring and neighbour route expiry. Full findings and unproven release gates are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

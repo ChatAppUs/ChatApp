@@ -2034,4 +2034,4 @@ The current source-vs-specification review, mesh interoperability fixes and rema
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-The current implementation findings, native mesh interoperability fixes, dependency reduction and remaining physical-radio/live-media limits are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+The current implementation findings, native mesh interoperability fixes, signed device identity (Ed25519 beacons with key pinning), route scoring/expiry, dependency reduction and remaining physical-radio/live-media limits are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`. Discovery beacons are now Ed25519-signed with per-device key pinning, closing the beacon-spoofing gap this document flagged.

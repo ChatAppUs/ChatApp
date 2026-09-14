@@ -13,6 +13,7 @@ package mesh
 // it zero to use the scalable default (see scale.go).
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -31,11 +32,18 @@ type Node struct {
 	queue     *Queue
 	handler   Handler
 	maxHops   int
+	signer    *SigningKey
+	peerKeys  map[string][]byte // device id -> pinned Ed25519 public key (TOFU)
 
 	beaconSeq int64
 	stop      chan struct{}
 	mu        sync.Mutex
 }
+
+// neighborMaxAge is how long a neighbor stays routable without a fresh
+// beacon. Beacons fire every 5s, so this tolerates ~36 missed beacons
+// before the route expires.
+const neighborMaxAge = 3 * time.Minute
 
 // NodeConfig configures a mesh node.
 type NodeConfig struct {
@@ -48,6 +56,8 @@ type NodeConfig struct {
 	// default (DefaultMaxHops), which grows with the expected network size so
 	// coverage extends as devices increase.
 	MaxHops int
+	// Signer is this device's Ed25519 beacon-signing key. Zero generates one.
+	Signer *SigningKey
 }
 
 // NewNode creates a mesh node. The transport's inbound callback is wired to
@@ -60,6 +70,12 @@ func NewNode(cfg NodeConfig) *Node {
 	if maxHops <= 0 {
 		maxHops = DefaultMaxHops
 	}
+	signer := cfg.Signer
+	if signer == nil {
+		// Every node signs its own beacons; generating a key is cheap and
+		// keeps device identity self-certifying with no external authority.
+		signer, _ = NewSigningKey()
+	}
 	n := &Node{
 		DeviceID:  cfg.DeviceID,
 		Key:       cfg.Key,
@@ -69,6 +85,8 @@ func NewNode(cfg NodeConfig) *Node {
 		queue:     NewQueue(1000, 7*24*time.Hour),
 		handler:   cfg.Handler,
 		maxHops:   maxHops,
+		signer:    signer,
+		peerKeys:  make(map[string][]byte),
 		stop:      make(chan struct{}),
 	}
 	// Wire the transport's inbound callback to this node. Any transport that
@@ -110,6 +128,9 @@ func (n *Node) beaconLoop() {
 		case <-n.stop:
 			return
 		case <-ticker.C:
+			// Expire stale routes so traffic stops flowing to peers that
+			// left range or powered down.
+			n.routes.Expire(neighborMaxAge)
 			n.mu.Lock()
 			n.beaconSeq++
 			seq := n.beaconSeq
@@ -121,7 +142,16 @@ func (n *Node) beaconLoop() {
 				Addr:      n.transport.Addr(),
 				Seq:       seq,
 			}
-			data, err := MarshalBeacon(b)
+			var data []byte
+			var err error
+			if n.signer != nil {
+				var sb *SignedBeacon
+				if sb, err = n.signer.SignBeacon(b); err == nil {
+					data, err = MarshalSignedBeacon(sb)
+				}
+			} else {
+				data, err = MarshalBeacon(b)
+			}
 			if err != nil {
 				continue
 			}
@@ -150,9 +180,19 @@ func (n *Node) transportName() string {
 
 // HandleInbound processes a raw datagram from a peer.
 func (n *Node) HandleInbound(addr string, data []byte) {
-	// Try beacon first.
+	// Try a legacy (unsigned) beacon first; signed beacons have a different
+	// top-level shape and fall through to the verified path.
 	if b, err := UnmarshalBeacon(data); err == nil && b.DeviceID != "" {
 		n.routes.Upsert(b)
+		return
+	}
+	// Signed beacon: verify the signature and the pinned device-key binding
+	// before trusting the advertised route. A mismatch (a peer impersonating
+	// an already-known device id with a different key) is rejected.
+	if sb, err := UnmarshalSignedBeacon(data); err == nil && len(sb.Sig) > 0 {
+		if b, err := VerifySignedBeacon(sb, n.peerKeys); err == nil {
+			n.routes.Upsert(b)
+		}
 		return
 	}
 	p, err := UnmarshalPacket(data)
@@ -219,13 +259,21 @@ func (n *Node) route(p *Packet) {
 	n.flush()
 }
 
-// flush attempts to deliver queued packets to known neighbors.
+// flush attempts to deliver queued packets to known neighbors, ordered by
+// route quality: relay consent first, then link throughput, then freshness
+// (see Neighbor.Score). The packet's final destination is always tried even
+// if it does not consent to relay others' traffic.
 func (n *Node) flush() {
 	if n.transport == nil {
 		return
 	}
 	for _, p := range n.queue.Pending(time.Now()) {
-		for _, nb := range n.routes.Neighbors() {
+		neighbors := n.routes.Neighbors()
+		now := time.Now()
+		sort.Slice(neighbors, func(i, j int) bool {
+			return neighbors[i].Score(now) > neighbors[j].Score(now)
+		})
+		for _, nb := range neighbors {
 			if !nb.RelayOK && nb.DeviceID != p.Dst {
 				continue
 			}

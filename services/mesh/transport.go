@@ -29,9 +29,9 @@ type Transport interface {
 
 // UDPTransport is a UDP socket on the local network (hotspot / local Wi-Fi).
 type UDPTransport struct {
-	conn *net.UDPConn
-	addr string
-	mu   sync.Mutex
+	conn  *net.UDPConn
+	addr  string
+	mu    sync.Mutex
 	onPkt func(addr string, data []byte)
 }
 
@@ -87,7 +87,7 @@ func (t *UDPTransport) Close() error { return t.conn.Close() }
 // transport address) — never message content.
 type Beacon struct {
 	DeviceID  string `json:"device_id"`
-	Kind      string `json:"kind"` // "member" | "relay"
+	Kind      string `json:"kind"`      // "member" | "relay"
 	Transport string `json:"transport"` // "local_wifi" | "bluetooth" | "wifi_direct"
 	Addr      string `json:"addr"`
 	Seq       int64  `json:"seq"`

@@ -45,13 +45,29 @@ type CallSignal struct {
 }
 
 // MarshalJSON helper for each payload type.
-func MarshalMessage(m *Message) ([]byte, error)          { return json.Marshal(m) }
+func MarshalMessage(m *Message) ([]byte, error)           { return json.Marshal(m) }
 func MarshalGroupMessage(m *GroupMessage) ([]byte, error) { return json.Marshal(m) }
 func MarshalVoiceMessage(m *VoiceMessage) ([]byte, error) { return json.Marshal(m) }
 func MarshalCallSignal(m *CallSignal) ([]byte, error)     { return json.Marshal(m) }
 
 // Unmarshal helpers.
-func UnmarshalMessage(b []byte) (*Message, error)           { var m Message; err := json.Unmarshal(b, &m); return &m, err }
-func UnmarshalGroupMessage(b []byte) (*GroupMessage, error) { var m GroupMessage; err := json.Unmarshal(b, &m); return &m, err }
-func UnmarshalVoiceMessage(b []byte) (*VoiceMessage, error) { var m VoiceMessage; err := json.Unmarshal(b, &m); return &m, err }
-func UnmarshalCallSignal(b []byte) (*CallSignal, error)     { var m CallSignal; err := json.Unmarshal(b, &m); return &m, err }
+func UnmarshalMessage(b []byte) (*Message, error) {
+	var m Message
+	err := json.Unmarshal(b, &m)
+	return &m, err
+}
+func UnmarshalGroupMessage(b []byte) (*GroupMessage, error) {
+	var m GroupMessage
+	err := json.Unmarshal(b, &m)
+	return &m, err
+}
+func UnmarshalVoiceMessage(b []byte) (*VoiceMessage, error) {
+	var m VoiceMessage
+	err := json.Unmarshal(b, &m)
+	return &m, err
+}
+func UnmarshalCallSignal(b []byte) (*CallSignal, error) {
+	var m CallSignal
+	err := json.Unmarshal(b, &m)
+	return &m, err
+}

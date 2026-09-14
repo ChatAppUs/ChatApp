@@ -492,4 +492,4 @@ The current code/security reconciliation and the distinction between implemented
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-Authentication/security requirements were reviewed alongside the native mesh key limitations. AES-GCM does not replace authenticated device identity, key exchange, rotation or revocation; see `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+Authentication/security requirements were reviewed alongside the native mesh key limitations. Discovery beacons are now Ed25519-signed with trust-on-first-use key pinning (implementing the authenticated device-identity requirement at beacon level); per-peer session key agreement, rotation, revocation and replay protection for the payload AEAD remain open. See `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.

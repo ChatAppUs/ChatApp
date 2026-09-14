@@ -100,5 +100,68 @@ func (rt *RouteTable) Seen(id string) bool {
 	return false
 }
 
+// transportScore ranks a link type by expected throughput for relaying
+// (higher carries more traffic). Mirrors the Anonymous.md §5.3 link order.
+func transportScore(transport string) int {
+	switch transport {
+	case "wifi_direct":
+		return 3
+	case "local_wifi":
+		return 2
+	case "bluetooth":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// Score ranks a neighbor for relay selection: relay consent dominates, then
+// link throughput, then freshness. Higher is better. Callers order candidate
+// relays by this score so packets prefer fast, fresh, consenting links.
+func (n *Neighbor) Score(now time.Time) int {
+	s := transportScore(n.Transport) * 10
+	if n.RelayOK {
+		s += 100
+	}
+	age := now.Sub(n.LastSeen)
+	switch {
+	case age < 30*time.Second:
+		s += 5
+	case age < 120*time.Second:
+		s += 2
+	}
+	return s
+}
+
+// BestRelay returns the highest-scoring relay-consenting neighbor, optionally
+// excluding one device (the packet's final destination is tried separately).
+// Returns nil when no eligible neighbor exists.
+func (rt *RouteTable) BestRelay(exclude string) *Neighbor {
+	var best *Neighbor
+	now := time.Now()
+	for _, n := range rt.Neighbors() {
+		if !n.RelayOK || n.DeviceID == exclude {
+			continue
+		}
+		if best == nil || n.Score(now) > best.Score(now) {
+			best = n
+		}
+	}
+	return best
+}
+
+// Expire drops neighbors not seen within maxAge so stale routes (devices that
+// went out of range or powered off) stop receiving forwarded traffic.
+func (rt *RouteTable) Expire(maxAge time.Duration) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for id, n := range rt.neigh {
+		if n.LastSeen.Before(cutoff) {
+			delete(rt.neigh, id)
+		}
+	}
+}
+
 // TTLExpired reports whether a packet's TTL has been exhausted.
 func TTLExpired(p *Packet) bool { return p.TTL <= 0 }

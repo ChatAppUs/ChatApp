@@ -79,7 +79,7 @@ Coding alone cannot supply Bluetooth/Wi-Fi hardware, radio spectrum, battery, OS
 
 ## Deep source-and-documentation audit — 2026-09-14
 
-The current code-level mesh fixes and the remaining real-hardware/scale gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
+The current code-level mesh fixes (signed beacons, route scoring, route expiry) and the remaining real-hardware/scale gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
 
 
 ## Deep source-and-documentation audit — 2026-09-14

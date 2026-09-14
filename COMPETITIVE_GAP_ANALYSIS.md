@@ -40,7 +40,7 @@ The honest product promise is **offline store-and-forward messaging and voice no
 
 ### Fillable by ChatApp code
 
-- Versioned mesh envelope, unified AEAD/key exchange/group keys, authenticated beacons, route scoring, multipath forwarding, TTL/expiry, MTU fragmentation/reassembly, ACK/retry windows, deduplication, backpressure, quotas and durable encrypted queues.
+- Versioned mesh envelope, unified AEAD/key exchange/group keys, multipath forwarding, MTU fragmentation/reassembly, ACK/retry windows, deduplication, backpressure, quotas and durable encrypted queues. (Authenticated beacons, route scoring and TTL/route expiry are now implemented first-party — see `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.)
 - Android radio permission/connection state machines and iOS CoreBluetooth/local-Wi-Fi handling, plus hardware-in-the-loop tests.
 - A separate low-bitrate offline media plane for voice notes and, only after measurements, live audio.
 - Mobile build/release automation, push-token handling, reconnect/call-quality telemetry, structured logs, traces, metrics, SLO dashboards, alerts, load/soak tests and restore verification.
