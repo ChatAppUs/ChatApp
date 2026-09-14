@@ -51,13 +51,21 @@ def engine_req(method, path, body=None):
             return e.code, {}
 
 
+def _psql_base():
+    # CI runs Postgres as a service on :5432 (DATABASE_URL); a host-local
+    # socket with the "postgres" superuser is only available in dev.
+    dburl = os.environ.get("DATABASE_URL")
+    if dburl:
+        return ["psql", dburl]
+    return ["sudo", "-u", "postgres", "psql", "-d", "chatapp"]
+
+
 def psql(sql):
-    subprocess.run(["sudo", "-u", "postgres", "psql", "-d", "chatapp", "-qc", sql],
-                   check=False, capture_output=True)
+    subprocess.run(_psql_base() + ["-qc", sql], check=False, capture_output=True)
 
 
 def psql_val(sql):
-    out = subprocess.run(["sudo", "-u", "postgres", "psql", "-t", "-d", "chatapp", "-c", sql],
+    out = subprocess.run(_psql_base() + ["-t", "-c", sql],
                          check=False, capture_output=True, text=True)
     return out.stdout.strip()
 
