@@ -12,35 +12,31 @@ import (
 	"time"
 )
 
-// RouteTable tracks known neighbors and their last-seen time.
 type RouteTable struct {
 	mu      sync.Mutex
-	neigh   map[string]*Neighbor // device id -> neighbor
-	seen    map[string]time.Time // packet id -> first seen (dedup)
-	bestTTL map[string]int       // packet id -> highest TTL forwarded so far
+	neigh   map[string]*Neighbor
+	seen    map[string]time.Time
+	bestTTL map[string]int
 	maxSeen int
 }
 
-// Neighbor is a known peer on the mesh.
 type Neighbor struct {
 	DeviceID  string
 	Addr      string
 	Transport string
 	LastSeen  time.Time
-	RelayOK   bool // whether this neighbor consents to relay
+	RelayOK   bool
 }
 
-// NewRouteTable creates an empty route table.
 func NewRouteTable() *RouteTable {
 	return &RouteTable{
-		neigh:   make(map[string]*Neighbor),
-		seen:    make(map[string]time.Time),
+		neigh: make(map[string]*Neighbor),
+		seen: make(map[string]time.Time),
 		bestTTL: make(map[string]int),
 		maxSeen: 10000,
 	}
 }
 
-// Upsert records or refreshes a neighbor from a beacon.
 func (rt *RouteTable) Upsert(b *Beacon) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -55,7 +51,6 @@ func (rt *RouteTable) Upsert(b *Beacon) {
 	n.LastSeen = time.Now()
 }
 
-// SetRelay marks a neighbor as consenting to relay.
 func (rt *RouteTable) SetRelay(deviceID string, ok bool) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -64,15 +59,12 @@ func (rt *RouteTable) SetRelay(deviceID string, ok bool) {
 	}
 }
 
-// Remove immediately withdraws a peer from route selection. Trust lifecycle
-// operations use this instead of waiting for beacon expiry.
 func (rt *RouteTable) Remove(deviceID string) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	delete(rt.neigh, deviceID)
 }
 
-// Neighbors returns a snapshot of known neighbors.
 func (rt *RouteTable) Neighbors() []*Neighbor {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -84,19 +76,27 @@ func (rt *RouteTable) Neighbors() []*Neighbor {
 	return out
 }
 
-// SeenBetter is dedup with reach improvement: the first copy of a packet is
-// forwarded; later copies are dropped UNLESS they carry strictly more
-// remaining TTL than any copy seen before — that copy can reach nodes the
-// earlier, more meandering copies could not, so it is forwarded too.
-//
-// It reports two facts the caller needs:
-//
-//	improve — this copy should be forwarded (first copy, or strictly better
-//	          reach than any copy seen before).
-//	first   — this is the FIRST copy of this packet id ever seen. Only the
-//	          first copy may be delivered to the application: without this
-//	          rule, every TTL-improved duplicate would be handed to the
-//	          handler again (duplicate delivery bug).
+// pruneSeenLocked removes the oldest packet identity from BOTH dedup maps.
+// Keeping bestTTL bounded is essential: the previous implementation bounded
+// seen but allowed bestTTL to grow forever on a long-lived relay.
+func (rt *RouteTable) pruneSeenLocked() {
+	if len(rt.seen) <= rt.maxSeen {
+		return
+	}
+	oldest := time.Now()
+	var oldestKey string
+	for k, v := range rt.seen {
+		if v.Before(oldest) {
+			oldest = v
+			oldestKey = k
+		}
+	}
+	if oldestKey != "" {
+		delete(rt.seen, oldestKey)
+		delete(rt.bestTTL, oldestKey)
+	}
+}
+
 func (rt *RouteTable) SeenBetter(id string, ttl int) (improve, first bool) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -107,25 +107,11 @@ func (rt *RouteTable) SeenBetter(id string, ttl int) (improve, first bool) {
 	_, seenBefore := rt.seen[id]
 	if !seenBefore {
 		rt.seen[id] = time.Now()
-		if len(rt.seen) > rt.maxSeen {
-			oldest := time.Now()
-			var oldestKey string
-			for k, v := range rt.seen {
-				if v.Before(oldest) {
-					oldest = v
-					oldestKey = k
-				}
-			}
-			if oldestKey != "" {
-				delete(rt.seen, oldestKey)
-			}
-		}
+		rt.pruneSeenLocked()
 	}
 	return true, !seenBefore
 }
 
-// Seen reports whether a packet id was already processed (dedup) and records
-// it if not. Returns true if the packet is a duplicate.
 func (rt *RouteTable) Seen(id string) bool {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -133,25 +119,11 @@ func (rt *RouteTable) Seen(id string) bool {
 		return true
 	}
 	rt.seen[id] = time.Now()
-	if len(rt.seen) > rt.maxSeen {
-		// Bounded dedup cache: drop oldest entries.
-		oldest := time.Now()
-		var oldestKey string
-		for k, v := range rt.seen {
-			if v.Before(oldest) {
-				oldest = v
-				oldestKey = k
-			}
-		}
-		if oldestKey != "" {
-			delete(rt.seen, oldestKey)
-		}
-	}
+	rt.bestTTL[id] = 0
+	rt.pruneSeenLocked()
 	return false
 }
 
-// transportScore ranks a link type by expected throughput for relaying
-// (higher carries more traffic). Mirrors the Anonymous.md §5.3 link order.
 func transportScore(transport string) int {
 	switch transport {
 	case "wifi_direct":
@@ -165,9 +137,6 @@ func transportScore(transport string) int {
 	}
 }
 
-// Score ranks a neighbor for relay selection: relay consent dominates, then
-// link throughput, then freshness. Higher is better. Callers order candidate
-// relays by this score so packets prefer fast, fresh, consenting links.
 func (n *Neighbor) Score(now time.Time) int {
 	s := transportScore(n.Transport) * 10
 	if n.RelayOK {
@@ -183,9 +152,6 @@ func (n *Neighbor) Score(now time.Time) int {
 	return s
 }
 
-// BestRelay returns the highest-scoring relay-consenting neighbor, optionally
-// excluding one device (the packet's final destination is tried separately).
-// Returns nil when no eligible neighbor exists.
 func (rt *RouteTable) BestRelay(exclude string) *Neighbor {
 	var best *Neighbor
 	now := time.Now()
@@ -200,8 +166,6 @@ func (rt *RouteTable) BestRelay(exclude string) *Neighbor {
 	return best
 }
 
-// Expire drops neighbors not seen within maxAge so stale routes (devices that
-// went out of range or powered off) stop receiving forwarded traffic.
 func (rt *RouteTable) Expire(maxAge time.Duration) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -213,11 +177,8 @@ func (rt *RouteTable) Expire(maxAge time.Duration) {
 	}
 }
 
-// TTLExpired reports whether a packet's TTL has been exhausted.
 func TTLExpired(p *Packet) bool { return p.TTL <= 0 }
 
-// Knows reports whether the packet id was already processed, without recording
-// it (diagnostics for simulators and tooling).
 func (rt *RouteTable) Knows(id string) bool {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
