@@ -47,6 +47,9 @@ type Node struct {
 	transfers  *transferTracker         // reliable delivery state machine (see reliability.go)
 	congestion *CongestionController    // byte-based radio backpressure
 	maxFanout  int                      // bounded multipath fan-out per attempt
+	groupKeys  *GroupKeyManager         // per-group sender keys and rotation (see groupkey.go)
+	groupAcks  *groupAckTracker         // per-member group acknowledgements (see groupack.go)
+	revStore   *revocationStore         // network-wide revocation notices (see revocdist.go)
 
 	seqCtr int64
 	stop   chan struct{}
@@ -128,6 +131,9 @@ func NewNode(cfg NodeConfig) *Node {
 		transfers:  NewTransferTracker(ackTimeout, maxTransferAttempts, transferTTL),
 		congestion: NewCongestionController(cfg.CongestionBytesPerSecond, cfg.CongestionBurstBytes),
 		maxFanout:  maxFanout,
+		groupKeys:  NewGroupKeyManager(0),
+		groupAcks:  NewGroupAckTracker(),
+		revStore:   newRevocationStore(),
 		handler:    cfg.Handler,
 		maxHops:    maxHops,
 		signer:     signer,
@@ -244,6 +250,15 @@ func (n *Node) transportName() string {
 
 // HandleInbound processes a raw datagram from a peer.
 func (n *Node) HandleInbound(addr string, data []byte) {
+	// A network-wide revocation notice: verify it against the pinned
+	// identities and apply it if valid, so a revocation propagates beyond
+	// the node that issued it. A revocation notice is distinguished from a
+	// signed beacon by its shape (it carries revoker/device_id/public_key,
+	// not a beacon), so a signed beacon is never misrouted here.
+	if r, err := UnmarshalRevocation(data); err == nil && r.Revoker != "" && r.DeviceID != "" && len(r.Sig) > 0 {
+		n.handleRevocation(r)
+		return
+	}
 	// Try a legacy (unsigned) beacon first; signed beacons have a different
 	// top-level shape and fall through to the verified path.
 	if b, err := UnmarshalBeacon(data); err == nil && b.DeviceID != "" {
@@ -334,6 +349,59 @@ func (n *Node) IsPeerRevoked(deviceID string) bool {
 	return ok
 }
 
+// handleRevocation verifies and applies a network-wide revocation notice. A
+// valid notice (signed by a known, pinned revoker and naming the pinned key
+// of the revoked device) is applied to this node's local revocation set and
+// its route table, so the decision propagates beyond the issuing node.
+func (n *Node) handleRevocation(r *RevocationNotice) {
+	n.mu.Lock()
+	verified, err := VerifyRevocation(r, n.peerKeys)
+	if err != nil {
+		n.mu.Unlock()
+		return
+	}
+	// Apply once: a flooded notice is not re-applied.
+	if !n.revStore.Apply(verified) {
+		n.mu.Unlock()
+		return
+	}
+	n.revoked[verified.DeviceID] = append([]byte(nil), verified.PublicKey...)
+	delete(n.peerKEM, verified.DeviceID)
+	n.mu.Unlock()
+	n.routes.Remove(verified.DeviceID)
+}
+
+// BroadcastRevocation signs and floods a revocation notice for a pinned peer
+// to the mesh, so the decision propagates network-wide. The notice is signed
+// by this node's Ed25519 key and names the revoked device id and its pinned
+// public key. It returns the serialized notice.
+func (n *Node) BroadcastRevocation(deviceID string, expectedPub []byte) ([]byte, error) {
+	n.mu.Lock()
+	pinned, ok := n.peerKeys[deviceID]
+	if !ok || !bytes.Equal(pinned, expectedPub) {
+		n.mu.Unlock()
+		return nil, errors.New("mesh: public key does not match pinned device identity")
+	}
+	n.mu.Unlock()
+	r, err := SignRevocation(n.signer, n.DeviceID, deviceID, expectedPub)
+	if err != nil {
+		return nil, err
+	}
+	// Apply locally first.
+	n.handleRevocation(r)
+	data, err := MarshalRevocation(r)
+	if err != nil {
+		return nil, err
+	}
+	// Flood to every known relay so the notice propagates.
+	for _, nb := range n.routes.Neighbors() {
+		if nb.RelayOK {
+			n.sendTo(nb.Addr, &Packet{ID: newPacketID(), Src: n.DeviceID, Kind: KindMessage, TTL: n.maxHops, Payload: data})
+		}
+	}
+	return data, nil
+}
+
 // Send encrypts and enqueues a packet for a destination. A payload larger
 // than one radio datagram is fragmented automatically (see SendLarge).
 func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, error) {
@@ -358,19 +426,28 @@ func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, erro
 }
 
 // SendGroup encrypts and enqueues a group message (broadcast to group id).
+// The payload is sealed under the group's per-group sender key (see
+// groupkey.go), so a member that was evicted (or never received the current
+// key) cannot read it. The message carries a transfer id so members can
+// acknowledge it (see groupack.go).
 func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (string, error) {
 	if len(plaintext) > DefaultMaxPayload {
 		return n.SendLarge(kind, groupID, plaintext, true)
 	}
+	gk, err := n.groupKeys.KeyFor(groupID)
+	if err != nil {
+		return "", err
+	}
 	p := NewPacket(kind, n.DeviceID, "", n.maxHops)
 	p.GroupID = groupID
-	ct, nonce, err := Encrypt(n.Key, plaintext)
+	ct, nonce, err := Encrypt(&gk.Key, plaintext)
 	if err != nil {
 		return "", err
 	}
 	p.Payload = ct
 	p.Nonce = nonce
 	p.Seq = n.nextSeq()
+	p.Xfer = newPacketID()
 	n.routes.Seen(p.ID)
 	if err := n.pfifo.Enqueue(p); err != nil {
 		return "", err
@@ -518,7 +595,14 @@ func (n *Node) route(p *Packet) {
 					if n.transfers.MarkDelivered(p.Xfer) {
 						n.handler(p, full)
 					}
-					n.sendAck(p.Src, p.Xfer)
+					// A group message is acknowledged per-member: the
+					// receiver returns a group ACK naming the group and
+					// transfer so the origin can attribute it.
+					if p.GroupID != "" {
+						n.sendGroupAck(p.Src, p.GroupID, p.Xfer)
+					} else {
+						n.sendAck(p.Src, p.Xfer)
+					}
 					return
 				}
 				// Best-effort / legacy packet: first copy only, so an
@@ -606,34 +690,34 @@ func (n *Node) flushTo(p *Packet) bool {
 		neighbors = append(ordered, deferred...)
 	}
 
-	candidates := make([]*Neighbor, 0, n.maxFanout)
-	seenCandidate := make(map[string]struct{}, n.maxFanout)
-	addCandidate := func(nb *Neighbor) bool {
-		if _, exists := seenCandidate[nb.DeviceID]; exists || now.Before(nb.UnavailableUntil) {
-			return false
+	// Explicit multipath selection: pick a bounded set of relays that are
+	// both high-scoring and transport-diverse, so a single radio or a single
+	// congested relay does not become the bottleneck (see multipath.go).
+	candidates := n.routes.selectMultipath(p.Dst, n.maxFanout)
+	// Defer the avoided hop (alternate-path retry) to the end of the
+	// candidate list rather than dropping it, so the retry leads with a
+	// different path while still retaining the failed hop as a last resort.
+	if avoid != "" {
+		ordered := make([]*Neighbor, 0, len(candidates))
+		var deferred []*Neighbor
+		for _, nb := range candidates {
+			if nb.DeviceID == avoid {
+				deferred = append(deferred, nb)
+			} else {
+				ordered = append(ordered, nb)
+			}
 		}
-		if !nb.RelayOK && nb.DeviceID != p.Dst {
-			return false
-		}
-		seenCandidate[nb.DeviceID] = struct{}{}
-		candidates = append(candidates, nb)
-		return true
+		candidates = append(ordered, deferred...)
 	}
-	// A known destination is always the first candidate, even when a relay
-	// has a higher score. This preserves direct delivery semantics while
-	// still allowing one alternate relay when fan-out permits it.
-	for _, nb := range neighbors {
-		if nb.DeviceID == p.Dst {
-			addCandidate(nb)
-			break
+	// Drop any neighbour currently quarantined.
+	filtered := candidates[:0]
+	for _, nb := range candidates {
+		if now.Before(nb.UnavailableUntil) {
+			continue
 		}
+		filtered = append(filtered, nb)
 	}
-	for _, nb := range neighbors {
-		if len(candidates) >= n.maxFanout {
-			break
-		}
-		addCandidate(nb)
-	}
+	candidates = filtered
 
 	sent := false
 	for _, nb := range candidates {
@@ -645,8 +729,13 @@ func (n *Node) flushTo(p *Packet) bool {
 			sent = true
 		} else {
 			// A failed socket is a route signal, not a reason to keep
-			// selecting the same dead peer until beacon expiry.
+			// selecting the same dead peer until beacon expiry. Proactive
+			// route repair re-selects the best remaining relay immediately
+			// (see routerepair.go).
 			n.routes.MarkFailure(nb.DeviceID, now)
+			if !sent {
+				sent = n.RepairRoute(p, nb.DeviceID)
+			}
 		}
 	}
 	return sent
@@ -694,8 +783,17 @@ func (n *Node) sessionKeyFor(dst string) *IdentityKey {
 
 // decryptPayload opens a delivered packet: the per-peer session key first,
 // falling back to the pre-shared identity key (interop with legacy/native
-// senders and with peers whose rotation we have not observed yet).
+// senders and with peers whose rotation we have not observed yet). Group
+// packets are opened with the group's per-group sender key.
 func (n *Node) decryptPayload(p *Packet) ([]byte, error) {
+	// Group payloads are sealed under the per-group sender key.
+	if p.Dst == "" && p.GroupID != "" {
+		gk, err := n.groupKeys.KeyFor(p.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		return Decrypt(&gk.Key, p.Payload, p.Nonce)
+	}
 	if p.Dst == n.DeviceID {
 		n.mu.Lock()
 		adv, ok := n.peerKEM[p.Src]
