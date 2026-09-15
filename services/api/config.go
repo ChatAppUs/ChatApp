@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -87,7 +90,19 @@ func loadConfig() Config {
 	appEnv := getenv("APP_ENV", "development")
 	jwtSecret := requiredSecret("JWT_SECRET", 32)
 	masterSeed := requiredSecret("WALLET_MASTER_SEED", 32)
-	signingKey := requiredSecret("WITHDRAW_SIGNING_KEY", 32)
+	// Production must carry an explicit, separate withdrawal authority key.
+	// Non-production derives one from the required master seed (domain-separated,
+	// deterministic) so local and CI runs exercise the real signing path without
+	// a second operator secret; an explicitly configured key always wins.
+	signingKey := strings.TrimSpace(os.Getenv("WITHDRAW_SIGNING_KEY"))
+	if len(signingKey) < 32 {
+		if appEnv == "production" {
+			log.Fatalf("FATAL: WITHDRAW_SIGNING_KEY must be set and contain at least 32 random bytes in production")
+		}
+		d := hmac.New(sha256.New, []byte(masterSeed))
+		d.Write([]byte("chatapp-withdraw-dev-v1"))
+		signingKey = hex.EncodeToString(d.Sum(nil))
+	}
 	countersSecret := requiredSecret("COUNTERS_SECRET", 32)
 	sfuSecret := requiredSecret("SFU_SECRET", 32)
 	turnSecret := requiredSecret("TURN_SECRET", 32)
