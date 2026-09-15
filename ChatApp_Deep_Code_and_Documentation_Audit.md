@@ -1,5 +1,18 @@
 # ChatApp deep code-and-documentation audit
 
+## Current implementation-status notice (2026-09-15)
+
+This specification is a requirements source, not proof that a feature is production-complete. The current source-backed status is maintained in `IMPLEMENTATION_STATUS.md` and the audit in `ChatApp_Deep_Code_and_Documentation_Audit.md`.
+
+| Status | Meaning |
+|---|---|
+| **Implemented** | Corresponding source, route/schema/client surface, and repository validation exist. Runtime or production evidence may still be required. |
+| **Partial** | A source implementation exists, but an explicitly documented requirement, client, provider, or reliability guarantee is incomplete. |
+| **Outstanding** | The capability requires external devices, providers, operators, licensing, production infrastructure, or additional source work. |
+
+The current checkout passes the parity and feature-registry checks. Go, C++, PostgreSQL-backed integration, native Android/iOS, and production deployment gates are environment-dependent and must not be inferred from static source inspection.
+
+
 **Audit date:** 2026-09-14 UTC
 **Repository:** `ChatAppUs/ChatApp`  
 **Scope:** every root Markdown file, the tracked application/service source, build manifests, migrations, and executable validation scripts. Documentation was treated as a requirements record, not as proof that a feature works. The source tree and validation results are the authority.

@@ -6,7 +6,7 @@ package mesh
 // This package is a self-contained, dependency-light Go engine that powers
 // the offline mesh on every client. It provides:
 //
-//   - Authenticated encryption (NaCl secretbox / XChaCha20-Poly1305)
+//   - Authenticated encryption (AES-256-GCM with a 12-byte nonce)
 //   - Local Wi-Fi / hotspot UDP transport with presence-beacon discovery
 //   - Multi-hop routing with TTL and duplicate suppression
 //   - Delay-tolerant store-and-forward queue

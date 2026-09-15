@@ -1,5 +1,18 @@
 # ChatApp — Complete Facebook + TikTok + Telegram + X Feature & Architecture Master Plan
 
+## Current implementation-status notice (2026-09-15)
+
+This specification is a requirements source, not proof that a feature is production-complete. The current source-backed status is maintained in `IMPLEMENTATION_STATUS.md` and the audit in `ChatApp_Deep_Code_and_Documentation_Audit.md`.
+
+| Status | Meaning |
+|---|---|
+| **Implemented** | Corresponding source, route/schema/client surface, and repository validation exist. Runtime or production evidence may still be required. |
+| **Partial** | A source implementation exists, but an explicitly documented requirement, client, provider, or reliability guarantee is incomplete. |
+| **Outstanding** | The capability requires external devices, providers, operators, licensing, production infrastructure, or additional source work. |
+
+The current checkout passes the parity and feature-registry checks. Go, C++, PostgreSQL-backed integration, native Android/iOS, and production deployment gates are environment-dependent and must not be inferred from static source inspection.
+
+
 > **Purpose:** Build ChatApp as a real production platform combining the strongest capabilities of Facebook, TikTok, Telegram, and X/Twitter, while adding unique privacy, AI, creator-economy, wallet, commerce, community, and programmable-platform capabilities.
 >
 > **Important requirement:** Reels and Video are first-class systems. ChatApp must cover the full practical feature set and functionality expected from both Facebook-style video/social experiences and TikTok-style short-video discovery and creation.

@@ -1,0 +1,3 @@
+# Dependencies used by the integration and WebSocket test scripts.
+websockets>=12,<16
+cryptography>=42,<47

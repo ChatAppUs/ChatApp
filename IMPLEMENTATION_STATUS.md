@@ -2,9 +2,15 @@
 
 This status is derived from the five root specifications and the current source tree on `main`. It does not rely on `agent.md`, previous assistant reports, or historical commits.
 
+## Independent fresh-main verification — 2026-09-15
+
+The current checkout was audited from source. Static parity passed with **153 client files and 547 registered API routes**; the feature registry passed with **26 features and 7 required client/service layers**; and Python syntax compilation passed after installing the dependencies declared in `tests/requirements.txt`. The five specification files now carry an explicit Implemented / Partial / Outstanding status notice. A reproducible `scripts/validate-local.sh` command runs these checks and skips unavailable toolchains with an explicit message.
+
+The web and admin type-checks and production builds completed successfully in the local Node 22 environment after serialized clean installs. Go, C++, PostgreSQL-backed integration, Android/iOS compilation, physical radio, provider, load, backup, and disaster-recovery gates remain environment-dependent in this checkout.
+
 ## Summary
 
-The repository contains an implemented multi-platform ChatApp product surface. The API registers **537 routes** (the parity-scan figure; the router source contains 633 `HandleFunc` registrations including non-`/api` endpoints) across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, privacy, forums, Pulse, live shopping, and AI creator/assistant tools. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
+The repository contains an implemented multi-platform ChatApp product surface. The API currently registers **547 client-referenced routes** (the parity-scan figure; the router source contains additional `HandleFunc` registrations including non-`/api` endpoints) across authentication, identity, messaging, calls, groups, social features, media, moderation, monetization, wallets, cards, staking, advertisements, administration, push notifications, privacy, forums, Pulse, live shopping, and AI creator/assistant tools. The web and admin applications have reproducible Next.js build inputs through committed lockfiles. The repository parity scanner reports no missing platform route references.
 
 The specifications describe a release program substantially broader than what can be proven by static inspection alone. Features are therefore marked **Implemented**, **Implemented with runtime validation pending**, or **Not proven complete** rather than being represented as complete merely because a route or page exists.
 

@@ -1,16 +1,27 @@
 # ChatApp implementation and dependency gap register
 
+## Current implementation-status notice (2026-09-15)
+
+This specification is a requirements source, not proof that a feature is production-complete. The current source-backed status is maintained in `IMPLEMENTATION_STATUS.md` and the audit in `ChatApp_Deep_Code_and_Documentation_Audit.md`.
+
+| Status | Meaning |
+|---|---|
+| **Implemented** | Corresponding source, route/schema/client surface, and repository validation exist. Runtime or production evidence may still be required. |
+| **Partial** | A source implementation exists, but an explicitly documented requirement, client, provider, or reliability guarantee is incomplete. |
+| **Outstanding** | The capability requires external devices, providers, operators, licensing, production infrastructure, or additional source work. |
+
+The current checkout passes the parity and feature-registry checks. Go, C++, PostgreSQL-backed integration, native Android/iOS, and production deployment gates are environment-dependent and must not be inferred from static source inspection.
+
+
 Assessment date: 2026-09-14. This register separates code that can be written and tested in the repository from capabilities that require devices, providers, operators, licensing or a user network.
 
 ## Direct source-scan findings
 
 ### P0 correctness
-
-- The Go mesh and native mobile mesh use incompatible AEAD constructions and native envelopes previously omitted the nonce. Cross-platform offline delivery is therefore unproven and may fail closed at decryption.
-- Native Android/iOS forwarding previously decremented TTL but did not enqueue the packet before flushing, so a phone acting as a relay could drop traffic.
-- The iOS mesh source uses `@Volatile`, which is not a Swift language feature; an Xcode build is required after replacing it with a real synchronisation strategy.
-- iOS AES-GCM must preserve the authentication tag; ciphertext-only storage is not a valid sealed message.
-- The mobile projects have build configuration but no checked-in Gradle wrapper or generated Xcode project. CI cannot prove signed Android/iOS release builds from this repository alone.
+- **Resolved in source:** Go, Android, and iOS now use the AES-256-GCM envelope with an explicit 12-byte nonce; iOS preserves the authentication tag. The interoperability contract is covered by `services/mesh/interop_test.go` and native codec implementations.
+- **Resolved in source:** Android and iOS relay forwarding decrements TTL, increments hops, re-enqueues, and flushes packets while local packet IDs are deduplicated.
+- **Resolved in source:** iOS uses `NSLock` for mesh state synchronization; no Kotlin-only `@Volatile` declaration remains in the Swift mesh engine.
+- **Still open as validation:** the mobile projects have build configuration but no checked-in Gradle wrapper or generated Xcode project. CI cannot prove signed Android/iOS release builds from this repository alone.
 
 ### P1 reliability and scale
 
