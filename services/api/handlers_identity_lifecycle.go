@@ -18,9 +18,9 @@ func (a *App) handleDeletionStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":         status,
-		"pending":        scheduled != nil && scheduled.After(time.Now()),
-		"scheduled_at":   scheduled,
+		"status":            status,
+		"pending":           scheduled != nil && scheduled.After(time.Now()),
+		"scheduled_at":      scheduled,
 		"grace_period_days": 30,
 	})
 }
@@ -30,7 +30,7 @@ func (a *App) handleDeletionStatus(w http.ResponseWriter, r *http.Request) {
 // period. The account remains recoverable until the scheduled timestamp.
 func (a *App) handleRequestDeletion(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Password       string `json:"password"`
+		Password        string `json:"password"`
 		AssetsWithdrawn bool   `json:"assets_withdrawn"`
 	}
 	if !decodeJSON(w, r, &req) || req.Password == "" {

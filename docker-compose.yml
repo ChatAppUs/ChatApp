@@ -2,16 +2,16 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: chatapp
-      POSTGRES_PASSWORD: chatapp
-      POSTGRES_DB: chatapp
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/db:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatapp"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -30,22 +30,25 @@ services:
     build: ./services/api
     env_file: .env
     environment:
-      DATABASE_URL: postgres://chatapp:chatapp@postgres:5432/chatapp?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       REDIS_URL: redis://redis:6379
       SFU_INTERNAL_URL: http://sfu:8095
       SFU_PUBLIC_URL: ${SFU_PUBLIC_URL:-ws://localhost:8095/ws}
       SFU_HOST: ${SFU_HOST:-localhost}
-      SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
-      TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
+      SFU_SECRET: ${SFU_SECRET:?SFU_SECRET is required}
+      TURN_SECRET: ${TURN_SECRET:?TURN_SECRET is required}
       TURN_FORWARDER: ${TURN_FORWARDER:-sfu-forwarder:3479}
       SECURITY_SERVICE_URL: http://security:8090
-      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      SIGNING_SECRET: ${SIGNING_SECRET:?SIGNING_SECRET is required}
+      CLUSTER_SECRET: ${CLUSTER_SECRET:?CLUSTER_SECRET is required}
       REALTIME_RELAY_URL: http://realtime:8301
       COUNTERS_URL: http://counters:8600
-      COUNTERS_SECRET: ${COUNTERS_SECRET:-dev-counters-secret}
+      COUNTERS_SECRET: ${COUNTERS_SECRET:?COUNTERS_SECRET is required}
       AUTHN_SERVICE_URL: http://authn:8400
-      AUTHN_SECRET: ${AUTHN_SECRET:-dev-authn-secret}
-      WALLET_MASTER_SEED: ${WALLET_MASTER_SEED:-}
+      AUTHN_SECRET: ${AUTHN_SECRET:?AUTHN_SECRET is required}
+      WALLET_MASTER_SEED: ${WALLET_MASTER_SEED:?WALLET_MASTER_SEED is required}
+      WITHDRAW_SIGNING_KEY: ${WITHDRAW_SIGNING_KEY:?WITHDRAW_SIGNING_KEY is required}
       WITHDRAW_AUTO_LIMIT_USD: ${WITHDRAW_AUTO_LIMIT_USD:-10000}
       WITHDRAW_AUTO_THRESHOLD: ${WITHDRAW_AUTO_THRESHOLD:-100}
     ports:
@@ -70,8 +73,8 @@ services:
   sfu:
     build: ./services/sfu
     environment:
-      SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
-      TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
+      SFU_SECRET: ${SFU_SECRET:?SFU_SECRET is required}
+      TURN_SECRET: ${TURN_SECRET:?TURN_SECRET is required}
       PUBLIC_IP: ${SFU_PUBLIC_IP:-127.0.0.1}
     ports:
       - "8095:8095"
@@ -82,8 +85,8 @@ services:
   sfu-forwarder:
     build: ./services/sfu-forwarder
     environment:
-      TURN_SECRET: ${TURN_SECRET:-change-me-turn-secret}
-      SFU_SECRET: ${SFU_SECRET:-change-me-sfu-secret}
+      TURN_SECRET: ${TURN_SECRET:?TURN_SECRET is required}
+      SFU_SECRET: ${SFU_SECRET:?SFU_SECRET is required}
       PUBLIC_IP: ${SFU_PUBLIC_IP:-127.0.0.1}
       TURN_LISTEN: "3479"
       CONTROL_PORT: "8099"
@@ -95,7 +98,8 @@ services:
   security:
     build: ./services/security
     environment:
-      SIGNING_SECRET: ${SIGNING_SECRET:-dev-signing-secret}
+      SIGNING_SECRET: ${SIGNING_SECRET:?SIGNING_SECRET is required}
+      CUSTODY_MASTER_SEED: ${CUSTODY_MASTER_SEED:-}
       APP_ENV: ${APP_ENV:-development}
     ports:
       - "8090:8090"
@@ -104,6 +108,7 @@ services:
     build: ./services/media
     environment:
       SECURITY_SERVICE_URL: http://security:8090
+      SECURITY_SERVICE_SECRET: ${SIGNING_SECRET:?SIGNING_SECRET is required}
     ports:
       - "8100:8100"
     volumes:
@@ -114,8 +119,8 @@ services:
   realtime:
     build: ./services/realtime
     environment:
-      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret}
-      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CLUSTER_SECRET: ${CLUSTER_SECRET:?CLUSTER_SECRET is required}
       WS_PORT: "8300"
       CONTROL_PORT: "8301"
     ports:
@@ -127,7 +132,7 @@ services:
     build: ./services/transcode
     environment:
       API_INTERNAL_URL: http://api:8080
-      CLUSTER_SECRET: ${CLUSTER_SECRET:-}
+      CLUSTER_SECRET: ${CLUSTER_SECRET:?CLUSTER_SECRET is required}
       MEDIA_DIR: /data/uploads
     volumes:
       - mediauploads:/data/uploads
@@ -141,9 +146,9 @@ services:
     build: ./services/counters
     environment:
       COUNTERS_PORT: "8600"
-      COUNTERS_SECRET: ${COUNTERS_SECRET:-dev-counters-secret}
+      COUNTERS_SECRET: ${COUNTERS_SECRET:?COUNTERS_SECRET is required}
       FLUSH_URL: http://api:8080/internal/counters/flush
-      FLUSH_SECRET: ${CLUSTER_SECRET:-${FLUSH_SECRET:-dev-cluster-secret}}
+      FLUSH_SECRET: ${CLUSTER_SECRET:?CLUSTER_SECRET is required}
       FLUSH_INTERVAL_MS: "2000"
     ports:
       - "8600:8600"
@@ -157,8 +162,8 @@ services:
     build: ./services/authn
     environment:
       AUTHN_PORT: "8400"
-      AUTHN_SECRET: ${AUTHN_SECRET:-dev-authn-secret}
-      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret}
+      AUTHN_SECRET: ${AUTHN_SECRET:?AUTHN_SECRET is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       APP_ENV: ${APP_ENV:-development}
     ports:
       - "8400:8400"

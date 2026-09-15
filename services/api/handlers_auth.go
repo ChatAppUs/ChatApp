@@ -158,11 +158,11 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var totpEnabled bool
 	var lockedUntil *time.Time
 	err := a.db.QueryRow(r.Context(),
-			`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled,
+		`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled,
 			        failed_login_attempts, locked_until FROM users
 			 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
-			Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled,
-				new(int), &lockedUntil)
+		Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled,
+			new(int), &lockedUntil)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusInternalServerError, "login failed")
 		return
@@ -559,8 +559,8 @@ type publicUser struct {
 	KYCStatus    string          `json:"kyc_status,omitempty"`
 	CreatedAt    string          `json:"created_at"`
 	// Client-facing wellbeing/lock flags (Telegram app lock, screen time).
-	AppLock     bool `json:"app_lock_enabled"`
-	ScreenLimit int  `json:"screen_time_limit_minutes"`
+	AppLock      bool `json:"app_lock_enabled"`
+	ScreenLimit  int  `json:"screen_time_limit_minutes"`
 	Discoverable bool `json:"discoverable"`
 }
 

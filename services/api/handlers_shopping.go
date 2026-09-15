@@ -16,17 +16,17 @@ import (
 const liveShopFeePct = "5.00"
 
 type liveProductJSON struct {
-	ID          string  `json:"id"`
-	RoomID      string  `json:"room_id"`
-	SellerID    string  `json:"seller_id"`
-	Title       string  `json:"title"`
-	Description string  `json:"description"`
-	PriceUSD    string  `json:"price_usd"`
-	Inventory   int     `json:"inventory"`
-	DiscountPct string  `json:"discount_pct"`
-	ImageURL    string  `json:"image_url"`
-	Active      bool    `json:"active"`
-	Pinned      bool    `json:"pinned"`
+	ID          string    `json:"id"`
+	RoomID      string    `json:"room_id"`
+	SellerID    string    `json:"seller_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	PriceUSD    string    `json:"price_usd"`
+	Inventory   int       `json:"inventory"`
+	DiscountPct string    `json:"discount_pct"`
+	ImageURL    string    `json:"image_url"`
+	Active      bool      `json:"active"`
+	Pinned      bool      `json:"pinned"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

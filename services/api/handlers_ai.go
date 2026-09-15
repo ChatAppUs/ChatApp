@@ -181,8 +181,8 @@ func (a *App) handleAiDubList(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------- AI Clips --------
 
 type clipReply struct {
-	Available bool   `json:"available"`
-	Reason    string `json:"reason"`
+	Available bool    `json:"available"`
+	Reason    string  `json:"reason"`
 	DurationS float64 `json:"duration_s"`
 	Clips     []struct {
 		StartS float64 `json:"start_s"`

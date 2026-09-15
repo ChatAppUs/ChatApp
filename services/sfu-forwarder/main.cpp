@@ -630,6 +630,13 @@ static void handleChannelData(const sockaddr_in& from, const uint8_t* buf, size_
 
 // ===================== control server =================
 
+static bool constantTimeEqual(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < a.size(); ++i) diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+    return diff == 0;
+}
+
 static void controlResponse(int fd) {
     char req[4096]; ssize_t r = recv(fd, req, sizeof(req) - 1, 0);
     if (r <= 0) { close(fd); return; }
@@ -642,7 +649,7 @@ static void controlResponse(int fd) {
             std::string given;
             const char* p = auth + 22;
             while (*p && *p != '\r' && *p != '\n') given += *p++;
-            ok = !sfuSecret.empty() && given == sfuSecret;
+            ok = !sfuSecret.empty() && constantTimeEqual(given, sfuSecret);
         }
     }
     const char* body;
@@ -677,8 +684,8 @@ int main() {
     controlPort = (v = getenv("CONTROL_PORT")) && *v ? atoi(v) : 8099;
     maxAlloc = (v = getenv("MAX_ALLOCATIONS")) && *v ? atoi(v) : 4096;
     if ((v = getenv("LIFETIME_S")) && *v) defaultLifetime = (uint32_t)atoi(v);
-    if (turnSecret.empty()) {
-        fprintf(stderr, "FATAL: TURN_SECRET is required\n");
+    if (turnSecret.size() < 32 || sfuSecret.size() < 32) {
+        fprintf(stderr, "FATAL: TURN_SECRET and SFU_SECRET must each contain at least 32 random bytes\n");
         return 1;
     }
 

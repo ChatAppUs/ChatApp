@@ -89,6 +89,7 @@ func (a *App) signPayload(ctx context.Context, payload string, expiresIn int64) 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+a.cfg.SecuritySecret)
 	resp, err := securityClient.Do(req)
 	if err != nil {
 		return nil, err

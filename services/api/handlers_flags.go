@@ -8,9 +8,9 @@ package main
 import (
 	"context"
 	"hash/fnv"
-	"time"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -66,7 +66,6 @@ func (a *App) flagOn(f featureFlag, userID, region, platform string) bool {
 	}
 	return flagBucket(userID, f.Key) < f.RolloutPct
 }
-
 
 // nilArrayCoalesce keeps NULLs out of NOT NULL text[] columns: an omitted
 // array in a partial update must leave the stored value untouched, and an
@@ -163,7 +162,7 @@ func (a *App) handleAdminListFlags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"flags": flags})
-}// GET /api/admin/experiments — every experiment with its flag and variant
+} // GET /api/admin/experiments — every experiment with its flag and variant
 // assignment rule.
 func (a *App) handleAdminListExperiments(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
@@ -373,4 +372,3 @@ GROUP BY m.variant`, flagKey, f.Enabled, f.Regions, f.Platforms, f.RolloutPct)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"experiment": key, "flag": flagKey, "variants": out})
 }
-

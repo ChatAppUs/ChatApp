@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, getAccessToken } from "@/lib/api";
+import { encryptFor, publishIdentityKey } from "@/lib/e2e";
 
 interface MeshStatus {
   mesh: string;
@@ -45,8 +46,17 @@ export default function MeshPage() {
   const [error, setError] = useState("");
   const key = deviceKey();
 
+  const register = useCallback(async () => {
+    await api("/api/mesh/register", {
+      method: "POST",
+      headers: { "X-Mesh-Device": key },
+      body: JSON.stringify({ device_key: key, transport: "internet" }),
+    });
+  }, [key]);
+
   const load = useCallback(async () => {
     try {
+      await register();
       const s = await api<MeshStatus>("/api/mesh/status", {
         headers: { "X-Mesh-Device": key },
       });
@@ -55,7 +65,7 @@ export default function MeshPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "status failed");
     }
-  }, [key]);
+  }, [key, register]);
 
   const poll = useCallback(async () => {
     try {
@@ -80,13 +90,15 @@ export default function MeshPage() {
     e.preventDefault();
     setError("");
     try {
+      await publishIdentityKey();
+      const encrypted = await encryptFor(dest, message);
       const res = await api<{ status: string; packet_id: string }>("/api/mesh/send", {
         method: "POST",
         headers: { "X-Mesh-Device": key },
         body: JSON.stringify({
           packet_id: crypto.randomUUID(),
           dest_device_key: dest,
-          payload: btoa(unescape(encodeURIComponent(message))),
+          payload: btoa(unescape(encodeURIComponent(encrypted))),
           ttl: 8,
         }),
       });
@@ -126,7 +138,7 @@ export default function MeshPage() {
           <input
             value={dest}
             onChange={(e) => setDest(e.target.value)}
-            placeholder="Destination device key"
+            placeholder="Destination account ID (must have an E2E identity key)"
             required
           />
           <input

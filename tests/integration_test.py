@@ -61,12 +61,14 @@ def check(name, cond, detail=""):
         print(f"  FAIL {name} {detail}")
 
 
-def req(method, path, body=None, token=None, expect=200):
+def req(method, path, body=None, token=None, expect=200, headers=None):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(BASE + path, data=data, method=method)
     r.add_header("Content-Type", "application/json")
     if token:
         r.add_header("Authorization", f"Bearer {token}")
+    for name, value in (headers or {}).items():
+        r.add_header(name, value)
     try:
         with urllib.request.urlopen(r) as resp:
             return resp.status, json.loads(resp.read() or b"{}")

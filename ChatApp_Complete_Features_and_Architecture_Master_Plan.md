@@ -2939,3 +2939,59 @@ radio experiment. Physical Bluetooth/Wi-Fi Direct handshakes still require real 
 PostgreSQL 15.19 with all 39 migrations (214 tables), the Go SFU and all five strict C++17 data
 planes running; `services/mesh` green under `go test -race` and across 20 consecutive runs;
 route parity 153 files / 547 routes; feature registry 26 features across 7 required clients.
+
+## Implementation audit addendum — 2026-09-15, mesh congestion and device-ownership pass
+
+A source-level audit of this plan found the §76/§25 offline-mesh cluster still missing
+congestion control, and found the strict C++17 build of `services/sfu-forwarder` broken by a
+use-before-definition of `constantTimeEqual`. Both are closed in this pass.
+
+- **Congestion control** — `services/mesh/congestion.go` adds a token-bucket byte budget
+  (configurable via `CongestionBytesPerSecond` / `CongestionBurstBytes`) enforced in the node
+  send path; the node flushes on every tick so congestion-blocked packets recover as tokens
+  refill, and queue status exposes admission/block counters.
+- **Authenticated ACKs** — acknowledgements now carry an AEAD-sealed transfer proof under the
+  per-peer session key, so delivery credit cannot be forged.
+- **Mesh device ownership + relay holder** — migrations `040`/`041` bind devices to persistent
+  per-client identity keys across the API plane and the Android/iOS/web clients; the replay
+  filter is bounded (LRU eviction, empty-source rejection, idle expiry).
+- **Build repair** — the sfu-forwarder compile break is fixed; all five C++17 data planes
+  compile under `-Werror` again.
+
+Validation in this checkout: Go build/vet/test (api, mesh incl. `-race`, sfu); five strict C++17
+builds; web build (54 routes) and admin build; parity **155 files / 547 registered routes**;
+feature registry 26 features / 7 required clients; 41 migrations → 214 tables; and **21/21
+Python E2E suites pass with zero failures** against a live API on PostgreSQL 15.19 with the Go
+SFU and C++ TURN forwarder running. Route repair, multipath selection, group sender-key
+rotation, group acknowledgements, Tor/onion transport, physical radio validation, native
+release builds and production load/DR certification remain explicitly open.
+
+## Implementation audit addendum — 2026-09-15, mesh congestion and device-ownership pass
+
+This pass closed the last source-completable gap in the mesh reliability cluster and a build
+regression. Congestion control (§ previously listed as still absent) is implemented in
+`services/mesh/congestion.go`: a token-bucket byte budget enforced in the node send path, with
+per-tick queue flush so congestion-blocked and route-waiting packets recover as tokens refill
+or a beacon installs a new neighbour, and admission/block counters surfaced in queue status.
+Acknowledgements now carry an AEAD-sealed transfer proof under the per-peer session key, so
+delivery credit cannot be forged. Migrations `040_mesh_device_ownership.sql` and
+`041_mesh_relay_holder.sql` plus the rewritten `/api/mesh/*` handlers bind devices to
+persistent per-client mesh identity keys; Android (`Session.kt`/`MeshScreen.kt`), iOS
+(`SessionStore.swift`/`PlatformViews.swift`) and the web `/mesh` page generate, persist and
+present that key on every mesh call. The replay filter is bounded (LRU peer eviction,
+empty-source rejection, one-hour idle expiry). `services/sfu-forwarder/main.cpp` had a
+use-before-definition of `constantTimeEqual` breaking the strict C++17 `-Werror` build; it is
+fixed and all five native data planes compile again.
+
+Validation: Go `build`/`vet`/`test` for `services/api`, `services/mesh` (including
+`go test -race` and `gofmt`) and `services/sfu`; fresh web (54 routes) and admin production
+builds; parity **155 files / 547 registered routes**; feature registry 26 features / 7 required
+clients; all 41 migrations apply cleanly (214 tables); Python ML, extension syntax and
+`git diff --check` pass; and **21/21 Python E2E suites pass with zero failures** against a live
+API on PostgreSQL 15.19 with the Go SFU and the C++ TURN forwarder running.
+
+Still absent, and not claimed: route repair, multipath *selection*, group sender-key rotation,
+group acknowledgements, Tor/onion transport, network-wide revocation distribution, physical
+Bluetooth/Wi-Fi Direct validation, native Android/iOS release builds, configured
+SMTP/SMS/ML/provider integrations, and production load, backup/restore and disaster-recovery
+certification.

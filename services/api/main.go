@@ -116,6 +116,7 @@ func main() {
 	oauthLimiter := newRateLimiter(rateLimitScale(60, 20))
 	qrLimiter := newRateLimiter(rateLimitScale(20, 5))
 	guestLimiter := newRateLimiter(rateLimitScale(30, 10))
+	meshLimiter := newRateLimiter(rateLimitScale(120, 30))
 
 	// public
 	mux.HandleFunc("GET /metrics", app.handleMetrics)
@@ -762,12 +763,12 @@ func main() {
 	mux.HandleFunc("POST /api/groups/{id}/queue/{entryId}/review", app.requireAuth(app.handleReviewGroupPost))
 	mux.HandleFunc("POST /api/posts/{id}/quote", app.requireAuth(app.handleQuotePost))
 	// offline multi-hop device mesh (Briar-style store-and-forward)
-	mux.HandleFunc("POST /api/mesh/register", app.requireGuestOrAuth(app.handleMeshRegister))
-	mux.HandleFunc("POST /api/mesh/send", app.requireGuestOrAuth(app.handleMeshSend))
-	mux.HandleFunc("GET /api/mesh/poll", app.requireGuestOrAuth(app.handleMeshPoll))
-	mux.HandleFunc("POST /api/mesh/relay", app.requireGuestOrAuth(app.handleMeshRelay))
-	mux.HandleFunc("PUT /api/mesh/relay-policy", app.requireGuestOrAuth(app.handleMeshRelayPolicy))
-	mux.HandleFunc("GET /api/mesh/status", app.requireGuestOrAuth(app.handleMeshStatus))
+	mux.HandleFunc("POST /api/mesh/register", meshLimiter.limit(app.requireGuestOrAuth(app.handleMeshRegister)))
+	mux.HandleFunc("POST /api/mesh/send", meshLimiter.limit(app.requireGuestOrAuth(app.handleMeshSend)))
+	mux.HandleFunc("GET /api/mesh/poll", meshLimiter.limit(app.requireGuestOrAuth(app.handleMeshPoll)))
+	mux.HandleFunc("POST /api/mesh/relay", meshLimiter.limit(app.requireGuestOrAuth(app.handleMeshRelay)))
+	mux.HandleFunc("PUT /api/mesh/relay-policy", meshLimiter.limit(app.requireGuestOrAuth(app.handleMeshRelayPolicy)))
+	mux.HandleFunc("GET /api/mesh/status", meshLimiter.limit(app.requireGuestOrAuth(app.handleMeshStatus)))
 
 	// internal control plane (transcode worker; shared-secret bearer)
 	mux.HandleFunc("POST /internal/transcode/claim", app.requireInternal(app.handleTranscodeClaim))

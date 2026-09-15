@@ -680,6 +680,7 @@ func (a *App) handleE2EVerify(w http.ResponseWriter, r *http.Request) {
 			a.cfg.SecuritySvcURL+"/e2e/fingerprint", strings.NewReader(string(reqBody)))
 		if err == nil {
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+a.cfg.SecuritySecret)
 			if resp, err := securityClient.Do(req); err == nil {
 				var out struct {
 					Fingerprint string `json:"fingerprint"`

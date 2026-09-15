@@ -84,8 +84,15 @@ func (n *Node) sendAck(dst, transferID string) {
 		return
 	}
 	p := NewPacket(KindAck, n.DeviceID, dst, n.maxHops)
+	proof := []byte("chatapp-mesh-ack-v1:" + transferID)
+	ct, nonce, err := Encrypt(n.sessionKeyFor(dst), proof)
+	if err != nil {
+		return
+	}
 	p.AckFor = transferID
 	p.Xfer = transferID
+	p.Payload = ct
+	p.Nonce = nonce
 	p.Seq = n.nextSeq()
 	n.routes.Seen(p.ID)
 	if err := n.pfifo.Enqueue(p); err == nil {
@@ -110,9 +117,10 @@ func (n *Node) Tick() int {
 		}
 		sent++
 	}
-	if sent > 0 {
-		n.flush()
-	}
+	// Flush on every tick, not only after a retry is transmitted. This lets
+	// congestion-blocked and route-waiting packets recover as tokens refill or
+	// a beacon installs a new neighbour.
+	n.flush()
 	return sent
 }
 
@@ -153,6 +161,7 @@ func (n *Node) QueueStatus() map[string]any {
 		"depth_by_class":   n.pfifo.DepthByPriority(),
 		"pending_transfer": n.transfers.Pending(),
 		"delivery_counts":  n.transfers.Counts(),
+		"congestion":       n.congestion.Status(),
 	}
 }
 

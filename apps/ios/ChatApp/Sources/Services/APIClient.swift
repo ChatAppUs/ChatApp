@@ -41,13 +41,13 @@ struct APIClient {
     // short-lived upload token from the Go API, then POST the raw bytes to
     // the C++ media edge. Returns the absolute media URL.
     func uploadMedia(filename: String, data: Data) async throws -> String {
-        var grant = ""
-        if let t = try? await post("/api/media/upload-token"),
-           let obj = try JSONSerialization.jsonObject(with: t) as? [String: Any],
-           let exp = obj["expires"] as? Int, let sig = obj["signature"] as? String {
-            let allowed = CharacterSet.urlQueryAllowed
-            grant = "&exp=\(exp)&sig=\(sig.addingPercentEncoding(withAllowedCharacters: allowed) ?? sig)"
+        let t = try await post("/api/media/upload-token")
+        guard let obj = try JSONSerialization.jsonObject(with: t) as? [String: Any],
+              let exp = obj["expires"] as? Int, let sig = obj["signature"] as? String else {
+            throw APIError.http(502, "media upload grant was invalid")
         }
+        let allowed = CharacterSet.urlQueryAllowed
+        let grant = "&exp=\(exp)&sig=\(sig.addingPercentEncoding(withAllowedCharacters: allowed) ?? sig)"
         let name = filename.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? filename
         var req = URLRequest(url: URL(string: "\(Self.mediaBaseURL)/upload?filename=\(name)\(grant)")!)
         req.httpMethod = "POST"
@@ -62,31 +62,32 @@ struct APIClient {
         return Self.mediaBaseURL + rel
     }
 
-    func get(_ path: String) async throws -> Data {
-        try await request(path, method: "GET")
+    func get(_ path: String, headers: [String: String] = [:]) async throws -> Data {
+        try await request(path, method: "GET", headers: headers)
     }
 
-    func post(_ path: String, body: [String: Any] = [:]) async throws -> Data {
-        try await request(path, method: "POST", body: body)
+    func post(_ path: String, body: [String: Any] = [:], headers: [String: String] = [:]) async throws -> Data {
+        try await request(path, method: "POST", body: body, headers: headers)
     }
 
-    func put(_ path: String, body: [String: Any] = [:]) async throws -> Data {
-        try await request(path, method: "PUT", body: body)
+    func put(_ path: String, body: [String: Any] = [:], headers: [String: String] = [:]) async throws -> Data {
+        try await request(path, method: "PUT", body: body, headers: headers)
     }
 
-    func delete(_ path: String) async throws -> Data {
-        try await request(path, method: "DELETE")
+    func delete(_ path: String, headers: [String: String] = [:]) async throws -> Data {
+        try await request(path, method: "DELETE", headers: headers)
     }
 
-    func delete(_ path: String, body: [String: Any]) async throws -> Data {
-        try await request(path, method: "DELETE", body: body)
+    func delete(_ path: String, body: [String: Any], headers: [String: String] = [:]) async throws -> Data {
+        try await request(path, method: "DELETE", body: body, headers: headers)
     }
 
-    private func request(_ path: String, method: String, body: [String: Any]? = nil) async throws -> Data {
+    private func request(_ path: String, method: String, body: [String: Any]? = nil, headers: [String: String] = [:]) async throws -> Data {
         var req = URLRequest(url: URL(string: Self.baseURL + path)!)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        for (field, value) in headers { req.setValue(value, forHTTPHeaderField: field) }
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body) }
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)

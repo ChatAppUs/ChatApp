@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,7 @@ type Config struct {
 	MLServiceURL          string
 	RedisURL              string
 	SecuritySvcURL        string
+	SecuritySecret        string
 	SMTPHost              string
 	SMTPPort              string
 	SMTPUser              string
@@ -73,37 +75,38 @@ func getenv(key, def string) string {
 	return def
 }
 
+func requiredSecret(key string, minLen int) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if len(value) < minLen {
+		log.Fatalf("FATAL: %s must be set and contain at least %d random bytes", key, minLen)
+	}
+	return value
+}
+
 func loadConfig() Config {
 	appEnv := getenv("APP_ENV", "development")
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if appEnv == "production" {
-		if len(jwtSecret) < 32 {
-			log.Fatal("FATAL: JWT_SECRET must be at least 32 random bytes in production")
-		}
-	} else if jwtSecret == "" {
-		jwtSecret = "dev-only-insecure-secret"
-		log.Println("WARNING: JWT_SECRET not set; using development default")
+	jwtSecret := requiredSecret("JWT_SECRET", 32)
+	masterSeed := requiredSecret("WALLET_MASTER_SEED", 32)
+	signingKey := requiredSecret("WITHDRAW_SIGNING_KEY", 32)
+	countersSecret := requiredSecret("COUNTERS_SECRET", 32)
+	sfuSecret := requiredSecret("SFU_SECRET", 32)
+	turnSecret := requiredSecret("TURN_SECRET", 32)
+	securitySecret := requiredSecret("SIGNING_SECRET", 32)
+	authnURL := os.Getenv("AUTHN_SERVICE_URL")
+	authnSecret := os.Getenv("AUTHN_SECRET")
+	if authnURL != "" {
+		authnSecret = requiredSecret("AUTHN_SECRET", 32)
 	}
-	masterSeed := os.Getenv("WALLET_MASTER_SEED")
-	signingKey := os.Getenv("WITHDRAW_SIGNING_KEY")
-	if appEnv == "production" {
-		if len(masterSeed) < 32 {
-			log.Fatal("FATAL: WALLET_MASTER_SEED must be at least 32 random bytes in production")
-		}
-		if len(signingKey) < 32 {
-			log.Fatal("FATAL: WITHDRAW_SIGNING_KEY must be at least 32 random bytes in production")
-		}
-	} else {
-		if masterSeed == "" {
-			masterSeed = "dev-only-insecure-wallet-seed"
-		}
-		if signingKey == "" {
-			signingKey = "dev-only-insecure-signing-key"
-		}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		log.Fatal("FATAL: DATABASE_URL must be configured")
+	}
+	if appEnv == "production" && strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS")) == "" {
+		log.Fatal("FATAL: ALLOWED_ORIGINS must be configured in production")
 	}
 	return Config{
 		Port:            getenv("API_PORT", "8080"),
-		DatabaseURL:     getenv("DATABASE_URL", "postgres://chatapp:chatapp@localhost:5432/chatapp?sslmode=disable"),
+		DatabaseURL:     databaseURL,
 		JWTSecret:       []byte(jwtSecret),
 		AccessTokenTTL:  15 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour,
@@ -113,6 +116,7 @@ func loadConfig() Config {
 		MLServiceURL:    getenv("ML_SERVICE_URL", "http://localhost:8200"),
 		RedisURL:        os.Getenv("REDIS_URL"),
 		SecuritySvcURL:  getenv("SECURITY_SERVICE_URL", "http://localhost:8090"),
+		SecuritySecret:  securitySecret,
 		SMTPHost:        os.Getenv("SMTP_HOST"),
 		SMTPPort:        getenv("SMTP_PORT", "587"),
 		SMTPUser:        os.Getenv("SMTP_USER"),
@@ -128,16 +132,16 @@ func loadConfig() Config {
 		ClusterSecret:   os.Getenv("CLUSTER_SECRET"),
 		RelayURL:        os.Getenv("REALTIME_RELAY_URL"),
 		CountersURL:     os.Getenv("COUNTERS_URL"),
-		AuthnURL:        os.Getenv("AUTHN_SERVICE_URL"),
-		AuthnSecret:     os.Getenv("AUTHN_SECRET"),
-		CountersSecret:  getenv("COUNTERS_SECRET", "dev-counters-secret"),
+		AuthnURL:        authnURL,
+		AuthnSecret:     authnSecret,
+		CountersSecret:  countersSecret,
 		SFUInternalURL:  getenv("SFU_INTERNAL_URL", "http://localhost:8095"),
 		SFUPublicURL:    getenv("SFU_PUBLIC_URL", "ws://localhost:8095/ws"),
 		SFUHost:         getenv("SFU_HOST", "localhost"),
-		SFUSecret:       getenv("SFU_SECRET", "dev-sfu-secret"),
-		TURNSecret:      getenv("TURN_SECRET", "dev-turn-secret"),
+		SFUSecret:       sfuSecret,
+		TURNSecret:      turnSecret,
 		TURNForwarder:   os.Getenv("TURN_FORWARDER"),
-		VAPIDSubject:    getenv("VAPID_SUBJECT", "mailto:ops@chatapp.local"),
+		VAPIDSubject:    os.Getenv("VAPID_SUBJECT"),
 		VAPIDPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
 		FCMServerKey:    os.Getenv("FCM_SERVER_KEY"),
 		APNsKeyID:       os.Getenv("APNS_KEY_ID"),

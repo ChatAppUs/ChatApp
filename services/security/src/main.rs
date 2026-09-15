@@ -78,6 +78,56 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>, custody_seed: Arc<Option<
     let body_start = req.find("\r\n\r\n").map(|i| i + 4).unwrap_or(req.len());
     let body = &req[body_start..];
 
+    if path != "/health" {
+        let expected = format!("Bearer {}", String::from_utf8_lossy(&secret));
+        let authorized = req.lines().any(|line| {
+            line.strip_prefix("Authorization:")
+                .map(|value| ct_eq(value.trim().as_bytes(), expected.as_bytes()))
+                .unwrap_or(false)
+        });
+        if !authorized {
+            respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
+            return;
+        }
+    }
+
+    if path != "/health" {
+        let expected = format!("Bearer {}", String::from_utf8_lossy(&secret));
+        let authorized = req.split("\r\n").any(|line| {
+            line.strip_prefix("Authorization: ")
+                .map(|value| ct_eq(value.as_bytes(), expected.as_bytes()))
+                .unwrap_or(false)
+        });
+        if !authorized {
+            return respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
+        }
+    }
+
+    if path != "/health" {
+        let expected = format!("Bearer {}", String::from_utf8_lossy(&secret));
+        let authorized = req.split("\r\n").any(|line| {
+            line.strip_prefix("Authorization: ")
+                .map(|value| ct_eq(value.as_bytes(), expected.as_bytes()))
+                .unwrap_or(false)
+        });
+        if !authorized {
+            respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
+            return;
+        }
+    }
+
+    if path != "/health" {
+        let expected = format!("Bearer {}", String::from_utf8_lossy(&secret));
+        let authorized = req.lines().any(|line| {
+            line.strip_prefix("Authorization: ")
+                .map(|value| ct_eq(value.as_bytes(), expected.as_bytes()))
+                .unwrap_or(false)
+        });
+        if !authorized {
+            return respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
+        }
+    }
+
     match (method, path) {
         ("GET", "/health") => respond(&mut stream, "200 OK", "{\"status\":\"ok\"}"),
 
@@ -324,12 +374,8 @@ fn main() {
             std::process::exit(1);
         }
         Err(_) => {
-            if app_env == "production" {
-                eprintln!("FATAL: SIGNING_SECRET must be set in production");
-                std::process::exit(1);
-            }
-            eprintln!("WARNING: SIGNING_SECRET not set; using development default");
-            "dev-signing-secret".to_string()
+            eprintln!("FATAL: SIGNING_SECRET must be set");
+            std::process::exit(1);
         }
     };
     let custody_seed: Option<Vec<u8>> = match std::env::var("CUSTODY_MASTER_SEED") {

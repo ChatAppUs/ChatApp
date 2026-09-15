@@ -14,6 +14,24 @@ final class SessionStore: ObservableObject {
         didSet { Self.save(key: "uid", value: userId) }
     }
 
+    var meshDeviceKey: String {
+        if let stored = Self.read(key: "mesh-device"), !stored.isEmpty { return stored }
+        let value = "ios_" + UUID().uuidString
+        Self.save(key: "mesh-device", value: value)
+        return value
+    }
+
+    var meshIdentityKey: Data {
+        if let stored = Self.read(key: "mesh-key"), let data = Data(base64Encoded: stored), data.count == 32 {
+            return data
+        }
+        var bytes = Data(count: 32)
+        let status = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        guard status == errSecSuccess else { fatalError("secure randomness unavailable") }
+        Self.save(key: "mesh-key", value: bytes.base64EncodedString())
+        return bytes
+    }
+
     init() {
         accessToken = Self.read(key: "access")
         refreshToken = Self.read(key: "refresh")

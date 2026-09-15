@@ -651,6 +651,7 @@ struct AssistantView: View {
 
 struct MeshStatusView: View {
     @EnvironmentObject var session: SessionStore
+    @State private var manager: NativeMeshManager?
     @State private var transport = "none"
     @State private var relayOk = true
     @State private var peers = 0
@@ -662,15 +663,21 @@ struct MeshStatusView: View {
 
     private var client: FeatureClient { FeatureClient(token: session.accessToken) }
 
+    private func applyLocalStatus(_ status: [String: Any]) {
+        transport = status["transport"] as? String ?? "none"
+        relayOk = status["relay_ok"] as? Bool ?? true
+        peers = status["peers"] as? Int ?? 0
+        pending = status["pending"] as? Int ?? 0
+    }
+
     func refresh() {
+        if let manager { applyLocalStatus(manager.status()) }
         Task {
             do {
-                let d = try await client.api.get("/api/mesh/status")
+                let d = try await client.api.get("/api/mesh/status", headers: ["X-Mesh-Device": session.meshDeviceKey])
                 if let o = try JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                    transport = (o["transport"] as? String) ?? (o["active_transport"] as? String) ?? "none"
-                    relayOk = (o["relay_ok"] as? Bool) ?? true
-                    peers = (o["peers"] as? [Any])?.count ?? (o["peers"] as? Int) ?? 0
-                    pending = (o["pending"] as? [Any])?.count ?? (o["pending"] as? Int) ?? 0
+                    if let local = manager?.status() { applyLocalStatus(local) }
+                    if let count = o["queued"] as? Int { pending = max(pending, count) }
                 }
             } catch { self.error = errorMessage(error) }
         }
@@ -688,26 +695,45 @@ struct MeshStatusView: View {
                     TextField("Destination device id", text: $destination)
                     TextField("Message", text: $message)
                     Button("Queue") {
+                        guard let manager else {
+                            error = "Native mesh is not ready"
+                            return
+                        }
+                        let packetID = manager.engine.send(kind: "message", dst: destination, plaintext: Data(message.utf8))
+                        notice = "Encrypted and queued packet \(packetID)"
+                        message = ""
+                        refresh()
+                    }.disabled(destination.isEmpty || message.isEmpty)
+                    Button(relayOk ? "Disable relay" : "Enable relay") {
+                        relayOk.toggle()
+                        manager?.engine.relayOk = relayOk
                         Task {
                             do {
-                                let d = try await client.api.post("/api/mesh/send", body: [
-                                    "dst": destination, "kind": "message", "body": message,
-                                ])
-                                if let o = try JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                                    notice = "Queued packet \((o["packet_id"] as? String) ?? "")"
-                                }
-                                message = ""; refresh()
+                                _ = try await client.api.put("/api/mesh/relay-policy", body: [
+                                    "device_key": session.meshDeviceKey,
+                                    "relay_enabled": relayOk,
+                                    "relay_mode": relayOk ? "active" : "off",
+                                    "storage_quota": 10 * 1024 * 1024,
+                                ], headers: ["X-Mesh-Device": session.meshDeviceKey])
                             } catch { self.error = errorMessage(error) }
                         }
-                    }.disabled(destination.isEmpty || message.isEmpty)
+                    }
                 }
                 Section("Queue") {
                     Text("\(peers) peers · \(pending) packet(s) awaiting a route")
                 }
                 if let notice { Text(notice).font(.caption).foregroundStyle(.blue) }
+                if let error { Text(error).font(.caption).foregroundStyle(.red) }
             }
             .navigationTitle("Offline Mesh")
-            .onAppear(perform: refresh)
+            .onAppear {
+                let native = NativeMeshManager(deviceId: session.meshDeviceKey, key: session.meshIdentityKey)
+                manager = native
+                native.start()
+                applyLocalStatus(native.status())
+                refresh()
+            }
+            .onDisappear { manager?.stop() }
         }
     }
 }

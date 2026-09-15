@@ -11,9 +11,11 @@ package mesh
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"sync"
+	"syscall"
 )
 
 // Transport is the interface a physical link (UDP local network, Bluetooth,
@@ -41,6 +43,11 @@ func NewUDPTransport(port int, onPkt func(addr string, data []byte)) (*UDPTransp
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
 	if err != nil {
 		return nil, err
+	}
+	if raw, err := conn.SyscallConn(); err == nil {
+		_ = raw.Control(func(fd uintptr) {
+			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
+		})
 	}
 	t := &UDPTransport{conn: conn, addr: conn.LocalAddr().String(), onPkt: onPkt}
 	go t.readLoop()
@@ -84,6 +91,16 @@ func (t *UDPTransport) Send(addr string, data []byte) error {
 
 // Addr returns the local socket address.
 func (t *UDPTransport) Addr() string { return t.addr }
+
+// BroadcastAddr returns the local-subnet discovery endpoint on the same port
+// as the receiving socket. A port of zero is never used: ephemeral sockets are
+// resolved to their assigned port at construction time.
+func (t *UDPTransport) BroadcastAddr() string {
+	if ua, ok := t.conn.LocalAddr().(*net.UDPAddr); ok {
+		return net.JoinHostPort("255.255.255.255", fmt.Sprintf("%d", ua.Port))
+	}
+	return "255.255.255.255:47821"
+}
 
 // Close shuts the transport down.
 func (t *UDPTransport) Close() error { return t.conn.Close() }

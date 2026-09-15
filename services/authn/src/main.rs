@@ -548,28 +548,16 @@ fn find_headers_end(b: &[u8]) -> Option<usize> {
 fn main() {
     let port: u16 = getenv("AUTHN_PORT", "8400").parse().unwrap_or(8400);
     let secret = getenv("AUTHN_SECRET", "");
-    let app_env = getenv("APP_ENV", "development");
-    if secret.is_empty() {
-        eprintln!("FATAL: AUTHN_SECRET is required (fail-closed)");
-        std::process::exit(1);
-    }
-    if app_env == "production" && secret.len() < 32 {
-        eprintln!("FATAL: AUTHN_SECRET must be >= 32 chars in production");
+    if secret.len() < 32 {
+        eprintln!("FATAL: AUTHN_SECRET must be set and >= 32 random bytes");
         std::process::exit(1);
     }
     let jwt = std::env::var("JWT_SECRET").unwrap_or_default();
-    if app_env == "production" && jwt.len() < 32 {
-        eprintln!("FATAL: JWT_SECRET must be >= 32 bytes in production");
+    if jwt.len() < 32 {
+        eprintln!("FATAL: JWT_SECRET must be set and >= 32 random bytes");
         std::process::exit(1);
     }
-    JWT_SECRET
-        .set(if jwt.is_empty() {
-            eprintln!("WARNING: JWT_SECRET unset; development default");
-            b"dev-only-insecure-secret".to_vec()
-        } else {
-            jwt.into_bytes()
-        })
-        .expect("jwt secret once");
+    JWT_SECRET.set(jwt.into_bytes()).expect("jwt secret once");
 
     let listener = TcpListener::bind(("0.0.0.0", port)).expect("bind authn port");
     println!("authn on :{}", port);
@@ -590,7 +578,7 @@ mod tests {
     use super::*;
 
     fn setup() {
-        let _ = JWT_SECRET.set(b"dev-only-insecure-secret".to_vec());
+        let _ = JWT_SECRET.set(b"test-authn-jwt-secret-at-least-32-bytes".to_vec());
     }
 
     #[test]

@@ -902,7 +902,7 @@ func (a *App) handleAdminLuckyDrawSettle(w http.ResponseWriter, r *http.Request)
 		map[string]any{"winners": len(list)})
 	// Notify winners.
 	for _, win := range list {
-			a.notifyKind(win.acc, "luckydraw_win", map[string]any{"draw_id": id, "prize_usd": win.prize})
+		a.notifyKind(win.acc, "luckydraw_win", map[string]any{"draw_id": id, "prize_usd": win.prize})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "settled", "winners": len(list)})
 }

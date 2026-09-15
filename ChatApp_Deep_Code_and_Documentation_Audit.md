@@ -263,3 +263,57 @@ keys and per-member group key management. Radio handshakes still require real de
 PostgreSQL 15.19 with all 39 migrations (214 tables), with the Go SFU and all five strict
 C++17 data planes running; route parity 153 files / 547 routes; feature registry 26 features
 across 7 required clients.
+## Build pass — 2026-09-15 (congestion control, mesh device ownership, build repair)
+
+This pass was verified directly against the executable source without relying on any status
+document. Three clusters of work are now in the tree:
+
+- **Mesh congestion control** — previously listed as "still absent" and now implemented.
+  `services/mesh/congestion.go` adds a token-bucket byte budget (`CongestionBytesPerSecond`,
+  `CongestionBurstBytes`) enforced in the node send path, so bulk media can no longer flood a
+  shared radio. Blocked packets recover as tokens refill because the node now flushes on every
+  tick, and `QueueStatus` reports admission/block counters.
+- **Authenticated acknowledgements** — `sendAck` now encrypts its transfer proof with the
+  per-peer session key (AEAD), so a neighbour cannot forge an ACK for a transfer it never
+  received.
+- **Mesh device ownership and relay holder** — migrations `040_mesh_device_ownership.sql` and
+  `041_mesh_relay_holder.sql` plus the rewritten `/api/mesh/*` handlers bind devices to
+  persistent per-client identity keys; Android, iOS and the web mesh page now generate and
+  persist a mesh identity key locally and present it with every mesh call. The replay filter
+  gained a bounded peer table with LRU eviction, empty-source rejection and one-hour idle
+  expiry, so an attacker cannot exhaust node memory with fabricated source ids.
+- **Build repair** — `services/sfu-forwarder/main.cpp` used `constantTimeEqual` before its
+  definition, breaking the strict C++17 `-Werror` build; the definition was moved above its
+  first use. All five C++ data planes compile again.
+
+**Validation performed in this environment:** Go `build`/`vet`/`test` pass for `services/api`,
+`services/mesh` (including `go test -race` and `gofmt`) and `services/sfu`; all five C++17
+services compile under `-Wall -Wextra -Werror`; web production build generates **54 routes** and
+the admin build passes; parity passes with **155 files / 547 registered routes**; the feature
+registry passes with 26 features across 7 required clients; all 41 migrations apply cleanly
+(214 tables); Python ML, extension syntax and `git diff --check` pass; and **21/21 Python E2E
+suites pass with zero failures** against a live API on PostgreSQL 15.19 with the Go SFU and the
+C++ TURN forwarder running.
+
+**Still absent, and not claimed:** route repair, multipath selection, group sender-key rotation,
+group acknowledgements, Tor/onion IP-privacy transport, network-wide revocation distribution,
+physical Bluetooth/Wi-Fi Direct validation, native Android/iOS release builds, configured
+provider integrations, and production load/backup/disaster-recovery certification.
+
+## Implementation audit addendum — 2026-09-15, mesh congestion and device-ownership pass
+
+A source-level audit found the offline-mesh cluster still missing congestion control and found
+the strict C++17 build of `services/sfu-forwarder` broken by a use-before-definition of
+`constantTimeEqual`. Both are closed in this pass: `services/mesh/congestion.go` implements a
+token-bucket byte budget enforced in the node send path (per-tick flush, admission/block
+counters in queue status), acknowledgements carry an AEAD-sealed transfer proof under the
+per-peer session key, migrations `040`/`041` plus the rewritten `/api/mesh/*` handlers bind
+devices to persistent per-client identity keys on Android/iOS/web, the replay filter is bounded
+(LRU eviction, empty-source rejection), and all five C++17 data planes compile under `-Werror`
+again. Validation: Go build/vet/test for api, mesh (incl. `-race`) and sfu; web build (54
+routes) and admin build; parity **155 files / 547 registered routes**; feature registry 26
+features / 7 required clients; 41 migrations → 214 tables; and **21/21 Python E2E suites pass
+with zero failures** against a live API on PostgreSQL 15.19 with the Go SFU and C++ TURN
+forwarder running. Route repair, multipath selection, group sender-key rotation, group
+acknowledgements, Tor/onion transport, physical radio validation, native release builds,
+configured providers, and production load/backup/DR certification remain explicitly open.

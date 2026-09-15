@@ -320,7 +320,7 @@ func (a *App) executeWithdrawal(ctx context.Context, id string) string {
 			`SELECT COALESCE(signature,''), fee::text FROM withdrawal_requests WHERE id=$1`,
 			id).Scan(&sig, &fee)
 		canon := "withdraw|" + id + "|" + userID + "|" + asset + "|" + chain + "|" + toAddr + "|" + amount + "|" + fee
-		cosig, err := cosignWithdrawal(ctx, a.cfg.SecuritySvcURL, userID, canon)
+		cosig, err := cosignWithdrawal(ctx, a.cfg.SecuritySvcURL, a.cfg.SecuritySecret, userID, canon)
 		if err != nil {
 			// Custody service unreachable/rejected: stay signed, never broadcast.
 			_, _ = a.db.Exec(ctx,

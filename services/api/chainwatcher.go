@@ -39,6 +39,7 @@ func (c *rpcClient) call(ctx context.Context, method string, params any, out any
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+secret)
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -361,9 +362,9 @@ func (p *nodeProvider) withdrawEVM(ctx context.Context, rpc *rpcClient, asset, c
 // HMAC signature and this co-signature exist. Returns the co-signature, or
 // an error when the service rejects/unavailable — the caller keeps the
 // request in 'signed' state and does not broadcast.
-func cosignWithdrawal(ctx context.Context, svcURL, uid, message string) (string, error) {
-	if svcURL == "" {
-		return "", nil // no security service configured: single-sig mode
+func cosignWithdrawal(ctx context.Context, svcURL, secret, uid, message string) (string, error) {
+	if svcURL == "" || len(secret) < 32 {
+		return "", errors.New("custody security service is not configured")
 	}
 	body, _ := json.Marshal(map[string]string{
 		"uid": uid, "purpose": "withdraw", "message": message,

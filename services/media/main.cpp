@@ -28,7 +28,8 @@
 #include <unistd.h>
 
 static std::string g_uploadDir = "/data/uploads";
-static std::string g_securityURL; // empty = signature check disabled
+static std::string g_securityURL;
+static std::string g_securitySecret;
 
 static const std::map<std::string, std::string> kMime = {
     {"mp4", "video/mp4"},  {"webm", "video/webm"}, {"mov", "video/quicktime"},
@@ -78,7 +79,7 @@ static void respond(int fd, int code, const std::string& status,
 
 // Minimal blocking HTTP client for security-service verification.
 static std::string httpPost(const std::string& host, int port, const std::string& path,
-                            const std::string& body) {
+                            const std::string& body, const std::string& bearer) {
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -97,6 +98,7 @@ static std::string httpPost(const std::string& host, int port, const std::string
     if (fd < 0) return "";
     std::ostringstream req;
     req << "POST " << path << " HTTP/1.1\r\nHost: " << host << "\r\n"
+        << "Authorization: Bearer " << bearer << "\r\n"
         << "Content-Type: application/json\r\nContent-Length: " << body.size()
         << "\r\nConnection: close\r\n\r\n" << body;
     auto s = req.str();
@@ -111,7 +113,7 @@ static std::string httpPost(const std::string& host, int port, const std::string
 
 static bool verifySignature(const std::string& payload, const std::string& expires,
                             const std::string& sig) {
-    if (g_securityURL.empty()) return true; // enforcement disabled
+    if (g_securityURL.empty()) return false;
     // host:port from http://host:port
     std::string hp = g_securityURL.substr(g_securityURL.find("://") + 3);
     auto colon = hp.find(':');
@@ -119,7 +121,7 @@ static bool verifySignature(const std::string& payload, const std::string& expir
     int port = colon == std::string::npos ? 80 : std::stoi(hp.substr(colon + 1));
     std::string body = "{\"payload\":\"" + payload + "\",\"expires\":\"" + expires +
                        "\",\"signature\":\"" + sig + "\"}";
-    std::string resp = httpPost(host, port, "/verify", body);
+    std::string resp = httpPost(host, port, "/verify", body, g_securitySecret);
     return resp.find("\"valid\":true") != std::string::npos;
 }
 
@@ -413,6 +415,13 @@ static void handleClient(int fd) {
 int main() {
     if (const char* d = std::getenv("UPLOAD_DIR")) g_uploadDir = d;
     if (const char* s = std::getenv("SECURITY_SERVICE_URL")) g_securityURL = s;
+    if (const char* s = std::getenv("SECURITY_SERVICE_SECRET")) g_securitySecret = s;
+    if (g_securityURL.empty() ||
+        (g_securityURL.rfind("http://", 0) != 0 && g_securityURL.rfind("https://", 0) != 0) ||
+        g_securitySecret.size() < 32) {
+        std::cerr << "SECURITY_SERVICE_URL and SECURITY_SERVICE_SECRET are required; refusing unsigned media uploads\n";
+        return 1;
+    }
     ::mkdir(g_uploadDir.c_str(), 0755);
 
     int port = 8100;
@@ -429,9 +438,7 @@ int main() {
         std::cerr << "bind/listen failed on port " << port << "\n";
         return 1;
     }
-    std::cout << "chatapp-media listening on :" << port
-              << (g_securityURL.empty() ? " (signature check disabled)" : " (signed URLs enforced)")
-              << "\n";
+    std::cout << "chatapp-media listening on :" << port << " (signed URLs enforced)\n";
     for (;;) {
         int fd = ::accept(srv, nullptr, nullptr);
         if (fd < 0) continue;

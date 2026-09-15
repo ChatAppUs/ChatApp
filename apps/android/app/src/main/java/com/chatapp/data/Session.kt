@@ -1,9 +1,10 @@
 package com.chatapp.data
 
 import android.content.Context
+import android.util.Base64
+import java.security.SecureRandom
+import java.util.UUID
 
-// SharedPreferences-backed session store. Tokens survive process death;
-// logout clears them. Mirrors the web app's localStorage token handling.
 class Session(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("chatapp.session", Context.MODE_PRIVATE)
@@ -26,13 +27,29 @@ class Session(context: Context) {
             if (v == null) remove(KEY_USER) else putString(KEY_USER, v)
         }.apply()
 
-    // Light/dark theme preference (dark is the default on every client).
+    val meshDeviceKey: String
+        get() = prefs.getString(KEY_MESH_DEVICE, null) ?: run {
+            val id = "android_" + UUID.randomUUID().toString()
+            prefs.edit().putString(KEY_MESH_DEVICE, id).apply()
+            id
+        }
+
+    val meshIdentityKey: ByteArray
+        get() {
+            val stored = prefs.getString(KEY_MESH_KEY, null)
+            if (stored != null) return Base64.decode(stored, Base64.NO_WRAP)
+            val bytes = ByteArray(32)
+            SecureRandom().nextBytes(bytes)
+            prefs.edit().putString(KEY_MESH_KEY, Base64.encodeToString(bytes, Base64.NO_WRAP)).apply()
+            return bytes
+        }
+
     var darkTheme: Boolean
         get() = prefs.getBoolean(KEY_DARK, true)
         set(v) = prefs.edit().putBoolean(KEY_DARK, v).apply()
 
     fun clear() {
-        val dark = darkTheme // theme survives logout, like the web client
+        val dark = darkTheme
         prefs.edit().clear().apply()
         darkTheme = dark
     }
@@ -41,6 +58,8 @@ class Session(context: Context) {
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
         const val KEY_USER = "user_id"
+        const val KEY_MESH_DEVICE = "mesh_device_key"
+        const val KEY_MESH_KEY = "mesh_identity_key"
         const val KEY_DARK = "dark_theme"
     }
 }

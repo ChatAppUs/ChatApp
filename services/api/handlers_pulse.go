@@ -59,19 +59,19 @@ func requireUUIDPath(w http.ResponseWriter, r *http.Request, name string) (strin
 }
 
 type pulsePostJSON struct {
-	ID         string    `json:"id"`
-	AuthorID   string    `json:"author_id"`
-	Author     string    `json:"author"`
-	Body       string    `json:"body"`
-	ParentID   *string   `json:"parent_id,omitempty"`
-	QuoteOf    *string   `json:"quote_of,omitempty"`
-	RepostOf   *string   `json:"repost_of,omitempty"`
-	Topics     []string  `json:"topics"`
-	LocalTag   string    `json:"local_tag,omitempty"`
-	ReplyCount int       `json:"reply_count"`
-	RepostCount int      `json:"repost_count"`
-	QuoteCount int       `json:"quote_count"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	AuthorID    string    `json:"author_id"`
+	Author      string    `json:"author"`
+	Body        string    `json:"body"`
+	ParentID    *string   `json:"parent_id,omitempty"`
+	QuoteOf     *string   `json:"quote_of,omitempty"`
+	RepostOf    *string   `json:"repost_of,omitempty"`
+	Topics      []string  `json:"topics"`
+	LocalTag    string    `json:"local_tag,omitempty"`
+	ReplyCount  int       `json:"reply_count"`
+	RepostCount int       `json:"repost_count"`
+	QuoteCount  int       `json:"quote_count"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 const pulseSelect = `
@@ -290,10 +290,10 @@ func (a *App) handlePulseThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"root":         posts[0],
-		"posts":        posts,
+		"root":          posts[0],
+		"posts":         posts,
 		"chronological": posts,
-		"relevant":     relevant,
+		"relevant":      relevant,
 	})
 }
 

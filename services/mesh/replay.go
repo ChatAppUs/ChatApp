@@ -9,7 +9,10 @@ package mesh
 // IPsec-style sliding bitmap window per source and reject any sequence
 // number that is older than the window or already accepted.
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // replayBits is the anti-replay window width (1024 packets).
 const replayBits = 1024
@@ -58,23 +61,53 @@ func (w *replayWindow) accept(seq int64) bool {
 
 // ReplayFilter keeps one sliding window per source device id.
 type ReplayFilter struct {
-	mu      sync.Mutex
-	windows map[string]*replayWindow
+	mu       sync.Mutex
+	windows  map[string]*replayWindow
+	lastSeen map[string]time.Time
+	maxPeers int
 }
 
 // NewReplayFilter creates an empty filter.
 func NewReplayFilter() *ReplayFilter {
-	return &ReplayFilter{windows: make(map[string]*replayWindow)}
+	return &ReplayFilter{
+		windows:  make(map[string]*replayWindow),
+		lastSeen: make(map[string]time.Time),
+		maxPeers: 10000,
+	}
 }
 
 // Check reports whether (src, seq) is new, recording it when it is.
 func (f *ReplayFilter) Check(src string, seq int64) bool {
+	if src == "" {
+		return false
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	now := time.Now()
+	for id, seenAt := range f.lastSeen {
+		if now.Sub(seenAt) > time.Hour {
+			delete(f.lastSeen, id)
+			delete(f.windows, id)
+		}
+	}
+	if _, ok := f.windows[src]; !ok && len(f.windows) >= f.maxPeers {
+		var oldestID string
+		var oldest time.Time
+		for id, seenAt := range f.lastSeen {
+			if oldestID == "" || seenAt.Before(oldest) {
+				oldestID, oldest = id, seenAt
+			}
+		}
+		if oldestID != "" {
+			delete(f.lastSeen, oldestID)
+			delete(f.windows, oldestID)
+		}
+	}
 	w, ok := f.windows[src]
 	if !ok {
 		w = &replayWindow{base: 1}
 		f.windows[src] = w
 	}
+	f.lastSeen[src] = now
 	return w.accept(seq)
 }

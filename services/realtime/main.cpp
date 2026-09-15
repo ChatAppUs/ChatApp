@@ -129,10 +129,30 @@ static bool constantTimeEq(const std::string& a, const std::string& b) {
     return diff == 0;
 }
 
+static bool jsonInt64(const std::string& js, const std::string& key, long long& out) {
+    std::string pat = "\"" + key + "\"";
+    auto k = js.find(pat);
+    if (k == std::string::npos) return false;
+    auto colon = js.find(':', k + pat.size());
+    if (colon == std::string::npos) return false;
+    auto start = js.find_first_not_of(" \t\r\n", colon + 1);
+    if (start == std::string::npos) return false;
+    char* end = nullptr;
+    errno = 0;
+    long long value = std::strtoll(js.c_str() + start, &end, 10);
+    if (errno != 0 || end == js.c_str() + start) return false;
+    if (*end != ',' && *end != '}') return false;
+    out = value;
+    return true;
+}
+
 static std::string jwtVerifyHS256(const std::string& token, const std::string& secret) {
+    if (secret.empty() || token.size() == 0 || token.size() > 16 * 1024) return "";
     auto d1 = token.find('.');
     auto d2 = d1 == std::string::npos ? std::string::npos : token.find('.', d1 + 1);
-    if (d1 == std::string::npos || d2 == std::string::npos) return "";
+    if (d1 == std::string::npos || d2 == std::string::npos || token.find('.', d2 + 1) != std::string::npos) return "";
+    std::string header;
+    if (!b64urlDecode(token.substr(0, d1), header) || header != "{\"alg\":\"HS256\",\"typ\":\"JWT\"}") return "";
     std::string body = token.substr(0, d2);
     std::string sig;
     if (!b64urlDecode(token.substr(d2 + 1), sig)) return "";
@@ -140,22 +160,15 @@ static std::string jwtVerifyHS256(const std::string& token, const std::string& s
     if (!constantTimeEq(sig, expected)) return "";
     std::string payload;
     if (!b64urlDecode(token.substr(d1 + 1, d2 - d1 - 1), payload)) return "";
-    // alg-confusion guard: header must declare HS256.
-    std::string header;
-    if (!b64urlDecode(token.substr(0, d1), header) || header.find("HS256") == std::string::npos) return "";
-    std::string typ = jsonString(payload, "typ");
-    if (typ != "access") return "";
-    std::string scope = jsonString(payload, "scope");
-    if (scope == "admin") return ""; // admin plane never rides the user edge
-    std::string expRaw = jsonString(payload, "exp");
-    // exp is a JSON number, not a string — parse it directly.
-    auto ek = payload.find("\"exp\"");
-    if (ek == std::string::npos) return "";
-    auto colon = payload.find(':', ek);
-    if (colon == std::string::npos) return "";
-    long long exp = atoll(payload.c_str() + colon + 1);
-    if (exp <= (long long)time(nullptr)) return "";
-    return jsonString(payload, "sub");
+    if (jsonString(payload, "typ") != "access") return "";
+    if (jsonString(payload, "scope") == "admin") return "";
+    long long exp = 0;
+    long long iat = 0;
+    if (!jsonInt64(payload, "exp", exp) || !jsonInt64(payload, "iat", iat)) return "";
+    const long long now = (long long)time(nullptr);
+    if (exp <= now || iat <= 0 || iat > now + 300) return "";
+    std::string sub = jsonString(payload, "sub");
+    return sub.empty() ? "" : sub;
 }
 
 // ---- sockets ----
@@ -463,8 +476,8 @@ static void handleWsData(int ep, Conn& c) {
 int main() {
     g_jwtSecret = getenvOr("JWT_SECRET", "");
     g_clusterSecret = getenvOr("CLUSTER_SECRET", "");
-    if (g_jwtSecret.empty() || g_clusterSecret.empty()) {
-        std::cerr << "FATAL: JWT_SECRET and CLUSTER_SECRET are required\n";
+    if (g_jwtSecret.size() < 32 || g_clusterSecret.size() < 32) {
+        std::cerr << "FATAL: JWT_SECRET and CLUSTER_SECRET must each contain at least 32 random bytes\n";
         return 1;
     }
     int wsPort = atoi(getenvOr("WS_PORT", "8300").c_str());

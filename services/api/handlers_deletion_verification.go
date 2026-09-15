@@ -141,7 +141,9 @@ func (a *App) handleDeletionChallengeVerify(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusBadRequest, "invalid challenge kind")
 		return
 	}
-	var req struct{ Code string `json:"code"` }
+	var req struct {
+		Code string `json:"code"`
+	}
 	if !decodeJSON(w, r, &req) || strings.TrimSpace(req.Code) == "" {
 		writeErr(w, http.StatusBadRequest, "code required")
 		return

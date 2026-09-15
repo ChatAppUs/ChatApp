@@ -29,32 +29,40 @@ const (
 
 // Packet is the encrypted envelope carried hop-by-hop across the mesh.
 type Packet struct {
-	Version byte       `json:"v,omitempty"`
-	ID      string     `json:"id"`
-	Src     string     `json:"src"`
-	Dst     string     `json:"dst"`
-	HopSrc  string     `json:"hop_src,omitempty"`
-	GroupID string     `json:"group_id,omitempty"`
-	Kind    PacketKind `json:"kind"`
-	TTL     int        `json:"ttl"`
-	Hops    int        `json:"hops"`
-	Payload []byte     `json:"payload"`
-	Nonce   []byte     `json:"nonce"`
-	CreatedAt int64    `json:"created_at"`
-	Onion      []byte `json:"onion,omitempty"`
-	OnionFinal bool   `json:"onion_final,omitempty"`
-	Seq int64 `json:"seq,omitempty"`
-	FragIndex int `json:"frag_index,omitempty"`
-	FragTotal int `json:"frag_total,omitempty"`
-	FragID string `json:"frag_id,omitempty"`
-	FragSum []byte `json:"frag_sum,omitempty"`
-	AckFor string `json:"ack_for,omitempty"`
-	Xfer string `json:"xfer,omitempty"`
+	Version    byte       `json:"v,omitempty"`
+	ID         string     `json:"id"`
+	Src        string     `json:"src"`
+	Dst        string     `json:"dst"`
+	HopSrc     string     `json:"hop_src,omitempty"`
+	GroupID    string     `json:"group_id,omitempty"`
+	Kind       PacketKind `json:"kind"`
+	TTL        int        `json:"ttl"`
+	Hops       int        `json:"hops"`
+	Payload    []byte     `json:"payload"`
+	Nonce      []byte     `json:"nonce"`
+	CreatedAt  int64      `json:"created_at"`
+	Onion      []byte     `json:"onion,omitempty"`
+	OnionFinal bool       `json:"onion_final,omitempty"`
+	Seq        int64      `json:"seq,omitempty"`
+	FragIndex  int        `json:"frag_index,omitempty"`
+	FragTotal  int        `json:"frag_total,omitempty"`
+	FragID     string     `json:"frag_id,omitempty"`
+	FragSum    []byte     `json:"frag_sum,omitempty"`
+	AckFor     string     `json:"ack_for,omitempty"`
+	Xfer       string     `json:"xfer,omitempty"`
 }
 
 const EnvelopeVersion byte = 1
 
 func VersionSupported(v byte) bool { return v <= EnvelopeVersion }
+func validPacketKind(kind PacketKind) bool {
+	switch kind {
+	case KindMessage, KindGroupMessage, KindVoiceMessage, KindCallSignal, KindAck:
+		return true
+	default:
+		return false
+	}
+}
 
 func (p *Packet) Validate() error {
 	if !VersionSupported(p.Version) {
@@ -63,14 +71,20 @@ func (p *Packet) Validate() error {
 	if p.ID == "" {
 		return errors.New("mesh: packet id is required")
 	}
-	if p.Src == "" {
-		return errors.New("mesh: packet source is required")
+	if p.Src == "" || len(p.Src) > 256 {
+		return errors.New("mesh: packet source is required and bounded")
+	}
+	if !validPacketKind(p.Kind) {
+		return errors.New("mesh: unsupported packet kind")
+	}
+	if len(p.ID) > 128 || len(p.Dst) > 256 || len(p.GroupID) > 256 || len(p.Xfer) > 128 || len(p.AckFor) > 128 {
+		return errors.New("mesh: packet identifier is too long")
 	}
 	if p.Dst == "" && p.GroupID == "" {
 		return errors.New("mesh: packet needs a destination or a group")
 	}
-	if p.TTL < 0 || p.Hops < 0 {
-		return errors.New("mesh: negative ttl or hop count")
+	if p.TTL < 0 || p.Hops < 0 || p.TTL > 1024 || p.Hops > 1024 {
+		return errors.New("mesh: invalid ttl or hop count")
 	}
 	if p.FragTotal > 1 {
 		if p.FragID == "" || p.FragIndex < 0 || p.FragIndex >= p.FragTotal {
@@ -82,20 +96,27 @@ func (p *Packet) Validate() error {
 	} else if p.FragIndex != 0 || p.FragTotal < 0 {
 		return ErrFragmentInvalid
 	}
-	if p.Kind == KindAck && p.AckFor == "" {
-		return errors.New("mesh: acknowledgement has no transfer id")
+	// An acknowledgement must name the transfer it settles; a nameless ACK
+	// carries no meaning and would only consume relay quota.
+	if p.Kind == KindAck {
+		if p.AckFor == "" || p.Dst == "" || p.GroupID != "" {
+			return errors.New("mesh: malformed acknowledgement")
+		}
+		if len(p.Payload) > 0 && len(p.Nonce) != NonceSize {
+			return errors.New("mesh: malformed authenticated acknowledgement")
+		}
 	}
 	return nil
 }
 
 func NewPacket(kind PacketKind, src, dst string, ttl int) *Packet {
 	return &Packet{
-		Version: EnvelopeVersion,
-		ID: newPacketID(),
-		Src: src,
-		Dst: dst,
-		Kind: kind,
-		TTL: ttl,
+		Version:   EnvelopeVersion,
+		ID:        newPacketID(),
+		Src:       src,
+		Dst:       dst,
+		Kind:      kind,
+		TTL:       ttl,
 		CreatedAt: time.Now().UnixMilli(),
 	}
 }
@@ -124,7 +145,7 @@ func UnmarshalPacket(data []byte) (*Packet, error) {
 func newPacketID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("mesh: cryptographic random source unavailable")
+		panic("mesh: cryptographic randomness unavailable: " + err.Error())
 	}
 	return hex.EncodeToString(b)
 }

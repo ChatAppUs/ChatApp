@@ -57,7 +57,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 }
 
 type callQualityInput struct {
-	RoomID        string  `json:"room_id"`
+	RoomID        string   `json:"room_id"`
 	PacketLossPct *float64 `json:"packet_loss_pct"`
 	JitterMS      *float64 `json:"jitter_ms"`
 	RTTMS         *float64 `json:"rtt_ms"`
@@ -164,14 +164,14 @@ GROUP BY 1 ORDER BY 1`)
 	}
 	defer rows.Close()
 	type cqRow struct {
-		Bucket          string   `json:"bucket"`
-		Calls           int64    `json:"calls"`
-		P50Loss         *float64 `json:"p50_packet_loss_pct"`
-		P95Loss         *float64 `json:"p95_packet_loss_pct"`
-		P50Jitter       *float64 `json:"p50_jitter_ms"`
-		P50RTT          *float64 `json:"p50_rtt_ms"`
-		AvgBitrate      *int64   `json:"avg_bitrate_kbps"`
-		P50FrameRate    *int64   `json:"p50_frame_rate"`
+		Bucket       string   `json:"bucket"`
+		Calls        int64    `json:"calls"`
+		P50Loss      *float64 `json:"p50_packet_loss_pct"`
+		P95Loss      *float64 `json:"p95_packet_loss_pct"`
+		P50Jitter    *float64 `json:"p50_jitter_ms"`
+		P50RTT       *float64 `json:"p50_rtt_ms"`
+		AvgBitrate   *int64   `json:"avg_bitrate_kbps"`
+		P50FrameRate *int64   `json:"p50_frame_rate"`
 	}
 	out := []cqRow{}
 	for rows.Next() {

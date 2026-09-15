@@ -30,21 +30,23 @@ type Node struct {
 	Key      *IdentityKey
 	Kind     string // "member" | "relay"
 
-	transport Transport
-	routes    *RouteTable
-	queue     *Queue
-	handler   Handler
-	maxHops   int
-	signer    *SigningKey
-	peerKeys  map[string][]byte        // device id -> pinned Ed25519 public key (TOFU)
-	revoked   map[string][]byte        // device id -> revoked pinned Ed25519 key
-	limiter   *RelayLimiter            // per-source relay quota (abuse prevention)
-	kem       *KeyExchange             // X25519 key agreement (per-peer session keys)
-	peerKEM   map[string]AdvertisedKEM // device id -> peer's advertised KEM key
-	replay    *ReplayFilter            // per-source anti-replay sequence windows
-	frags     *Reassembler             // MTU fragment reassembly (see fragment.go)
-	pfifo     *PriorityQueue           // priority-ordered forwarding buffer (see pfifo.go)
-	transfers *transferTracker         // reliable delivery state machine (see reliability.go)
+	transport  Transport
+	routes     *RouteTable
+	queue      *Queue
+	handler    Handler
+	maxHops    int
+	signer     *SigningKey
+	peerKeys   map[string][]byte        // device id -> pinned Ed25519 public key (TOFU)
+	revoked    map[string][]byte        // device id -> revoked pinned Ed25519 key
+	limiter    *RelayLimiter            // per-source relay quota (abuse prevention)
+	kem        *KeyExchange             // X25519 key agreement (per-peer session keys)
+	peerKEM    map[string]AdvertisedKEM // device id -> peer's advertised KEM key
+	replay     *ReplayFilter            // per-source anti-replay sequence windows
+	frags      *Reassembler             // MTU fragment reassembly (see fragment.go)
+	pfifo      *PriorityQueue           // priority-ordered forwarding buffer (see pfifo.go)
+	transfers  *transferTracker         // reliable delivery state machine (see reliability.go)
+	congestion *CongestionController    // byte-based radio backpressure
+	maxFanout  int                      // bounded multipath fan-out per attempt
 
 	seqCtr int64
 	stop   chan struct{}
@@ -69,43 +71,74 @@ type NodeConfig struct {
 	MaxHops int
 	// Signer is this device's Ed25519 beacon-signing key. Zero generates one.
 	Signer *SigningKey
+	// MaxFanout bounds multipath forwarding. Zero uses two candidates; this
+	// prevents uncontrolled flooding while retaining one alternate path.
+	MaxFanout int
+	// CongestionBytesPerSecond and CongestionBurstBytes bound radio admission.
+	// Zero values use conservative defaults suitable for local Wi-Fi and P2P.
+	CongestionBytesPerSecond int
+	CongestionBurstBytes     int
 }
 
 // NewNode creates a mesh node. The transport's inbound callback is wired to
 // the node's HandleInbound so every received datagram is processed.
 func NewNode(cfg NodeConfig) *Node {
+	if cfg.DeviceID == "" {
+		panic("mesh: device id is required")
+	}
 	if cfg.Kind == "" {
 		cfg.Kind = "member"
+	}
+	if cfg.Kind != "member" && cfg.Kind != "relay" {
+		panic("mesh: kind must be member or relay")
 	}
 	maxHops := cfg.MaxHops
 	if maxHops <= 0 {
 		maxHops = DefaultMaxHops
 	}
+	maxFanout := cfg.MaxFanout
+	if maxFanout <= 0 {
+		maxFanout = 2
+	}
+	if maxFanout > 8 {
+		maxFanout = 8
+	}
+	if cfg.Key == nil {
+		key, err := NewIdentityKey()
+		if err != nil {
+			panic("mesh: identity key generation failed: " + err.Error())
+		}
+		cfg.Key = &key
+	}
 	signer := cfg.Signer
 	if signer == nil {
-		// Every node signs its own beacons; generating a key is cheap and
-		// keeps device identity self-certifying with no external authority.
-		signer, _ = NewSigningKey()
+		var err error
+		signer, err = NewSigningKey()
+		if err != nil {
+			panic("mesh: beacon signing key generation failed: " + err.Error())
+		}
 	}
 	n := &Node{
-		DeviceID:  cfg.DeviceID,
-		Key:       cfg.Key,
-		Kind:      cfg.Kind,
-		transport: cfg.Transport,
-		routes:    NewRouteTable(),
-		pfifo:     NewPriorityQueue(0, 0, 7*24*time.Hour),
-		transfers: NewTransferTracker(ackTimeout, maxTransferAttempts, transferTTL),
-		handler:   cfg.Handler,
-		maxHops:   maxHops,
-		signer:    signer,
-		peerKeys:  make(map[string][]byte),
-		revoked:   make(map[string][]byte),
-		limiter:   NewRelayLimiter(DefaultRelayQuota()),
-		kem:       NewKeyExchange(0),
-		peerKEM:   make(map[string]AdvertisedKEM),
-		replay:    NewReplayFilter(),
-		frags:     NewReassembler(),
-		stop:      make(chan struct{}),
+		DeviceID:   cfg.DeviceID,
+		Key:        cfg.Key,
+		Kind:       cfg.Kind,
+		transport:  cfg.Transport,
+		routes:     NewRouteTable(),
+		pfifo:      NewPriorityQueue(0, 0, 7*24*time.Hour),
+		transfers:  NewTransferTracker(ackTimeout, maxTransferAttempts, transferTTL),
+		congestion: NewCongestionController(cfg.CongestionBytesPerSecond, cfg.CongestionBurstBytes),
+		maxFanout:  maxFanout,
+		handler:    cfg.Handler,
+		maxHops:    maxHops,
+		signer:     signer,
+		peerKeys:   make(map[string][]byte),
+		revoked:    make(map[string][]byte),
+		limiter:    NewRelayLimiter(DefaultRelayQuota()),
+		kem:        NewKeyExchange(0),
+		peerKEM:    make(map[string]AdvertisedKEM),
+		replay:     NewReplayFilter(),
+		frags:      NewReassembler(),
+		stop:       make(chan struct{}),
 	}
 	// Wire the transport's inbound callback to this node. Any transport that
 	// accepts a late-bound inbound callback (UDP, the Bluetooth/Wi-Fi Direct
@@ -180,8 +213,14 @@ func (n *Node) beaconLoop() {
 			if err != nil {
 				continue
 			}
-			// Broadcast to the local broadcast address (best-effort).
-			_ = n.transport.Send("255.255.255.255:0", data)
+			// Broadcast on the transport's actual receive port. Sending to port
+			// zero silently discards discovery on UDP and leaves real devices
+			// permanently undiscoverable.
+			broadcastAddr := "255.255.255.255:47821"
+			if bcast, ok := n.transport.(interface{ BroadcastAddr() string }); ok {
+				broadcastAddr = bcast.BroadcastAddr()
+			}
+			_ = n.transport.Send(broadcastAddr, data)
 		}
 	}
 }
@@ -365,9 +404,13 @@ func (n *Node) SendLarge(kind PacketKind, target string, plaintext []byte, group
 	if !group {
 		key = n.sessionKeyFor(target)
 	}
+	queuedIDs := make([]string, 0, len(chunks))
 	for i := range chunks {
 		ct, nonce, err := Encrypt(key, chunks[i])
 		if err != nil {
+			for _, id := range queuedIDs {
+				n.pfifo.Remove(id)
+			}
 			return "", err
 		}
 		p := NewPacket(kind, n.DeviceID, "", n.maxHops)
@@ -388,8 +431,15 @@ func (n *Node) SendLarge(kind PacketKind, target string, plaintext []byte, group
 		// dropped rather than displacing higher-priority packets. The
 		// receiver's reassembly group expires on its own if parts never
 		// arrive, so a dropped fragment degrades to a failed transfer rather
-		// than leaking memory.
-		_ = n.pfifo.Enqueue(p)
+		// than leaking memory. The send operation itself is transactional:
+		// never report a successful fragment group when admission failed.
+		if err := n.pfifo.Enqueue(p); err != nil {
+			for _, id := range queuedIDs {
+				n.pfifo.Remove(id)
+			}
+			return "", err
+		}
+		queuedIDs = append(queuedIDs, p.ID)
 	}
 	n.flush()
 	return fragID, nil
@@ -430,6 +480,13 @@ func (n *Node) route(p *Packet) {
 		// here. It is end-to-end control with no payload, so it is neither
 		// fragmented nor handed to the application handler.
 		if p.Kind == KindAck {
+			proof, err := n.decryptPayload(p)
+			if err != nil || string(proof) != "chatapp-mesh-ack-v1:"+p.AckFor {
+				return
+			}
+			if p.Seq != 0 && !n.replay.Check(p.Src, p.Seq) {
+				return
+			}
 			if first && p.AckFor != "" {
 				n.transfers.Ack(p.AckFor)
 			}
@@ -500,7 +557,12 @@ func (n *Node) flush() {
 	if n.transport == nil {
 		return
 	}
+	now := time.Now()
 	for _, p := range n.pfifo.Drain(flushBudget) {
+		if !n.congestion.Allow(packetBytes(p), now) {
+			_ = n.pfifo.Enqueue(p)
+			continue
+		}
 		sent := n.flushTo(p)
 		if !sent {
 			// No route yet: keep it buffered for store-and-forward rather
@@ -513,73 +575,78 @@ func (n *Node) flush() {
 	}
 }
 
-// flushTo hands one packet to the radio: directly to the destination when it is
-// a known neighbour, otherwise by controlled flooding to every eligible
-// neighbor.
-//
-// A RETRY prefers an alternate path. When a transfer's previous attempt went to
-// a particular neighbor and the acknowledgement never arrived, re-handing the
-// packet to that same neighbor is the least promising option — the likely
-// failure is that hop, not the origin. So a retransmission of a reliable
-// transfer skips its previous hop when any other eligible neighbor exists,
-// which is the alternate-path requirement and is what lets a transfer survive
-// one relay disappearing.
+// flushTo chooses a bounded set of eligible neighbours for one attempt. The
+// destination is tried directly first; otherwise the best relay candidates are
+// selected by route score. Reliable retries move the previous first hop behind
+// the alternate candidates. Bounded selection avoids turning a neighbour list
+// into an uncontrolled battery and congestion flood.
 func (n *Node) flushTo(p *Packet) bool {
 	neighbors := n.routes.Neighbors()
 	now := time.Now()
-	// Destination-aware: when the destination is itself a known neighbour,
-	// deliver directly and skip flooding.
-	for i := range neighbors {
-		if neighbors[i].DeviceID == p.Dst {
-			return n.sendTo(neighbors[i].Addr, p)
-		}
-	}
-	// Alternate-path retry: look up the hop the previous attempt used.
 	avoid := ""
 	if p.Xfer != "" {
 		if view, ok := n.transfers.Get(p.Xfer); ok && view.Attempts > 1 {
 			avoid = view.LastHop
 		}
 	}
-	// Controlled flooding: hand the packet to every eligible neighbour (relay
-	// consent required, the final destination always tried). Upstream dedup
-	// (RouteTable.Seen) bounds the flood, so multi-path topologies make
-	// progress from every branch instead of betting on a single score-chosen
-	// hop.
-	sort.Slice(neighbors, func(i, j int) bool {
+
+	sort.SliceStable(neighbors, func(i, j int) bool {
 		return neighbors[i].Score(now) > neighbors[j].Score(now)
 	})
-	// Order the candidate list so a retry leads with a DIFFERENT path: the hop
-	// that already failed to produce an acknowledgement is moved to the back,
-	// but the fan-out itself is preserved. This keeps the reliability gain
-	// without weakening the multi-path redundancy the flooding depends on.
 	if avoid != "" {
 		ordered := make([]*Neighbor, 0, len(neighbors))
 		var deferred []*Neighbor
 		for _, nb := range neighbors {
 			if nb.DeviceID == avoid {
 				deferred = append(deferred, nb)
-				continue
+			} else {
+				ordered = append(ordered, nb)
 			}
-			ordered = append(ordered, nb)
 		}
 		neighbors = append(ordered, deferred...)
 	}
-	sent := false
-	for _, nb := range neighbors {
-		if !nb.RelayOK && nb.DeviceID != p.Dst {
-			continue
+
+	candidates := make([]*Neighbor, 0, n.maxFanout)
+	seenCandidate := make(map[string]struct{}, n.maxFanout)
+	addCandidate := func(nb *Neighbor) bool {
+		if _, exists := seenCandidate[nb.DeviceID]; exists || now.Before(nb.UnavailableUntil) {
+			return false
 		}
+		if !nb.RelayOK && nb.DeviceID != p.Dst {
+			return false
+		}
+		seenCandidate[nb.DeviceID] = struct{}{}
+		candidates = append(candidates, nb)
+		return true
+	}
+	// A known destination is always the first candidate, even when a relay
+	// has a higher score. This preserves direct delivery semantics while
+	// still allowing one alternate relay when fan-out permits it.
+	for _, nb := range neighbors {
+		if nb.DeviceID == p.Dst {
+			addCandidate(nb)
+			break
+		}
+	}
+	for _, nb := range neighbors {
+		if len(candidates) >= n.maxFanout {
+			break
+		}
+		addCandidate(nb)
+	}
+
+	sent := false
+	for _, nb := range candidates {
 		if n.sendTo(nb.Addr, p) {
-			// Record only the FIRST hop an attempt reached: that is the
-			// primary path, and it is the one a retry should avoid. Later
-			// fan-out targets must not overwrite it, or the deferral below
-			// would chase the last-tried neighbour instead of the one that
-			// already let us down.
+			n.routes.MarkSuccess(nb.DeviceID)
 			if !sent && p.Xfer != "" {
 				n.transfers.NoteHop(p.Xfer, nb.DeviceID, p.ID)
 			}
 			sent = true
+		} else {
+			// A failed socket is a route signal, not a reason to keep
+			// selecting the same dead peer until beacon expiry.
+			n.routes.MarkFailure(nb.DeviceID, now)
 		}
 	}
 	return sent

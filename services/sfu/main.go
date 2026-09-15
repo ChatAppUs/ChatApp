@@ -361,9 +361,9 @@ func activeLiveHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	type liveRoom struct {
-		RoomID string `json:"room_id"`
-		ConvID string `json:"conversation_id"`
-		Viewers int   `json:"viewers"`
+		RoomID  string `json:"room_id"`
+		ConvID  string `json:"conversation_id"`
+		Viewers int    `json:"viewers"`
 	}
 	out := []liveRoom{}
 	rooms.mu.Lock()
@@ -422,8 +422,8 @@ func startTURN() {
 }
 
 func main() {
-	if sfuSecret == "" || turnSecret == "" {
-		log.Fatal("SFU_SECRET and TURN_SECRET are required")
+	if len(sfuSecret) < 32 || len(turnSecret) < 32 {
+		log.Fatal("SFU_SECRET and TURN_SECRET must each contain at least 32 random bytes")
 	}
 	go rooms.reap()
 	go startTURN()
