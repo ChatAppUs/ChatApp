@@ -280,6 +280,12 @@ func (n *Node) route(p *Packet) {
 	if !improve {
 		return
 	}
+	// Onion packets are authenticated and peeled exactly once per hop. A relay
+	// never routes on the origin's final destination because that value is only
+	// present in the destination layer.
+	if len(p.Onion) > 0 && !n.peelOnion(p) {
+		return
+	}
 	// Deliver locally if it's for us. Anti-replay runs AFTER the payload
 	// authenticates (see replay.go): a forged packet must never be able to
 	// advance or poison the receiver's replay window.

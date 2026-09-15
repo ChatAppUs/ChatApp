@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -30,9 +31,13 @@ const (
 
 // Packet is the encrypted envelope carried hop-to-hop across the mesh.
 type Packet struct {
-	ID        string     `json:"id"`
-	Src       string     `json:"src"`
-	Dst       string     `json:"dst"`
+	ID  string `json:"id"`
+	Src string `json:"src"`
+	Dst string `json:"dst"`
+	// HopSrc is the immediate sender of this copy. Src remains the stable
+	// origin for quotas/replay, while HopSrc lets a relay derive the inbound
+	// hop key without exposing the final destination.
+	HopSrc    string     `json:"hop_src,omitempty"`
 	GroupID   string     `json:"group_id,omitempty"`
 	Kind      PacketKind `json:"kind"`
 	TTL       int        `json:"ttl"`
@@ -40,6 +45,11 @@ type Packet struct {
 	Payload   []byte     `json:"payload"`
 	Nonce     []byte     `json:"nonce"`
 	CreatedAt int64      `json:"created_at"`
+	// Onion is a layered envelope. Relays peel exactly one authenticated layer
+	// and learn only the next hop; the final destination is revealed only at
+	// the last hop.
+	Onion      []byte `json:"onion,omitempty"`
+	OnionFinal bool   `json:"onion_final,omitempty"`
 	// Seq is a per-sender monotonic sequence number used by receivers'
 	// replay filter (see replay.go). Zero means the sender predates
 	// sequence numbering; those packets are accepted without replay checks.
@@ -63,6 +73,9 @@ func (p *Packet) Marshal() ([]byte, error) { return json.Marshal(p) }
 
 // UnmarshalPacket parses a packet from its wire representation.
 func UnmarshalPacket(data []byte) (*Packet, error) {
+	if len(data) > 2*1024*1024 {
+		return nil, errors.New("packet exceeds maximum wire size")
+	}
 	var p Packet
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, err
