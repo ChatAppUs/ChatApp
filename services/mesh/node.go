@@ -48,8 +48,11 @@ type Node struct {
 	congestion *CongestionController    // byte-based radio backpressure
 	maxFanout  int                      // bounded multipath fan-out per attempt
 	groupKeys  *GroupKeyManager         // per-group sender keys and rotation (see groupkey.go)
-	groupAcks  *groupAckTracker         // per-member group acknowledgements (see groupack.go)
-	revStore   *revocationStore         // network-wide revocation notices (see revocdist.go)
+	// groupMembers records the member list per group id so a group send can
+	// track per-member acknowledgements (see groupack.go). Guarded by mu.
+	groupMembers map[string][]string
+	groupAcks    *groupAckTracker // per-member group acknowledgements (see groupack.go)
+	revStore     *revocationStore // network-wide revocation notices (see revocdist.go)
 
 	seqCtr int64
 	stop   chan struct{}
@@ -122,29 +125,30 @@ func NewNode(cfg NodeConfig) *Node {
 		}
 	}
 	n := &Node{
-		DeviceID:   cfg.DeviceID,
-		Key:        cfg.Key,
-		Kind:       cfg.Kind,
-		transport:  cfg.Transport,
-		routes:     NewRouteTable(),
-		pfifo:      NewPriorityQueue(0, 0, 7*24*time.Hour),
-		transfers:  NewTransferTracker(ackTimeout, maxTransferAttempts, transferTTL),
-		congestion: NewCongestionController(cfg.CongestionBytesPerSecond, cfg.CongestionBurstBytes),
-		maxFanout:  maxFanout,
-		groupKeys:  NewGroupKeyManager(0),
-		groupAcks:  NewGroupAckTracker(),
-		revStore:   newRevocationStore(),
-		handler:    cfg.Handler,
-		maxHops:    maxHops,
-		signer:     signer,
-		peerKeys:   make(map[string][]byte),
-		revoked:    make(map[string][]byte),
-		limiter:    NewRelayLimiter(DefaultRelayQuota()),
-		kem:        NewKeyExchange(0),
-		peerKEM:    make(map[string]AdvertisedKEM),
-		replay:     NewReplayFilter(),
-		frags:      NewReassembler(),
-		stop:       make(chan struct{}),
+		DeviceID:     cfg.DeviceID,
+		Key:          cfg.Key,
+		Kind:         cfg.Kind,
+		transport:    cfg.Transport,
+		routes:       NewRouteTable(),
+		pfifo:        NewPriorityQueue(0, 0, 7*24*time.Hour),
+		transfers:    NewTransferTracker(ackTimeout, maxTransferAttempts, transferTTL),
+		congestion:   NewCongestionController(cfg.CongestionBytesPerSecond, cfg.CongestionBurstBytes),
+		maxFanout:    maxFanout,
+		groupKeys:    NewGroupKeyManager(0),
+		groupMembers: make(map[string][]string),
+		groupAcks:    NewGroupAckTracker(),
+		revStore:     newRevocationStore(),
+		handler:      cfg.Handler,
+		maxHops:      maxHops,
+		signer:       signer,
+		peerKeys:     make(map[string][]byte),
+		revoked:      make(map[string][]byte),
+		limiter:      NewRelayLimiter(DefaultRelayQuota()),
+		kem:          NewKeyExchange(0),
+		peerKEM:      make(map[string]AdvertisedKEM),
+		replay:       NewReplayFilter(),
+		frags:        NewReassembler(),
+		stop:         make(chan struct{}),
 	}
 	// Wire the transport's inbound callback to this node. Any transport that
 	// accepts a late-bound inbound callback (UDP, the Bluetooth/Wi-Fi Direct
@@ -448,12 +452,46 @@ func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (str
 	p.Nonce = nonce
 	p.Seq = n.nextSeq()
 	p.Xfer = newPacketID()
+	// Register the transfer for per-member acknowledgement tracking when the
+	// group's members are known (see NoteGroupMembers). Without a member list
+	// the acks still settle the unicast tracker; aggregation needs members.
+	if members := n.membersFor(groupID); len(members) > 0 {
+		n.groupAcks.Create(p.Xfer, groupID, members)
+	}
 	n.routes.Seen(p.ID)
 	if err := n.pfifo.Enqueue(p); err != nil {
 		return "", err
 	}
 	n.flush()
 	return p.ID, nil
+}
+
+// membersFor returns the recorded member list for a group. Caller need not
+// hold the lock.
+func (n *Node) membersFor(groupID string) []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]string(nil), n.groupMembers[groupID]...)
+}
+
+// NoteGroupMembers records the member list for a group so subsequent group
+// sends track per-member acknowledgements (see groupack.go). Members are the
+// device ids in the group, excluding this device.
+func (n *Node) NoteGroupMembers(groupID string, members []string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.groupMembers[groupID] = append([]string(nil), members...)
+}
+
+// GroupTransferState returns one group transfer's per-member acknowledgement
+// state, for client delivery indicators.
+func (n *Node) GroupTransferState(id string) (GroupTransfer, bool) {
+	return n.groupAcks.Get(id)
+}
+
+// GroupTransfers returns every retained group transfer, oldest first.
+func (n *Node) GroupTransfers() []GroupTransfer {
+	return n.groupAcks.Snapshot()
 }
 
 // SendLarge splits a payload that exceeds one radio datagram into
@@ -558,10 +596,27 @@ func (n *Node) route(p *Packet) {
 		// fragmented nor handed to the application handler.
 		if p.Kind == KindAck {
 			proof, err := n.decryptPayload(p)
-			if err != nil || string(proof) != "chatapp-mesh-ack-v1:"+p.AckFor {
+			if err != nil {
 				return
 			}
 			if p.Seq != 0 && !n.replay.Check(p.Src, p.Seq) {
+				return
+			}
+			// A group acknowledgement names the group and the transfer so
+			// the origin can attribute it to the member that sent it (see
+			// groupack.go); a unicast acknowledgement settles the reliable
+			// transfer directly (see reliability.go).
+			if p.GroupID != "" {
+				if string(proof) != "chatapp-mesh-groupack-v1:"+p.GroupID+":"+p.AckFor {
+					return
+				}
+				if first && p.AckFor != "" {
+					n.groupAcks.Ack(p.AckFor, p.Src)
+					n.transfers.Ack(p.AckFor)
+				}
+				return
+			}
+			if string(proof) != "chatapp-mesh-ack-v1:"+p.AckFor {
 				return
 			}
 			if first && p.AckFor != "" {

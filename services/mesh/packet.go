@@ -97,9 +97,12 @@ func (p *Packet) Validate() error {
 		return ErrFragmentInvalid
 	}
 	// An acknowledgement must name the transfer it settles; a nameless ACK
-	// carries no meaning and would only consume relay quota.
+	// carries no meaning and would only consume relay quota. A group
+	// acknowledgement additionally names the group so the origin can
+	// attribute it to the member that sent it (see groupack.go); a unicast
+	// acknowledgement carries no group id.
 	if p.Kind == KindAck {
-		if p.AckFor == "" || p.Dst == "" || p.GroupID != "" {
+		if p.AckFor == "" || p.Dst == "" {
 			return errors.New("mesh: malformed acknowledgement")
 		}
 		if len(p.Payload) > 0 && len(p.Nonce) != NonceSize {

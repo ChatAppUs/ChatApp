@@ -53,6 +53,18 @@ final class MeshIdentity {
         epoch += 1
     }
 
+    /// Signs arbitrary bytes with the device's Ed25519 identity key (used for
+    /// revocation notices; see MeshRevocation.swift).
+    func signBytes(_ data: Data) -> Data? {
+        try? signer.signature(for: data)
+    }
+
+    /// Verifies an Ed25519 signature over `data` with a raw 32-byte public key.
+    static func verifyBytes(pubKey: Data, data: Data, sig: Data) -> Bool {
+        guard let pub = try? Curve25519.Signing.PublicKey(rawRepresentation: pubKey) else { return false }
+        return (try? pub.isValidSignature(sig, for: data)) == true
+    }
+
     /// Signs a beacon (with this device's key-agreement advertisement) and
     /// returns the SignedBeacon JSON, byte-compatible with the Go engine.
     func signBeacon(deviceId: String, kind: String, transport: String, addr: String, seq: Int64) -> Data {

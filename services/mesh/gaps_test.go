@@ -1,8 +1,7 @@
 package mesh
 
 import (
-	"bytes"
-	"testing"
+		"testing"
 	"time"
 )
 
@@ -358,6 +357,9 @@ func TestGroupAckEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Register the member list so the sender-side tracker can aggregate
+	// per-member acknowledgements (see NoteGroupMembers).
+	a.NoteGroupMembers("g1", []string{"b"})
 	if _, err := a.SendGroup(KindGroupMessage, "g1", []byte("ack me")); err != nil {
 		t.Fatal(err)
 	}
@@ -368,12 +370,17 @@ func TestGroupAckEndToEnd(t *testing.T) {
 	}
 	// Give the group ACK a moment to return to A.
 	time.Sleep(200 * time.Millisecond)
-	// A should have received a group ACK (a KindAck packet with a group id).
-	// We verify the ACK path by checking A's transfer/ack state is consistent;
-	// the group ACK is delivered as a control packet to A's handler-less node.
-	// At minimum, the round trip must not panic and B must have attempted the
-	// group ACK (which we can observe via B's pfifo having drained).
-	if !bytes.Equal([]byte("ack me"), []byte("ack me")) {
-		t.Fatal("unreachable")
+	// The returned group ACK must have settled the sender-side per-member
+	// tracker: the only known member (b) acknowledged, so the aggregate
+	// state is complete.
+	snap := a.GroupTransfers()
+	if len(snap) != 1 {
+		t.Fatalf("expected 1 tracked group transfer, got %d", len(snap))
+	}
+	if snap[0].State != GroupAckComplete {
+		t.Fatalf("group ack did not settle: state=%v acked=%v", snap[0].State, snap[0].Acked)
+	}
+	if !snap[0].Acked["b"] {
+		t.Fatal("member b was not credited with the acknowledgement")
 	}
 }

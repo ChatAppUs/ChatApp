@@ -49,6 +49,9 @@ class MeshIdentity {
     /** The Ed25519 public key (raw 32 bytes). */
     fun signPublic(): ByteArray = rawPublic(signer.public.encoded)
 
+    /** Signs arbitrary bytes with the device's Ed25519 identity key (revocation notices). */
+    fun signBytes(data: ByteArray): ByteArray = MeshIdentity.sign(signer.private.encoded, data)
+
     /** The current X25519 public key (raw 32 bytes). */
     fun kemPublic(): ByteArray = synchronized(lock) { rawPublic(kem.public.encoded) }
 
@@ -180,6 +183,11 @@ class MeshIdentity {
             return prefix + raw
         }
 
+        fun sign(privateKey: ByteArray, data: ByteArray): ByteArray = ed25519Sign(privateKey, data)
+
+        fun verify(publicKey: ByteArray, data: ByteArray, sig: ByteArray): Boolean =
+            ed25519Verify(publicKey, data, sig)
+
         private fun ed25519Sign(privateKey: ByteArray, data: ByteArray): ByteArray {
             val spec = PKCS8EncodedKeySpec(privateKey)
             val kf = KeyFactory.getInstance("Ed25519")
@@ -237,8 +245,10 @@ class MeshIdentity {
             return out
         }
 
-        fun b64(b: ByteArray): String = android.util.Base64.encodeToString(b, android.util.Base64.NO_WRAP)
-        fun unB64(s: String): ByteArray = android.util.Base64.decode(s, android.util.Base64.NO_WRAP)
+        // java.util.Base64 (std, no line breaks) is wire-identical to
+        // android.util.Base64.NO_WRAP and keeps this file JVM-testable.
+        fun b64(b: ByteArray): String = java.util.Base64.getEncoder().encodeToString(b)
+        fun unB64(s: String): ByteArray = java.util.Base64.getDecoder().decode(s)
     }
 }
 
