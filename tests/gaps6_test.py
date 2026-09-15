@@ -85,7 +85,7 @@ def ws_send(token, payload, settle=0.6):
 
 def main():
     ts = int(time.time())
-    names = {k: f"g5{k}{ts}" for k in "abcdef"}
+    names = {k: f"g6{k}{ts}" for k in "abcdef"}
     alice = register(names["a"])
     bob = register(names["b"])
     carol = register(names["c"])
@@ -258,7 +258,7 @@ def main():
     check("non-member cannot translate", s == 404, f"{s} {r}")
 
     # ---------- live rooms ----------
-    s, r = req("POST", "/api/live-rooms", {"title": f"g5 live {ts}"}, token=alice)
+    s, r = req("POST", "/api/live-rooms", {"title": f"g6 live {ts}"}, token=alice)
     check("live room created", s == 201 and r.get("room", {}).get("id"), f"{s} {r}")
     slug = (r.get("room") or {}).get("id")
     check("room is live with zero viewers",
