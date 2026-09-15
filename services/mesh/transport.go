@@ -56,8 +56,16 @@ func (t *UDPTransport) readLoop() {
 		}
 		data := make([]byte, n)
 		copy(data, buf[:n])
-		if t.onPkt != nil {
-			t.onPkt(addr.String(), data)
+		// Load the callback under the mutex and invoke it outside the lock:
+		// SetInbound may publish it at any point after the socket is bound,
+		// so an unsynchronised read here is a genuine data race, while
+		// holding the lock across the call would deadlock a handler that
+		// sends a reply.
+		t.mu.Lock()
+		fn := t.onPkt
+		t.mu.Unlock()
+		if fn != nil {
+			fn(addr.String(), data)
 		}
 	}
 }

@@ -22,7 +22,7 @@ ChatApp is **not yet able to compete on equal terms** with Facebook, TikTok, X (
 4. **Radio discovery is not an automatic 500-device network.** Android Wi-Fi Direct does not automatically connect every discovered peer, Bluetooth discovery does not form a complete peer graph, and iOS has no general Wi-Fi Direct API. Permissions, background policy, hotspot isolation and address discovery require real-device testing.
 5. **Offline live calls are not implemented by the mesh.** Mesh packet kinds can carry messages, voice-note payloads and call signalling, but live audio/video depends on WebRTC ICE/TURN/SFU and an IP route. Store-and-forward can carry a voice note or invitation; it cannot provide a disconnected live group call without a packetised media plane, jitter buffers, congestion control, route repair and a strict latency budget.
 6. **Infinite distance is impossible.** The engines use finite hop budgets, finite queues and finite packet lifetimes. Radio range, topology, interference, battery, permissions, sleep, congestion and missing relays can break any route. More devices can extend a connected path; they cannot guarantee unbounded range or delivery.
-7. **500+ capacity is unproven.** There is no 500-device hardware/load test, route-quality algorithm, MTU fragmentation/reassembly contract, ACK/retry/window protocol, congestion/backpressure design, route repair, fairness/relay quota or group multicast strategy.
+7. **500+ capacity is unproven.** There is no 500-device hardware/load test. **Partially addressed since this analysis:** route-quality scoring, neighbour route expiry, per-source relay quotas and the MTU fragmentation/reassembly contract are now implemented in `services/mesh` (see the 2026-09-15 pass at the end of this file). Still absent: the ACK/retry/window protocol, congestion/backpressure design, route repair and a group multicast strategy. None of this substitutes for the missing hardware test.
 
 ## 5 km / 500-device scenario
 
@@ -57,7 +57,7 @@ The honest product promise is **offline store-and-forward messaging and voice no
 
 1. Unify/version mesh crypto and envelope; add cross-client fixtures.
 2. Fix native forwarding, iOS compilation, discovery/permissions and route expiry.
-3. Add MTU-aware chunking, ACK/retry/backpressure and 3/10/50/100/500-device hardware tests.
+3. ~~Add MTU-aware chunking,~~ ACK/retry/backpressure and 3/10/50/100/500-device hardware tests. **MTU-aware chunking and reassembly are now implemented** (`services/mesh/fragment.go`, 2026-09-15); the ACK/retry/backpressure design and the device-count experiments remain open.
 4. Separate voice-note store-forward from live media; do not advertise offline video calls until latency/loss/battery tests pass.
 5. Fail closed in production: remove unsafe defaults, health-gate dependencies, configure ML/provider dependencies explicitly and add SBOM/vulnerability scans.
 
@@ -101,3 +101,17 @@ This closes the **source-completable layered-forwarding requirement**. It does n
 The renewed source audit identified device-key revocation as a genuine mesh lifecycle gap. It is now implemented in `services/mesh/node.go` and `services/mesh/routing.go`. A node can revoke only the exact Ed25519 public key already pinned for a device id; revocation immediately removes the peer route and advertised KEM session, rejects future signed beacons, and blocks unsigned legacy-beacon downgrade. `services/mesh/revocation_test.go` verifies normal admission, key-matched revocation, route withdrawal, signed re-entry rejection, unsigned downgrade rejection, and mismatched-key rejection. Race-enabled tests pass.
 
 The implementation is **local trust revocation**. Network-wide distribution of revocation decisions still requires a separately authenticated device-management channel, and physical radio validation remains environment-dependent. Those requirements remain outstanding rather than being falsely marked complete.
+
+## Mesh envelope versioning and MTU fragmentation — 2026-09-15
+
+Two further source-level mesh gaps were closed in this pass, both covered by executable tests in `services/mesh`.
+
+**Versioned envelope.** `Packet` now carries a `Version` field stamped with `EnvelopeVersion` (1). `UnmarshalPacket` rejects an envelope newer than this build supports, so a future incompatible format fails closed instead of being misparsed; version 0 is accepted for pre-versioning peers so a rolling upgrade does not partition the mesh. `Packet.Validate` also enforces route, identifier and fragment-metadata coherence before routing. Covered by `TestEnvelopeVersionGate` and `TestPacketValidateRejectsMalformed`.
+
+**MTU fragmentation and reassembly.** `fragment.go` splits a payload larger than `DefaultMaxPayload` (512 bytes) into fixed-size fragments, each encrypted with its own AEAD nonce and carried as an ordinary packet, so routing, TTL, hop counting, duplicate suppression, relay quotas and store-and-forward apply unchanged. The receiver reassembles under bounded memory (256 groups / 8 MiB) and time (5-minute expiry), ignores duplicate fragments, drops contradictory or out-of-range metadata, and verifies a sender-committed SHA-256 digest before delivery. A payload that fits one datagram keeps its original single-packet wire shape, preserving interoperability with pre-fragmentation peers. `Node.Send`/`Node.SendGroup` fragment automatically above the ceiling; `Node.OpenAssemblies` reports in-flight reassembly.
+
+Covered by ten tests in `services/mesh/fragment_test.go`, including an out-of-order multi-fragment round trip through the production node API across a three-node chain asserting exactly-once application delivery, plus duplicate handling, digest-mismatch rejection, contradictory-metadata rejection, bounded-memory refusal and incomplete-group expiry.
+
+**Latent data race fixed.** Race-enabled testing (which CI does not run) exposed a pre-existing race in `UDPTransport`: the receive goroutine read the inbound callback unlocked while `SetInbound` wrote it under the mutex. The reader now loads the callback under the lock and invokes it outside it. The full `services/mesh` suite passes under `go test -race`.
+
+**Still open, unchanged.** ACK/retry windows, congestion control, route repair, multipath selection, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices.

@@ -33,6 +33,10 @@ type inboundSetter interface {
 }
 
 // SetInbound installs the inbound packet callback (implements inboundSetter).
+//
+// The callback is read on the receive goroutine, so it is published under the
+// same mutex the reader holds while loading it (see UDPTransport.readLoop).
+// Assigning it unlocked would be a data race against a datagram in flight.
 func (t *UDPTransport) SetInbound(fn func(addr string, data []byte)) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

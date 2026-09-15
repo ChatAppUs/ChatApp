@@ -25,7 +25,7 @@ Assessment date: 2026-09-14. This register separates code that can be written an
 
 ### P1 reliability and scale
 
-- Mesh routing has finite TTL, queue size and packet lifetime. It has no complete MTU fragmentation/reassembly, ACK/retry window, route repair, congestion control, relay fairness, multipath selection or 500-device hardware test.
+- Mesh routing has finite TTL, queue size and packet lifetime. **MTU fragmentation/reassembly is now implemented** (see the 2026-09-15 pass at the end of this file): payloads above the 512-byte datagram ceiling are split into individually encrypted fragments and reassembled under bounded memory and time with a verified digest. Still absent: ACK/retry window, route repair, congestion control, multipath selection and the 500-device hardware test. Relay fairness is partially addressed by per-source token-bucket quotas.
 - The current Internet call stack is separate from the mesh. SFU/TURN/WebRTC cannot make a live call when every IP path is unavailable.
 - Radio discovery and permissions are platform-specific. Android Wi-Fi Direct/Bluetooth and iOS CoreBluetooth/local Wi-Fi need device state machines, background execution policy, reconnect handling and physical tests.
 - Source coverage is broad but production proof is incomplete: native mobile builds, app-store signing, push wake, crash reporting, SLO dashboards, soak tests, disaster recovery and restore drills remain release gates.
@@ -115,3 +115,17 @@ This closes the **source-completable layered-forwarding requirement**. It does n
 The renewed source audit identified device-key revocation as a genuine mesh lifecycle gap. It is now implemented in `services/mesh/node.go` and `services/mesh/routing.go`. A node can revoke only the exact Ed25519 public key already pinned for a device id; revocation immediately removes the peer route and advertised KEM session, rejects future signed beacons, and blocks unsigned legacy-beacon downgrade. `services/mesh/revocation_test.go` verifies normal admission, key-matched revocation, route withdrawal, signed re-entry rejection, unsigned downgrade rejection, and mismatched-key rejection. Race-enabled tests pass.
 
 The implementation is **local trust revocation**. Network-wide distribution of revocation decisions still requires a separately authenticated device-management channel, and physical radio validation remains environment-dependent. Those requirements remain outstanding rather than being falsely marked complete.
+
+## Mesh envelope versioning and MTU fragmentation — 2026-09-15
+
+Two further source-level mesh gaps were closed in this pass, both covered by executable tests in `services/mesh`.
+
+**Versioned envelope.** `Packet` now carries a `Version` field stamped with `EnvelopeVersion` (1). `UnmarshalPacket` rejects an envelope newer than this build supports, so a future incompatible format fails closed instead of being misparsed; version 0 is accepted for pre-versioning peers so a rolling upgrade does not partition the mesh. `Packet.Validate` also enforces route, identifier and fragment-metadata coherence before routing. Covered by `TestEnvelopeVersionGate` and `TestPacketValidateRejectsMalformed`.
+
+**MTU fragmentation and reassembly.** `fragment.go` splits a payload larger than `DefaultMaxPayload` (512 bytes) into fixed-size fragments, each encrypted with its own AEAD nonce and carried as an ordinary packet, so routing, TTL, hop counting, duplicate suppression, relay quotas and store-and-forward apply unchanged. The receiver reassembles under bounded memory (256 groups / 8 MiB) and time (5-minute expiry), ignores duplicate fragments, drops contradictory or out-of-range metadata, and verifies a sender-committed SHA-256 digest before delivery. A payload that fits one datagram keeps its original single-packet wire shape, preserving interoperability with pre-fragmentation peers. `Node.Send`/`Node.SendGroup` fragment automatically above the ceiling; `Node.OpenAssemblies` reports in-flight reassembly.
+
+Covered by ten tests in `services/mesh/fragment_test.go`, including an out-of-order multi-fragment round trip through the production node API across a three-node chain asserting exactly-once application delivery, plus duplicate handling, digest-mismatch rejection, contradictory-metadata rejection, bounded-memory refusal and incomplete-group expiry.
+
+**Latent data race fixed.** Race-enabled testing (which CI does not run) exposed a pre-existing race in `UDPTransport`: the receive goroutine read the inbound callback unlocked while `SetInbound` wrote it under the mutex. The reader now loads the callback under the lock and invokes it outside it. The full `services/mesh` suite passes under `go test -race`.
+
+**Still open, unchanged.** ACK/retry windows, congestion control, route repair, multipath selection, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices.

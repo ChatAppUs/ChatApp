@@ -42,6 +42,7 @@ type Node struct {
 	kem       *KeyExchange             // X25519 key agreement (per-peer session keys)
 	peerKEM   map[string]AdvertisedKEM // device id -> peer's advertised KEM key
 	replay    *ReplayFilter            // per-source anti-replay sequence windows
+	frags     *Reassembler             // MTU fragment reassembly (see fragment.go)
 
 	seqCtr int64
 	stop   chan struct{}
@@ -100,6 +101,7 @@ func NewNode(cfg NodeConfig) *Node {
 		kem:       NewKeyExchange(0),
 		peerKEM:   make(map[string]AdvertisedKEM),
 		replay:    NewReplayFilter(),
+		frags:     NewReassembler(),
 		stop:      make(chan struct{}),
 	}
 	// Wire the transport's inbound callback to this node. Any transport that
@@ -288,8 +290,12 @@ func (n *Node) IsPeerRevoked(deviceID string) bool {
 	return ok
 }
 
-// Send encrypts and enqueues a packet for a destination.
+// Send encrypts and enqueues a packet for a destination. A payload larger
+// than one radio datagram is fragmented automatically (see SendLarge).
 func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, error) {
+	if len(plaintext) > DefaultMaxPayload {
+		return n.SendLarge(kind, dst, plaintext, false)
+	}
 	p := NewPacket(kind, n.DeviceID, dst, n.maxHops)
 	key := n.sessionKeyFor(dst)
 	ct, nonce, err := Encrypt(key, plaintext)
@@ -307,6 +313,9 @@ func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, erro
 
 // SendGroup encrypts and enqueues a group message (broadcast to group id).
 func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (string, error) {
+	if len(plaintext) > DefaultMaxPayload {
+		return n.SendLarge(kind, groupID, plaintext, true)
+	}
 	p := NewPacket(kind, n.DeviceID, "", n.maxHops)
 	p.GroupID = groupID
 	ct, nonce, err := Encrypt(n.Key, plaintext)
@@ -322,8 +331,66 @@ func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (str
 	return p.ID, nil
 }
 
+// SendLarge splits a payload that exceeds one radio datagram into
+// MTU-bounded, individually encrypted fragments and enqueues every one. It
+// returns the fragment-group id, which identifies the transfer but is not
+// itself a packet id. The receiver reassembles the parts under bounded memory
+// and time and delivers the payload exactly once, after verifying the digest
+// the sender committed (see fragment.go).
+//
+// target is a destination device id for unicast, or a group id when group is
+// true. A payload that turns out to fit in one datagram falls through to the
+// ordinary single-packet path, so callers need not pre-measure.
+func (n *Node) SendLarge(kind PacketKind, target string, plaintext []byte, group bool) (string, error) {
+	chunks, fragID, sum, err := SplitPayload(plaintext, DefaultMaxPayload)
+	if err != nil {
+		return "", err
+	}
+	if fragID == "" {
+		if group {
+			return n.SendGroup(kind, target, plaintext)
+		}
+		return n.Send(kind, target, plaintext)
+	}
+	key := n.Key
+	if !group {
+		key = n.sessionKeyFor(target)
+	}
+	for i := range chunks {
+		ct, nonce, err := Encrypt(key, chunks[i])
+		if err != nil {
+			return "", err
+		}
+		p := NewPacket(kind, n.DeviceID, "", n.maxHops)
+		if group {
+			p.GroupID = target
+		} else {
+			p.Dst = target
+		}
+		p.Payload = ct
+		p.Nonce = nonce
+		p.Seq = n.nextSeq()
+		p.FragIndex = i
+		p.FragTotal = len(chunks)
+		p.FragID = fragID
+		p.FragSum = sum
+		n.routes.Seen(p.ID)
+		n.queue.Enqueue(p)
+	}
+	n.flush()
+	return fragID, nil
+}
+
+// OpenAssemblies reports how many fragment groups are awaiting missing parts.
+// Exposed for status endpoints and diagnostics.
+func (n *Node) OpenAssemblies() int { return n.frags.Open() }
+
 // route forwards a packet toward its destination (or delivers locally).
 func (n *Node) route(p *Packet) {
+	// Reject a malformed or future-format envelope before any routing work.
+	if err := p.Validate(); err != nil {
+		return
+	}
 	// Dedup with reach improvement: a later copy carrying strictly more
 	// remaining TTL is forwarded (it reaches nodes earlier copies could not).
 	// Local delivery happens only on the FIRST copy: improved duplicates
@@ -350,7 +417,17 @@ func (n *Node) route(p *Packet) {
 				if p.Seq != 0 && !n.replay.Check(p.Src, p.Seq) {
 					return
 				}
-				n.handler(p, pt)
+				// A fragmented payload is withheld from the application
+				// until every part has arrived and the digest verifies. A
+				// payload that was sent whole passes straight through.
+				full, complete, err := n.frags.Add(p, pt)
+				if err != nil {
+					return
+				}
+				if !complete {
+					return
+				}
+				n.handler(p, full)
 			}
 		}
 		return
