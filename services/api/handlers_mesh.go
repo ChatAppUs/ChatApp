@@ -90,6 +90,12 @@ func (a *App) handleMeshRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "unsupported mesh transport")
 		return
 	}
+	// Enforce the admin operational policy (§110): a disabled mesh or a
+	// deprecated transport is refused at admission.
+	if gate := a.meshPolicyGate(r, req.Transport); gate != "" {
+		writeErr(w, http.StatusForbidden, gate)
+		return
+	}
 	subject := meshSubject(r)
 	if subject == "" {
 		writeErr(w, http.StatusUnauthorized, "mesh subject is missing")
@@ -136,13 +142,25 @@ func (a *App) handleMeshSend(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// Enforce the admin operational policy (§110): a disabled mesh or a
+	// deprecated transport is refused, and payload/TTL ceilings are bounded
+	// by policy rather than only by the hard-coded constants.
+	if gate := a.meshPolicyGate(r, ""); gate != "" {
+		writeErr(w, http.StatusForbidden, gate)
+		return
+	}
+	maxPayload, maxTTL, err := a.meshPolicyLimits(r)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to read mesh policy")
+		return
+	}
 	if len(req.PacketID) == 0 || len(req.PacketID) > 128 || strings.ContainsAny(req.PacketID, "\r\n\t") ||
-		!validMeshDeviceKey(req.DestKey) || len(req.Payload) == 0 || len(req.Payload) > meshMaxPayloadBytes {
+		!validMeshDeviceKey(req.DestKey) || len(req.Payload) == 0 || int64(len(req.Payload)) > maxPayload {
 		writeErr(w, http.StatusBadRequest, "invalid packet_id, destination or ciphertext payload")
 		return
 	}
-	if req.TTL <= 0 || req.TTL > 16 {
-		writeErr(w, http.StatusBadRequest, "ttl must be between 1 and 16")
+	if req.TTL <= 0 || req.TTL > maxTTL {
+		writeErr(w, http.StatusBadRequest, "ttl must be between 1 and the policy ceiling")
 		return
 	}
 	subject := meshSubject(r)
@@ -169,7 +187,7 @@ func (a *App) handleMeshSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var inserted string
-	err := a.db.QueryRow(r.Context(),
+	err = a.db.QueryRow(r.Context(),
 		`INSERT INTO mesh_packets (packet_id, sender_device, dest_device, payload, ttl, state, expires_at)
 		 VALUES ($1, $2, $3, $4, $5, 'queued', now() + interval '7 days')
 		 ON CONFLICT (packet_id) DO NOTHING
@@ -282,6 +300,12 @@ func (a *App) handleMeshRelay(w http.ResponseWriter, r *http.Request) {
 	relayKey := meshDeviceHeader(r)
 	if subject == "" || !validMeshDeviceKey(relayKey) {
 		writeErr(w, http.StatusBadRequest, "X-Mesh-Device must identify the relay device")
+		return
+	}
+	// Enforce the admin operational policy (§110): a disabled mesh refuses
+	// relay admission.
+	if gate := a.meshPolicyGate(r, ""); gate != "" {
+		writeErr(w, http.StatusForbidden, gate)
 		return
 	}
 	var relayID string
