@@ -180,6 +180,11 @@ func main() {
 	mux.HandleFunc("GET /api/admin/experiments/{key}/results", app.requireAdminPerm("platform.manage")(app.handleAdminExperimentResults))
 	mux.HandleFunc("GET /api/admin/qoe/summary", app.requireAdminPerm("platform.manage")(app.handleAdminQoESummary))
 	mux.HandleFunc("GET /api/admin/call-quality/summary", app.requireAdminPerm("platform.manage")(app.handleAdminCallQualitySummary))
+	// Admin control of mesh features (§110): operational policy only — feature
+	// enablement, version requirements, abuse limits, transport deprecation.
+	// Admins never hold mesh keys or see plaintext.
+	mux.HandleFunc("GET /api/admin/mesh/policy", app.requireAdminPerm("platform.manage")(app.handleAdminGetMeshPolicy))
+	mux.HandleFunc("PUT /api/admin/mesh/policy", app.requireAdminPerm("platform.manage")(app.handleAdminSetMeshPolicy))
 
 	// posts, stories, reels
 	mux.HandleFunc("POST /api/posts", app.requireAuth(app.handleCreatePost))
