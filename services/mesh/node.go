@@ -14,6 +14,8 @@ package mesh
 // it zero to use the scalable default (see scale.go).
 
 import (
+	"bytes"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -35,6 +37,7 @@ type Node struct {
 	maxHops   int
 	signer    *SigningKey
 	peerKeys  map[string][]byte        // device id -> pinned Ed25519 public key (TOFU)
+	revoked   map[string][]byte        // device id -> revoked pinned Ed25519 key
 	limiter   *RelayLimiter            // per-source relay quota (abuse prevention)
 	kem       *KeyExchange             // X25519 key agreement (per-peer session keys)
 	peerKEM   map[string]AdvertisedKEM // device id -> peer's advertised KEM key
@@ -92,6 +95,7 @@ func NewNode(cfg NodeConfig) *Node {
 		maxHops:   maxHops,
 		signer:    signer,
 		peerKeys:  make(map[string][]byte),
+		revoked:   make(map[string][]byte),
 		limiter:   NewRelayLimiter(DefaultRelayQuota()),
 		kem:       NewKeyExchange(0),
 		peerKEM:   make(map[string]AdvertisedKEM),
@@ -197,6 +201,15 @@ func (n *Node) HandleInbound(addr string, data []byte) {
 	// Try a legacy (unsigned) beacon first; signed beacons have a different
 	// top-level shape and fall through to the verified path.
 	if b, err := UnmarshalBeacon(data); err == nil && b.DeviceID != "" {
+		n.mu.Lock()
+		_, revoked := n.revoked[b.DeviceID]
+		_, pinned := n.peerKeys[b.DeviceID]
+		n.mu.Unlock()
+		// A pinned identity may not downgrade to an unsigned beacon, and a
+		// revoked identity may not re-enter through legacy discovery.
+		if revoked || pinned {
+			return
+		}
 		n.routes.Upsert(b)
 		// A (re)discovered neighbour is exactly when store-and-forward
 		// must drain: packets queued while the peer was out of range or
@@ -209,7 +222,18 @@ func (n *Node) HandleInbound(addr string, data []byte) {
 	// before trusting the advertised route. A mismatch (a peer impersonating
 	// an already-known device id with a different key) is rejected.
 	if sb, err := UnmarshalSignedBeacon(data); err == nil && len(sb.Sig) > 0 {
-		if b, err := VerifySignedBeacon(sb, n.peerKeys); err == nil {
+		n.mu.Lock()
+		_, revoked := n.revoked[sb.Beacon.DeviceID]
+		var b *Beacon
+		var verifyErr error
+		if !revoked {
+			b, verifyErr = VerifySignedBeacon(sb, n.peerKeys)
+		}
+		n.mu.Unlock()
+		if revoked {
+			return
+		}
+		if verifyErr == nil {
 			n.routes.Upsert(b)
 			// Pin the peer's advertised key-agreement key (signed, so it is
 			// bound to the verified device identity). A newer epoch replaces
@@ -231,6 +255,37 @@ func (n *Node) HandleInbound(addr string, data []byte) {
 		return
 	}
 	n.route(p)
+}
+
+// RevokePeer permanently rejects a previously pinned device key for this
+// node and immediately withdraws its route and session advertisement. The
+// expected public key must match the pinned key so a device id alone cannot
+// revoke an unrelated identity.
+func (n *Node) RevokePeer(deviceID string, expectedPub []byte) error {
+	if deviceID == "" || len(expectedPub) == 0 {
+		return errors.New("mesh: device id and public key are required")
+	}
+	n.mu.Lock()
+	pinned, ok := n.peerKeys[deviceID]
+	if !ok || !bytes.Equal(pinned, expectedPub) {
+		n.mu.Unlock()
+		return errors.New("mesh: public key does not match pinned device identity")
+	}
+	n.revoked[deviceID] = append([]byte(nil), expectedPub...)
+	delete(n.peerKEM, deviceID)
+	n.mu.Unlock()
+	n.routes.Remove(deviceID)
+	return nil
+}
+
+// IsPeerRevoked reports whether this node has locally revoked a peer identity.
+// Distribution of this decision requires a separate authenticated management
+// channel and is intentionally not implied by local revocation.
+func (n *Node) IsPeerRevoked(deviceID string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	_, ok := n.revoked[deviceID]
+	return ok
 }
 
 // Send encrypts and enqueues a packet for a destination.

@@ -64,6 +64,14 @@ func (rt *RouteTable) SetRelay(deviceID string, ok bool) {
 	}
 }
 
+// Remove immediately withdraws a peer from route selection. Trust lifecycle
+// operations use this instead of waiting for beacon expiry.
+func (rt *RouteTable) Remove(deviceID string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	delete(rt.neigh, deviceID)
+}
+
 // Neighbors returns a snapshot of known neighbors.
 func (rt *RouteTable) Neighbors() []*Neighbor {
 	rt.mu.Lock()
