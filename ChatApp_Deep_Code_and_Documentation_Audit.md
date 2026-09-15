@@ -212,4 +212,54 @@ Covered by ten tests in `services/mesh/fragment_test.go`, including an out-of-or
 
 **Latent data race fixed.** Race-enabled testing (which CI does not run) exposed a pre-existing race in `UDPTransport`: the receive goroutine read the inbound callback unlocked while `SetInbound` wrote it under the mutex. The reader now loads the callback under the lock and invokes it outside it. The full `services/mesh` suite passes under `go test -race`.
 
-**Still open, unchanged.** ACK/retry windows, congestion control, route repair, multipath selection, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices.
+**Still open (narrowed 2026-09-15).** Congestion control, route repair, multipath *selection*, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices. **ACK/retry with exponential backoff, user-visible delivery states (`queued`/`relaying`/`acked`/`expired`/`dead_letter`) and priority traffic classes are now implemented** — see the 2026-09-15 reliability pass at the end of this file.
+
+---
+
+## 2026-09-15 pass — mesh reliable delivery (ACK / retry / delivery states / priority classes)
+
+A fresh reset of `main` re-audited every root specification file against the executable
+source. The ACK/retry/delivery-state/priority-class cluster this file lists as outstanding
+was confirmed genuinely absent (a `grep` for `ack`, `retry`, `dead.letter` and `priority`
+across `services/mesh` returned no implementation) and is now implemented in first-party
+Go, standard library only.
+
+- **Acknowledgements and bounded retries** — `services/mesh/reliability.go` adds a
+  sender-side transfer state machine with exponential backoff capped at 60 s and a
+  5-attempt budget. Each attempt is a fresh packet with a fresh id and a fresh AEAD nonce,
+  so a retry is never suppressed by intermediate-node duplicate suppression and no two
+  transmissions of one transfer reuse a (key, nonce) pair. The transfer id travels in a new
+  `xfer` envelope field.
+- **Exactly-once application delivery** — the receiver collapses retried copies to a single
+  delivery while acknowledging *every* copy, so a lost acknowledgement converges instead of
+  stalling the sender.
+- **Alternate-path retry** — a retransmission leads with a different path: the neighbour
+  that failed to produce an acknowledgement is deferred to the end of the candidate list
+  while the multi-path fan-out is preserved. This pass also found and fixed a defect that
+  clobbered the recorded hop before the retry could consult it, silently disabling the
+  deferral.
+- **User-visible delivery states** — `queued` → `relaying` → `acked`, with terminal
+  `expired` (payload lifetime exhausted) and `dead_letter` (retry budget exhausted) reported
+  distinctly rather than conflated.
+- **Priority traffic classes** — `services/mesh/priority.go` and `pfifo.go` add a forwarding
+  buffer drained control → text → voice → media, FIFO inside a class, bounded by packet
+  count *and* real bytes, evicting lowest-priority-first under pressure and never displacing
+  control traffic. The previous count-bounded single-class queue could let bulk media crowd
+  out call signalling and acknowledgements.
+- **Tests** — `services/mesh/reliability_test.go` (18 new tests) covers the state machine,
+  backoff, expiry versus dead-letter, exactly-once delivery, bounded retention, the byte
+  bound, eviction ordering and backpressure refusal, plus an end-to-end acknowledgement round
+  trip between two real nodes over sockets and an alternate-path retry assertion.
+  `services/mesh` passes `go build`, `go vet`, `gofmt` and its full suite under `go test -race`,
+  and 20 consecutive non-race runs (the suite had been failing intermittently — which is how
+  the clobbering defect surfaced).
+
+**Still absent, and not claimed:** congestion control, route repair, multipath selection
+(the buffer fans out; it does not choose), group sender-key rotation, and group
+acknowledgements — group payloads remain best-effort because a group ACK needs per-member
+keys and per-member group key management. Radio handshakes still require real devices.
+
+**Validation:** 21/21 Python E2E suites pass with zero failures against a live API on a fresh
+PostgreSQL 15.19 with all 39 migrations (214 tables), with the Go SFU and all five strict
+C++17 data planes running; route parity 153 files / 547 routes; feature registry 26 features
+across 7 required clients.

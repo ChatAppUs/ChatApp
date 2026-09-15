@@ -28,6 +28,11 @@ const (
 	KindVoiceMessage PacketKind = "voice_message"
 	// KindCallSignal is call-control signaling (offer/answer/ice/hangup).
 	KindCallSignal PacketKind = "call_signal"
+	// KindAck is an end-to-end delivery acknowledgement for a reliable
+	// transfer (see reliability.go). It carries the acknowledged transfer id
+	// in AckFor and no payload, and is drained ahead of data traffic because
+	// a delayed acknowledgement stalls a sender's whole retry budget.
+	KindAck PacketKind = "ack"
 )
 
 // Packet is the encrypted envelope carried hop-to-hop across the mesh.
@@ -65,6 +70,16 @@ type Packet struct {
 	FragTotal int    `json:"frag_total,omitempty"`
 	FragID    string `json:"frag_id,omitempty"`
 	FragSum   []byte `json:"frag_sum,omitempty"`
+	// AckFor is the reliable-transfer id this packet acknowledges. It is set
+	// only on KindAck packets; every retransmission of a transfer carries the
+	// SAME transfer id, so an acknowledgement for any copy settles the
+	// transfer even when an earlier copy was lost.
+	AckFor string `json:"ack_for,omitempty"`
+	// Xfer identifies the reliable transfer this packet belongs to (see
+	// reliability.go). Every retransmission of one transfer shares a Xfer
+	// value but carries a fresh packet id and AEAD nonce, so intermediate
+	// duplicate suppression does not swallow a retry.
+	Xfer string `json:"xfer,omitempty"`
 }
 
 // EnvelopeVersion is the wire format version stamped on packets this build
@@ -113,6 +128,11 @@ func (p *Packet) Validate() error {
 		}
 	} else if p.FragIndex != 0 || p.FragTotal < 0 {
 		return ErrFragmentInvalid
+	}
+	// An acknowledgement must name the transfer it settles; a nameless ACK
+	// carries no meaning and would only consume relay quota.
+	if p.Kind == KindAck && p.AckFor == "" {
+		return errors.New("mesh: acknowledgement has no transfer id")
 	}
 	return nil
 }

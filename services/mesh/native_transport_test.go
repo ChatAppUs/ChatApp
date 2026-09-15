@@ -127,8 +127,8 @@ func TestAutoTransportStoreAndForwardWhenNoLink(t *testing.T) {
 	if _, err := node.Send(KindMessage, "dev-peer", []byte("queued while offline")); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	if node.queue.Len() != 1 {
-		t.Fatalf("expected 1 packet held for store-and-forward, got %d", node.queue.Len())
+	if node.pfifo.Len() != 1 {
+		t.Fatalf("expected 1 packet held for store-and-forward, got %d", node.pfifo.Len())
 	}
 }
 

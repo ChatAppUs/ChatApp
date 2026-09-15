@@ -645,3 +645,45 @@ This closes the **source-completable layered-forwarding requirement**. It does n
 The renewed source audit identified device-key revocation as a genuine mesh lifecycle gap. It is now implemented in `services/mesh/node.go` and `services/mesh/routing.go`. A node can revoke only the exact Ed25519 public key already pinned for a device id; revocation immediately removes the peer route and advertised KEM session, rejects future signed beacons, and blocks unsigned legacy-beacon downgrade. `services/mesh/revocation_test.go` verifies normal admission, key-matched revocation, route withdrawal, signed re-entry rejection, unsigned downgrade rejection, and mismatched-key rejection. Race-enabled tests pass.
 
 The implementation is **local trust revocation**. Network-wide distribution of revocation decisions still requires a separately authenticated device-management channel, and physical radio validation remains environment-dependent. Those requirements remain outstanding rather than being falsely marked complete.
+
+## 2026-09-15 pass — mesh reliable delivery (ACK / retry / delivery states / priority classes)
+
+A fresh reset of `main` re-audited this document against the executable source. The
+ACK/retry/delivery-state/priority-class cluster the mesh documents list as outstanding was
+confirmed genuinely absent and is now implemented in first-party Go, standard library only:
+
+- **Acknowledgements, bounded retries and backoff** — `services/mesh/reliability.go` adds a
+  sender-side transfer state machine: a new `ack` packet kind, 5 bounded retries with
+  exponential backoff capped at 60 s, and a new `xfer`/`ack_for` envelope field carrying the
+  transfer id. Each attempt is a fresh packet with a fresh AEAD nonce, so a retry is never
+  suppressed by intermediate-node duplicate suppression and no two transmissions of one
+  transfer reuse a (key, nonce) pair.
+- **User-visible delivery states** — `queued` → `relaying` → `acked`, with terminal `expired`
+  (payload lifetime exhausted) and `dead_letter` (retry budget exhausted) reported distinctly
+  rather than conflated.
+- **Exactly-once application delivery** — the receiver collapses retried copies to a single
+  delivery while acknowledging every copy, so a lost acknowledgement converges.
+- **Alternate-path retry** — a retransmission defers the neighbour that failed to produce an
+  acknowledgement to the end of the candidate list, while preserving the multi-path fan-out.
+  This pass also found and fixed a defect that clobbered the recorded hop before the retry
+  could consult it, silently disabling the deferral; the mesh suite had been failing
+  intermittently, which is how it surfaced.
+- **Priority traffic classes and queue policy** — `services/mesh/priority.go` and `pfifo.go`
+  add a forwarding buffer drained control → text → voice → media, FIFO inside a class, bounded
+  by packet count *and* bytes, evicting lowest-priority-first and never displacing control
+  traffic. The previous count-bounded single-class queue could let bulk media crowd out call
+  signalling and acknowledgements.
+- **Tests** — `services/mesh/reliability_test.go` (18 tests) covers the state machine, backoff,
+  expiry versus dead-letter, exactly-once delivery, bounded retention, the byte bound, eviction
+  ordering and backpressure refusal, plus an end-to-end acknowledgement round trip between two
+  real nodes over sockets and an alternate-path retry assertion.
+
+**Still absent, and not claimed:** congestion control, route repair, multipath *selection*
+(the buffer fans out; it does not choose), group sender-key rotation, group acknowledgements
+(group payloads remain best-effort — a group ACK needs per-member keys), and every on-device
+radio experiment. Physical Bluetooth/Wi-Fi Direct handshakes still require real devices.
+
+**Validation:** 21/21 Python E2E suites pass with zero failures against a live API on a fresh
+PostgreSQL 15.19 with all 39 migrations (214 tables), the Go SFU and all five strict C++17 data
+planes running; `services/mesh` green under `go test -race` and across 20 consecutive runs;
+route parity 153 files / 547 routes; feature registry 26 features across 7 required clients.

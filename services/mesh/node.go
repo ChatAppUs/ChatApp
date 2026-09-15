@@ -43,6 +43,8 @@ type Node struct {
 	peerKEM   map[string]AdvertisedKEM // device id -> peer's advertised KEM key
 	replay    *ReplayFilter            // per-source anti-replay sequence windows
 	frags     *Reassembler             // MTU fragment reassembly (see fragment.go)
+	pfifo     *PriorityQueue           // priority-ordered forwarding buffer (see pfifo.go)
+	transfers *transferTracker         // reliable delivery state machine (see reliability.go)
 
 	seqCtr int64
 	stop   chan struct{}
@@ -91,7 +93,8 @@ func NewNode(cfg NodeConfig) *Node {
 		Kind:      cfg.Kind,
 		transport: cfg.Transport,
 		routes:    NewRouteTable(),
-		queue:     NewQueue(1000, 7*24*time.Hour),
+		pfifo:     NewPriorityQueue(0, 0, 7*24*time.Hour),
+		transfers: NewTransferTracker(ackTimeout, maxTransferAttempts, transferTTL),
 		handler:   cfg.Handler,
 		maxHops:   maxHops,
 		signer:    signer,
@@ -114,12 +117,14 @@ func NewNode(cfg NodeConfig) *Node {
 	return n
 }
 
-// Start begins the discovery beacon loop.
+// Start begins the discovery beacon loop and the reliable-delivery retry
+// state machine.
 func (n *Node) Start() {
 	if n.transport == nil {
 		return
 	}
 	go n.beaconLoop()
+	go n.reliabilityLoop()
 }
 
 // Stop halts the node.
@@ -306,7 +311,9 @@ func (n *Node) Send(kind PacketKind, dst string, plaintext []byte) (string, erro
 	p.Nonce = nonce
 	p.Seq = n.nextSeq()
 	n.routes.Seen(p.ID)
-	n.queue.Enqueue(p)
+	if err := n.pfifo.Enqueue(p); err != nil {
+		return "", err
+	}
 	n.flush()
 	return p.ID, nil
 }
@@ -326,7 +333,9 @@ func (n *Node) SendGroup(kind PacketKind, groupID string, plaintext []byte) (str
 	p.Nonce = nonce
 	p.Seq = n.nextSeq()
 	n.routes.Seen(p.ID)
-	n.queue.Enqueue(p)
+	if err := n.pfifo.Enqueue(p); err != nil {
+		return "", err
+	}
 	n.flush()
 	return p.ID, nil
 }
@@ -375,7 +384,12 @@ func (n *Node) SendLarge(kind PacketKind, target string, plaintext []byte, group
 		p.FragID = fragID
 		p.FragSum = sum
 		n.routes.Seen(p.ID)
-		n.queue.Enqueue(p)
+		// A fragment is ordinary traffic: if the buffer is saturated it is
+		// dropped rather than displacing higher-priority packets. The
+		// receiver's reassembly group expires on its own if parts never
+		// arrive, so a dropped fragment degrades to a failed transfer rather
+		// than leaking memory.
+		_ = n.pfifo.Enqueue(p)
 	}
 	n.flush()
 	return fragID, nil
@@ -412,7 +426,16 @@ func (n *Node) route(p *Packet) {
 	// authenticates (see replay.go): a forged packet must never be able to
 	// advance or poison the receiver's replay window.
 	if p.Dst == n.DeviceID || (p.Dst == "" && p.GroupID != "") {
-		if first && n.handler != nil {
+		// An acknowledgement settles a reliable transfer and is consumed
+		// here. It is end-to-end control with no payload, so it is neither
+		// fragmented nor handed to the application handler.
+		if p.Kind == KindAck {
+			if first && p.AckFor != "" {
+				n.transfers.Ack(p.AckFor)
+			}
+			return
+		}
+		if n.handler != nil {
 			if pt, err := n.decryptPayload(p); err == nil {
 				if p.Seq != 0 && !n.replay.Check(p.Src, p.Seq) {
 					return
@@ -427,7 +450,25 @@ func (n *Node) route(p *Packet) {
 				if !complete {
 					return
 				}
-				n.handler(p, full)
+				// A reliable transfer delivers to the application exactly
+				// once no matter how many copies were retransmitted, and
+				// EVERY copy is acknowledged so a lost ACK converges. The
+				// acknowledgement deliberately does not depend on `first`:
+				// a retry carries a new packet id, so its copy is `first`
+				// again and must be re-acked even though the transfer was
+				// already delivered.
+				if p.Xfer != "" {
+					if n.transfers.MarkDelivered(p.Xfer) {
+						n.handler(p, full)
+					}
+					n.sendAck(p.Src, p.Xfer)
+					return
+				}
+				// Best-effort / legacy packet: first copy only, so an
+				// improved-TTL duplicate never re-delivers.
+				if first {
+					n.handler(p, full)
+				}
 			}
 		}
 		return
@@ -442,64 +483,115 @@ func (n *Node) route(p *Packet) {
 	}
 	p.TTL--
 	p.Hops++
-	n.queue.Enqueue(p)
+	if err := n.pfifo.Enqueue(p); err != nil {
+		// The buffer refused the packet: it is saturated with traffic at
+		// least as important as this one. Dropping is the correct backpressure
+		// signal — the origin's retry logic will notice the missing
+		// acknowledgement and try again.
+		return
+	}
 	n.flush()
 }
 
-// flush attempts to deliver queued packets to known neighbors, ordered by
-// route quality: relay consent first, then link throughput, then freshness
-// (see Neighbor.Score). The packet's final destination is always tried even
-// if it does not consent to relay others' traffic.
+// flush drains the forwarding buffer in priority order and hands each packet
+// to the radio (see flushTo). A packet with no route yet is re-buffered for
+// store-and-forward rather than dropped.
 func (n *Node) flush() {
 	if n.transport == nil {
 		return
 	}
-	now := time.Now()
-	for _, p := range n.queue.Pending(now) {
-		neighbors := n.routes.Neighbors()
-		// Destination-aware: when the destination is itself a known
-		// neighbour, deliver directly and skip flooding.
-		direct := (*Neighbor)(nil)
-		for i := range neighbors {
-			if neighbors[i].DeviceID == p.Dst {
-				direct = neighbors[i]
-				break
-			}
-		}
-		sent := false
-		if direct != nil {
-			if data, err := p.Marshal(); err == nil {
-				if err := n.transport.Send(direct.Addr, data); err == nil {
-					sent = true
-				}
-			}
-		}
+	for _, p := range n.pfifo.Drain(flushBudget) {
+		sent := n.flushTo(p)
 		if !sent {
-			// Controlled flooding: hand the packet to every eligible
-			// neighbour (relay consent required, the final destination
-			// always tried). Upstream dedup (RouteTable.Seen) bounds the
-			// flood, so multi-path topologies make progress from every
-			// branch instead of betting on a single score-chosen hop.
-			sort.Slice(neighbors, func(i, j int) bool {
-				return neighbors[i].Score(now) > neighbors[j].Score(now)
-			})
-			for _, nb := range neighbors {
-				if !nb.RelayOK && nb.DeviceID != p.Dst {
-					continue
-				}
-				data, err := p.Marshal()
-				if err != nil {
-					continue
-				}
-				if err := n.transport.Send(nb.Addr, data); err == nil {
-					sent = true
-				}
+			// No route yet: keep it buffered for store-and-forward rather
+			// than dropping it. Re-enqueueing re-derives the traffic class,
+			// so priority order survives the round trip.
+			if err := n.pfifo.Enqueue(p); err != nil {
+				return
 			}
-		}
-		if sent {
-			n.queue.Remove(p.ID)
 		}
 	}
+}
+
+// flushTo hands one packet to the radio: directly to the destination when it is
+// a known neighbour, otherwise by controlled flooding to every eligible
+// neighbor.
+//
+// A RETRY prefers an alternate path. When a transfer's previous attempt went to
+// a particular neighbor and the acknowledgement never arrived, re-handing the
+// packet to that same neighbor is the least promising option — the likely
+// failure is that hop, not the origin. So a retransmission of a reliable
+// transfer skips its previous hop when any other eligible neighbor exists,
+// which is the alternate-path requirement and is what lets a transfer survive
+// one relay disappearing.
+func (n *Node) flushTo(p *Packet) bool {
+	neighbors := n.routes.Neighbors()
+	now := time.Now()
+	// Destination-aware: when the destination is itself a known neighbour,
+	// deliver directly and skip flooding.
+	for i := range neighbors {
+		if neighbors[i].DeviceID == p.Dst {
+			return n.sendTo(neighbors[i].Addr, p)
+		}
+	}
+	// Alternate-path retry: look up the hop the previous attempt used.
+	avoid := ""
+	if p.Xfer != "" {
+		if view, ok := n.transfers.Get(p.Xfer); ok && view.Attempts > 1 {
+			avoid = view.LastHop
+		}
+	}
+	// Controlled flooding: hand the packet to every eligible neighbour (relay
+	// consent required, the final destination always tried). Upstream dedup
+	// (RouteTable.Seen) bounds the flood, so multi-path topologies make
+	// progress from every branch instead of betting on a single score-chosen
+	// hop.
+	sort.Slice(neighbors, func(i, j int) bool {
+		return neighbors[i].Score(now) > neighbors[j].Score(now)
+	})
+	// Order the candidate list so a retry leads with a DIFFERENT path: the hop
+	// that already failed to produce an acknowledgement is moved to the back,
+	// but the fan-out itself is preserved. This keeps the reliability gain
+	// without weakening the multi-path redundancy the flooding depends on.
+	if avoid != "" {
+		ordered := make([]*Neighbor, 0, len(neighbors))
+		var deferred []*Neighbor
+		for _, nb := range neighbors {
+			if nb.DeviceID == avoid {
+				deferred = append(deferred, nb)
+				continue
+			}
+			ordered = append(ordered, nb)
+		}
+		neighbors = append(ordered, deferred...)
+	}
+	sent := false
+	for _, nb := range neighbors {
+		if !nb.RelayOK && nb.DeviceID != p.Dst {
+			continue
+		}
+		if n.sendTo(nb.Addr, p) {
+			// Record only the FIRST hop an attempt reached: that is the
+			// primary path, and it is the one a retry should avoid. Later
+			// fan-out targets must not overwrite it, or the deferral below
+			// would chase the last-tried neighbour instead of the one that
+			// already let us down.
+			if !sent && p.Xfer != "" {
+				n.transfers.NoteHop(p.Xfer, nb.DeviceID, p.ID)
+			}
+			sent = true
+		}
+	}
+	return sent
+}
+
+// sendTo marshals and transmits one packet to one address.
+func (n *Node) sendTo(addr string, p *Packet) bool {
+	data, err := p.Marshal()
+	if err != nil {
+		return false
+	}
+	return n.transport.Send(addr, data) == nil
 }
 
 // nextSeq returns the next per-sender sequence number (monotonic, used by

@@ -65,8 +65,17 @@ jobs:
         run: |
           set -euo pipefail
           for service in services/api services/mesh services/sfu; do
-            (cd "$service" && go test ./... && go vet ./...)
+            (cd "$service" && go build ./... && go vet ./... && go test ./... )
           done
+          # The race detector is run in addition to the plain suite, because CI
+          # has historically omitted it and that is exactly how the mesh
+          # receive-callback race and the alternate-path-retry defect reached
+          # main behind a green build.
+          (cd services/mesh && go test -race ./...)
+          # A formatter check keeps the Go sources reviewable. Only the mesh
+          # package is enforced today; services/api has pre-existing gofmt
+          # drift that predates this workflow and is tracked separately.
+          test -z "$(cd services/mesh && gofmt -l .)"
       - name: Test Rust services
         shell: bash
         run: |

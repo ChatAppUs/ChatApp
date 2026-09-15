@@ -125,7 +125,9 @@ func (n *Node) SendVia(kind PacketKind, path []string, plaintext []byte) (string
 	p.Payload = nil
 	p.Nonce = nil
 	n.routes.Seen(p.ID)
-	n.queue.Enqueue(p)
+	if err := n.pfifo.Enqueue(p); err != nil {
+		return "", err
+	}
 	n.flush()
 	return p.ID, nil
 }

@@ -118,4 +118,37 @@ Covered by ten tests in `services/mesh/fragment_test.go`, including an out-of-or
 
 **Latent data race fixed.** Race-enabled testing (which CI does not run) exposed a pre-existing race in `UDPTransport`: the receive goroutine read the inbound callback unlocked while `SetInbound` wrote it under the mutex. The reader now loads the callback under the lock and invokes it outside it. The full `services/mesh` suite passes under `go test -race`.
 
-**Still open, unchanged.** ACK/retry windows, congestion control, route repair, multipath selection, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices.
+**Still open (narrowed 2026-09-15).** Congestion control, route repair, multipath *selection*, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices. **ACK/retry with exponential backoff, user-visible delivery states (`queued`/`relaying`/`acked`/`expired`/`dead_letter`) and priority traffic classes are now implemented** — see the 2026-09-15 reliability pass at the end of this file.
+
+---
+
+## 2026-09-15 pass — reliability requirements 4 and 5 (ACKs, retries, receipts, backoff, priority classes, dead-letter/expiry)
+
+This file's mandate list requires, as requirement 4, "ACKs, bounded retries, duplicate IDs,
+delivery receipts, route repair, backoff, congestion control, priority classes and a
+dead-letter/expiry state", and as requirement 5, relay fairness and queue policy. A fresh
+reset of `main` re-audited the source and found the ACK/retry/receipt/backoff/priority/
+dead-letter half of that list genuinely absent; it is now implemented in first-party Go
+(standard library only) across `services/mesh/reliability.go`, `priority.go`, `pfifo.go`,
+`node_reliable.go` and `reliability_test.go`.
+
+- **ACKs and delivery receipts** — a new `ack` packet kind carries the acknowledged transfer
+  id in a new `ack_for` envelope field and is validated (a nameless acknowledgement is
+  rejected before it can consume relay quota). It drains as control traffic.
+- **Bounded retries with backoff** — 5 attempts, exponential backoff capped at 60 s.
+- **Duplicate IDs / exactly-once delivery** — retried copies share a transfer id; the receiver
+  delivers once and acknowledges every copy.
+- **Dead-letter / expiry state** — terminal `expired` and `dead_letter` are reported distinctly;
+  `queued` and `relaying` precede them.
+- **Priority classes and queue policy** — control → text → voice → media, FIFO within a class,
+  bounded by count and bytes, lowest-priority-first eviction, control never displaced.
+- **Relay fairness** — unchanged and still enforced by the existing per-source token buckets;
+  the new buffer adds byte-accurate accounting on top.
+
+**Still absent, and not claimed:** route repair, congestion control, multipath *selection*,
+group acknowledgements, and the multi-device hardware experiments — so the 500-device capacity
+claim in this file remains **unproven**, exactly as it states.
+
+**Validation:** 21/21 Python E2E suites pass with zero failures against a live API on a fresh
+PostgreSQL 15.19 with all 39 migrations (214 tables); full `services/mesh` suite green under
+`go test -race` and across 20 consecutive runs.
