@@ -381,3 +381,16 @@ The P0/P1 roadmap from the competitive comparison was reconciled against the exe
 ### Net position
 
 The P0 correctness cluster is substantially landed in source: versioned envelope, known-answer fixtures, MTU fragmentation, ACK/retry/expiry, route repair, congestion control, backpressure, delivery states, group sender-key rotation, group ACK, and network-wide revocation distribution are all implemented and the `services/mesh` suite is green (build/vet/test/race). The remaining P0 item — native release artifacts in CI with hardware-in-the-loop tests — and the P1 communication/network/operations items are environment-dependent and remain honestly open rather than falsely marked complete.
+
+## Implementation audit addendum — 2026-09-15, admin control of mesh features (§110)
+
+A fresh reset of `main` re-walked the 129-section master documentation against the executable source. One genuine source-completable gap was found and closed: **§110 "Admin control of mesh features"** specified that administrators may configure operational policy for the offline mesh (feature enablement, version requirements, abuse limits, network protocol deprecation) but must never gain the ability to decrypt private mesh messages — and no such admin surface existed. The mesh routes were all guest/user-facing.
+
+Implemented end-to-end:
+
+- **Migration `042_mesh_admin_policy.sql`** — a singleton operational-policy row (`mesh_admin_policy`) holding `mesh_enabled`, `min_protocol_version`, `max_payload_bytes`, `max_ttl`, `relay_quota_bytes`, and `deprecated_transports`, seeded with production defaults. It gates admission, sizing and transport eligibility only; it holds no keys and exposes no plaintext.
+- **`services/api/handlers_mesh_admin.go`** — `GET /api/admin/mesh/policy` and `PUT /api/admin/mesh/policy`, gated by the `platform.manage` permission, with partial-merge updates, range validation, and an audit-log entry on every change.
+- **Policy enforcement wired into the mesh admission paths** — `handleMeshRegister` refuses a deprecated transport; `handleMeshSend` enforces the policy-bounded payload/TTL ceilings and refuses a disabled mesh; `handleMeshRelay` refuses a disabled mesh. A disabled mesh or deprecated transport is refused consistently at admission.
+- **`tests/mesh_admin_policy_test.py`** — 24 E2E checks against a live API + PostgreSQL: non-admin rejection, read/update, partial merge, invalid-value rejection, transport deprecation refusal, disabled-mesh refusal, policy-bounded TTL enforcement, and default restoration.
+
+Validation: `services/api` builds, vets, and passes `go test`; `services/mesh` passes its full suite; parity is now **155 files / 548 registered routes** (the two new admin routes); the migration applies cleanly to a fresh PostgreSQL 16 (214 tables + the new policy table); and the E2E suite passes **24/24**. The admin surface is operational policy only — it never holds mesh keys and never sees plaintext, preserving the §110 separation.
