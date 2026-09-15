@@ -9,6 +9,13 @@ import Security
 // carrying packets: the same packet envelope, TTL/dedup rules, and
 // store-and-forward queue. Depends only on Foundation + CryptoKit, so the
 // routing and queue logic is unit-testable without radio hardware.
+//
+// Identity and crypto (MeshIdentity.swift): discovery beacons are Ed25519-
+// signed and advertise an X25519 key-agreement key; unicast payloads are
+// sealed with a per-peer AES-256 session key derived via ECDH + HKDF. A peer
+// that never held our private key cannot derive the session key. Peers are
+// pinned on first sight (TOFU), can be revoked, and per-source sequence
+// numbers are checked against a sliding replay window.
 
 /// A mesh packet, byte-compatible with the Go engine's Packet envelope.
 struct MeshPacket {
@@ -22,6 +29,7 @@ struct MeshPacket {
     let payload: Data
     let nonce: Data
     let createdAt: Int64
+    let seq: Int64
 }
 
 /// A known peer on the mesh.
@@ -51,6 +59,24 @@ final class MeshEngine {
     private let lock = NSLock()
 
     private var links: [MeshLink] = []
+
+    /// Device identity: Ed25519 signing + X25519 key agreement.
+    let identity = MeshIdentity()
+
+    /// Pinned device id -> Ed25519 public key (trust-on-first-use).
+    private var pinnedKeys: [String: Data] = [:]
+
+    /// Revoked device id -> revoked Ed25519 public key.
+    private var revokedKeys: [String: Data] = [:]
+
+    /// Peer device id -> advertised X25519 key-agreement key + epoch.
+    private var peerKEM: [String: (Data, Int64)] = [:]
+
+    /// Per-source anti-replay windows.
+    private let replay = ReplayFilter()
+
+    /// Monotonic per-sender sequence number.
+    private var seqCtr: Int64 = 0
 
     /// Application-layer delivery callback (decrypted packet).
     var delivered: ((MeshPacket, Data?) -> Void)?
@@ -103,16 +129,15 @@ final class MeshEngine {
         return Array(neighbors.values)
     }
 
-    /// Serializes a presence beacon; routing metadata only, never content.
+    /// Serializes a signed presence beacon carrying routing metadata and this
+    /// device's X25519 key-agreement advertisement. The signature binds the
+    /// session-key exchange to the device identity.
     func beacon(seq: Int64) -> Data {
-        let obj: [String: Any] = [
-            "device_id": deviceId,
-            "kind": relayOk ? "relay" : "member",
-            "transport": activeTransport,
-            "addr": links.first?.kind ?? "",
-            "seq": seq,
-        ]
-        return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data()
+        identity.signBeacon(deviceId: deviceId,
+                            kind: relayOk ? "relay" : "member",
+                            transport: activeTransport,
+                            addr: links.first?.kind ?? "",
+                            seq: seq)
     }
 
     // MARK: sending
@@ -120,11 +145,12 @@ final class MeshEngine {
     /// Encrypts a payload and queues a packet for `dst`. Returns the packet id.
     @discardableResult
     func send(kind: String, dst: String, plaintext: Data, groupId: String? = nil) -> String {
+        let sessionKey = sessionKeyFor(dst)
         let nonce = MeshCrypto.randomNonce()
-        let sealed = MeshCrypto.encrypt(key: key, plaintext: plaintext, nonce: nonce)
+        let sealed = MeshCrypto.encrypt(key: SymmetricKey(data: sessionKey), plaintext: plaintext, nonce: nonce)
         let p = MeshPacket(id: MeshCrypto.randomId(), src: deviceId, dst: dst, groupId: groupId, kind: kind,
                            ttl: maxHops, hops: 0, payload: sealed, nonce: nonce,
-                           createdAt: Int64(Date().timeIntervalSince1970 * 1000))
+                           createdAt: Int64(Date().timeIntervalSince1970 * 1000), seq: nextSeq())
         lock.lock()
         seen[p.id] = Date()
         lock.unlock()
@@ -158,11 +184,27 @@ final class MeshEngine {
 
     // MARK: receiving
 
-    /// A beacon registers a neighbour; a packet is deduped, delivered or forwarded.
+    /// A signed beacon registers a neighbour; a packet is deduped, delivered
+    /// or forwarded.
     @discardableResult
     func handleInbound(addr: String, data: Data, now: Date = Date()) -> MeshPacket? {
-        if let b = parseBeacon(data) {
-            upsertNeighbor(deviceId: b.0, addr: addr, transport: b.1, relayOk: b.2, now: now)
+        // Signed beacon: verify the signature and pinned-key binding before
+        // trusting the advertised route. A revoked identity is rejected.
+        if let b = identity.verifySignedBeacon(data: data, pinned: &pinnedKeys, revoked: revokedKeys) {
+            upsertNeighbor(deviceId: b.deviceId, addr: addr, transport: b.transport,
+                           relayOk: b.kind == "relay", now: now)
+            // Pin the peer's advertised key-agreement key (signed, so it is
+            // bound to the verified device identity). A newer epoch replaces
+            // the stored key after a peer's rotation.
+            if b.kemPub.count == 32 {
+                lock.lock()
+                if let prev = peerKEM[b.deviceId] {
+                    if b.kemEpoch >= prev.1 { peerKEM[b.deviceId] = (b.kemPub, b.kemEpoch) }
+                } else {
+                    peerKEM[b.deviceId] = (b.kemPub, b.kemEpoch)
+                }
+                lock.unlock()
+            }
             return nil
         }
         guard let p = MeshPacketCodec.decode(data) else { return nil }
@@ -178,7 +220,12 @@ final class MeshEngine {
 
         if p.dst == deviceId {
             dequeue(p.id)
-            delivered?(p, MeshCrypto.decrypt(key: key, ciphertext: p.payload, nonce: p.nonce))
+            let pt = decryptPayload(p)
+            // Anti-replay runs AFTER the payload authenticates: a forged
+            // packet must never be able to advance or poison the replay window.
+            if pt != nil && (p.seq == 0 || replay.check(src: p.src, seq: p.seq)) {
+                delivered?(p, pt)
+            }
             return p
         }
 
@@ -209,10 +256,67 @@ final class MeshEngine {
         return sent
     }
 
-    private func parseBeacon(_ data: Data) -> (String, String, Bool)? {
-        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = o["device_id"] as? String, !id.isEmpty else { return nil }
-        return (id, (o["transport"] as? String) ?? "local_wifi", (o["kind"] as? String) == "relay")
+    // MARK: identity / session-key helpers
+
+    /// Selects the AEAD key for a payload: the per-peer ECDH session key when
+    /// the destination has advertised a key-agreement key (the hardened path),
+    /// otherwise the pre-shared identity key (legacy/native fallback).
+    private func sessionKeyFor(_ dst: String) -> Data {
+        if dst.isEmpty { return keyData() }
+        lock.lock()
+        let adv = peerKEM[dst]
+        lock.unlock()
+        guard let adv else { return keyData() }
+        return identity.sessionKey(localId: deviceId, remotePub: adv.0, remoteId: dst) ?? keyData()
+    }
+
+    /// Opens a delivered packet: the per-peer session key first, falling back
+    /// to the pre-shared identity key (interop with legacy/native senders).
+    private func decryptPayload(_ p: MeshPacket) -> Data? {
+        if p.dst == deviceId {
+            lock.lock()
+            let adv = peerKEM[p.src]
+            lock.unlock()
+            if let adv, let sk = identity.sessionKey(localId: deviceId, remotePub: adv.0, remoteId: p.src) {
+                if let pt = MeshCrypto.decrypt(key: SymmetricKey(data: sk), ciphertext: p.payload, nonce: p.nonce) {
+                    return pt
+                }
+            }
+        }
+        return MeshCrypto.decrypt(key: key, ciphertext: p.payload, nonce: p.nonce)
+    }
+
+    /// Regenerates this device's key-agreement pair and bumps the epoch.
+    func rotateSessions() { identity.rotate() }
+
+    /// Permanently rejects a previously pinned device key for this node and
+    /// immediately withdraws its route and session advertisement. The expected
+    /// public key must match the pinned key so a device id alone cannot revoke
+    /// an unrelated identity.
+    @discardableResult
+    func revokePeer(deviceId: String, expectedPub: Data) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let pinned = pinnedKeys[deviceId], pinned == expectedPub else { return false }
+        revokedKeys[deviceId] = expectedPub
+        peerKEM.removeValue(forKey: deviceId)
+        neighbors.removeValue(forKey: deviceId)
+        return true
+    }
+
+    /// Whether this node has locally revoked a peer identity.
+    func isPeerRevoked(_ deviceId: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return revokedKeys[deviceId] != nil
+    }
+
+    private func nextSeq() -> Int64 {
+        lock.lock(); defer { lock.unlock() }
+        seqCtr += 1
+        return seqCtr
+    }
+
+    private func keyData() -> Data {
+        key.withUnsafeBytes { Data($0) }
     }
 }
 
@@ -226,6 +330,7 @@ enum MeshPacketCodec {
             "payload": p.payload.base64EncodedString(),
             "nonce": p.nonce.base64EncodedString(),
             "created_at": p.createdAt,
+            "seq": p.seq,
         ]
         if let groupId = p.groupId { obj["group_id"] = groupId }
         return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data()
@@ -243,7 +348,8 @@ enum MeshPacketCodec {
             hops: (o["hops"] as? Int) ?? 0,
             payload: Data(base64Encoded: (o["payload"] as? String) ?? "") ?? Data(),
             nonce: Data(base64Encoded: (o["nonce"] as? String) ?? "") ?? Data(),
-            createdAt: Int64((o["created_at"] as? NSNumber)?.int64Value ?? 0)
+            createdAt: Int64((o["created_at"] as? NSNumber)?.int64Value ?? 0),
+            seq: Int64((o["seq"] as? NSNumber)?.int64Value ?? 0)
         )
     }
 }
