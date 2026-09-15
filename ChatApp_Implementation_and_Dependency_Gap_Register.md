@@ -25,7 +25,7 @@ Assessment date: 2026-09-14. This register separates code that can be written an
 
 ### P1 reliability and scale
 
-- Mesh routing has finite TTL, queue size and packet lifetime. **MTU fragmentation/reassembly is now implemented** (see the 2026-09-15 pass at the end of this file): payloads above the 512-byte datagram ceiling are split into individually encrypted fragments and reassembled under bounded memory and time with a verified digest. Still absent: ACK/retry window, route repair, congestion control, multipath selection and the 500-device hardware test. Relay fairness is partially addressed by per-source token-bucket quotas.
+- Mesh routing has finite TTL, queue size and packet lifetime. **MTU fragmentation/reassembly is now implemented** (see the 2026-09-15 pass at the end of this file): payloads above the 512-byte datagram ceiling are split into individually encrypted fragments and reassembled under bounded memory and time with a verified digest. **ACK/retry window, congestion control, route repair, multipath selection and group sender-key rotation are now implemented** (see the 2026-09-15 gap-closure pass at the end of this file). The 500-device hardware test remains outstanding (requires real devices). Relay fairness is partially addressed by per-source token-bucket quotas.
 - The current Internet call stack is separate from the mesh. SFU/TURN/WebRTC cannot make a live call when every IP path is unavailable.
 - Radio discovery and permissions are platform-specific. Android Wi-Fi Direct/Bluetooth and iOS CoreBluetooth/local Wi-Fi need device state machines, background execution policy, reconnect handling and physical tests.
 - Source coverage is broad but production proof is incomplete: native mobile builds, app-store signing, push wake, crash reporting, SLO dashboards, soak tests, disaster recovery and restore drills remain release gates.
@@ -128,7 +128,7 @@ Covered by ten tests in `services/mesh/fragment_test.go`, including an out-of-or
 
 **Latent data race fixed.** Race-enabled testing (which CI does not run) exposed a pre-existing race in `UDPTransport`: the receive goroutine read the inbound callback unlocked while `SetInbound` wrote it under the mutex. The reader now loads the callback under the lock and invokes it outside it. The full `services/mesh` suite passes under `go test -race`.
 
-**Still open (narrowed 2026-09-15).** Congestion control, route repair, multipath *selection*, group sender-key rotation, network-wide distribution of revocation decisions, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices. **ACK/retry with exponential backoff, user-visible delivery states (`queued`/`relaying`/`acked`/`expired`/`dead_letter`), priority traffic classes, and native Android/iOS adoption of the session-key envelope (signed beacons, per-peer session keys, local revocation, replay protection) are now implemented** — see the 2026-09-15 reliability pass at the end of this file.
+**Still open (narrowed 2026-09-15).** The 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices. **ACK/retry with exponential backoff, user-visible delivery states (`queued`/`relaying`/`acked`/`expired`/`dead_letter`), priority traffic classes, native Android/iOS adoption of the session-key envelope (signed beacons, per-peer session keys, local revocation, replay protection), congestion control, route repair, multipath selection, group sender-key rotation, group acknowledgements, and network-wide revocation distribution are now implemented** — see the 2026-09-15 reliability and gap-closure passes at the end of this file.
 
 ---
 
@@ -170,10 +170,7 @@ Go, standard library only.
   and 20 consecutive non-race runs (the suite had been failing intermittently — which is how
   the clobbering defect surfaced).
 
-**Still absent, and not claimed:** congestion control, route repair, multipath selection
-(the buffer fans out; it does not choose), group sender-key rotation, and group
-acknowledgements — group payloads remain best-effort because a group ACK needs per-member
-keys and per-member group key management. Radio handshakes still require real devices.
+**Still absent, and not claimed:** the 3/10/50/100/500-device hardware experiments and physical radio validation. Congestion control, route repair, multipath selection, group sender-key rotation, group acknowledgements, and network-wide revocation distribution are now implemented (see the 2026-09-15 gap-closure pass at the end of this file). Radio handshakes still require real devices.
 
 **Validation:** 21/21 Python E2E suites pass with zero failures against a live API on a fresh
 PostgreSQL 15.19 with all 39 migrations (214 tables), with the Go SFU and all five strict
