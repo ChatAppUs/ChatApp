@@ -1,6 +1,6 @@
 # ChatApp competitor comparison
 
-Assessment date: 2026-09-14. This compares source coverage with the product capabilities documented by the competitors; it does not treat a page or endpoint as proof of production parity.
+This compares source coverage with the product capabilities documented by the competitors; it does not treat a page or endpoint as proof of production parity.
 
 ## Bottom line
 
@@ -50,47 +50,3 @@ Facebook/TikTok/X/Telegram all depend on mature moderation queues, policy enforc
 - TikTok Stories, playlists, creator tools and LIVE: https://support.tiktok.com/en/using-tiktok/exploring-videos/watching-stories-on-tiktok, https://support.tiktok.com/en/search?searchTerm=Creator%20Playlists, https://newsroom.tiktok.com/en-US/new-tools-for-creators
 - Telegram calls, bots/mini apps and live Stories: https://telegram.org/blog/calls-and-bots, https://telegram.org/blog/live-stories-gift-auctions
 - imo chat/calls/privacy/weak-network products: https://imo.im/en/faq/What-are-the-features-of-the-chat-function-in-the-imo-app, https://imo.im/android
-
-
-## Deep source-and-documentation audit — 2026-09-14
-
-The current source audit and remaining production gates are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
-
-
-## Deep source-and-documentation audit — 2026-09-14
-
-The short comparison remains an executive summary; the direct source audit and implementation status are in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`.
-
-## Verification addendum — 2026-09-15
-
-This revision was checked against the executable source tree on `main`, not against prior commit prose. The repository contains the documented API, web/admin clients, native client source, PostgreSQL migrations, Go/Rust/C++/Python services, mesh cryptography and the existing end-to-end test harness. The web and admin type checks and production builds, feature-registry validation, route parity validation, and patch whitespace validation pass in this environment.
-
-A concrete security hardening pass is now implemented in `services/api/auth.go`: JWT parsing rejects oversized tokens, unsupported header algorithms, missing or non-positive expiry, and tokens issued more than five minutes in the future. Regression coverage is in `services/api/api_test.go`, and an executable Go fuzz target is in `services/api/auth_fuzz_test.go`. These checks reduce parser abuse and algorithm-confusion risk; they do not replace deployment key rotation, external security review, or device-level testing.
-
-**Status remains explicit.** Implemented means present in source and covered by available tests. Partial means the application boundary or fallback exists but a production dependency, provider, hardware path, or release toolchain is not available here. Outstanding items remain Tor/onion IP-privacy transport, physical Bluetooth/Wi-Fi Direct validation, native Android/iOS release builds, configured AI providers, live SMTP/SMS delivery, production load testing, disaster recovery execution, and deployed tracing/alerting. No claim of completion is made for those environment-dependent gates.
-
-## Layered mesh forwarding verification — 2026-09-15
-
-A source-level gap identified during the renewed audit was closed in `services/mesh`: forwarded packets now support an authenticated layered envelope. The sender constructs per-hop AES-GCM layers using authenticated X25519 session keys, each relay peels only its own layer and learns only the next hop, and the destination-only layer reveals the final destination and payload. Tampering, missing session keys, malformed envelopes, and oversized packet inputs fail closed. `services/mesh/onion_test.go` verifies three-node peeling, final-destination confidentiality from the outer layer, plaintext recovery, and tamper rejection.
-
-This closes the **source-completable layered-forwarding requirement**. It does not claim Tor/onion-network anonymity, source-metadata protection, physical Bluetooth/Wi-Fi Direct validation, or production radio behavior. Those remain separate outstanding requirements and still require additional protocol design, deployed infrastructure, or physical-device validation.
-
-## Mesh key-revocation verification — 2026-09-15
-
-The renewed source audit identified device-key revocation as a genuine mesh lifecycle gap. It is now implemented in `services/mesh/node.go` and `services/mesh/routing.go`. A node can revoke only the exact Ed25519 public key already pinned for a device id; revocation immediately removes the peer route and advertised KEM session, rejects future signed beacons, and blocks unsigned legacy-beacon downgrade. `services/mesh/revocation_test.go` verifies normal admission, key-matched revocation, route withdrawal, signed re-entry rejection, unsigned downgrade rejection, and mismatched-key rejection. Race-enabled tests pass.
-
-The implementation is **local trust revocation**. Network-wide distribution of revocation decisions still requires a separately authenticated device-management channel, and physical radio validation remains environment-dependent. Those requirements remain outstanding rather than being falsely marked complete.
-
-## Mesh envelope versioning and MTU fragmentation — 2026-09-15
-
-Two further source-level mesh gaps were closed in this pass, both covered by executable tests in `services/mesh`.
-
-**Versioned envelope.** `Packet` now carries a `Version` field stamped with `EnvelopeVersion` (1). `UnmarshalPacket` rejects an envelope newer than this build supports, so a future incompatible format fails closed instead of being misparsed; version 0 is accepted for pre-versioning peers so a rolling upgrade does not partition the mesh. `Packet.Validate` also enforces route, identifier and fragment-metadata coherence before routing. Covered by `TestEnvelopeVersionGate` and `TestPacketValidateRejectsMalformed`.
-
-**MTU fragmentation and reassembly.** `fragment.go` splits a payload larger than `DefaultMaxPayload` (512 bytes) into fixed-size fragments, each encrypted with its own AEAD nonce and carried as an ordinary packet, so routing, TTL, hop counting, duplicate suppression, relay quotas and store-and-forward apply unchanged. The receiver reassembles under bounded memory (256 groups / 8 MiB) and time (5-minute expiry), ignores duplicate fragments, drops contradictory or out-of-range metadata, and verifies a sender-committed SHA-256 digest before delivery. A payload that fits one datagram keeps its original single-packet wire shape, preserving interoperability with pre-fragmentation peers. `Node.Send`/`Node.SendGroup` fragment automatically above the ceiling; `Node.OpenAssemblies` reports in-flight reassembly.
-
-Covered by ten tests in `services/mesh/fragment_test.go`, including an out-of-order multi-fragment round trip through the production node API across a three-node chain asserting exactly-once application delivery, plus duplicate handling, digest-mismatch rejection, contradictory-metadata rejection, bounded-memory refusal and incomplete-group expiry.
-
-**Latent data race fixed.** Race-enabled testing (which CI does not run) exposed a pre-existing race in `UDPTransport`: the receive goroutine read the inbound callback unlocked while `SetInbound` wrote it under the mutex. The reader now loads the callback under the lock and invokes it outside it. The full `services/mesh` suite passes under `go test -race`.
-
-**Still open (narrowed 2026-09-15).** Congestion control, route repair, multipath *selection*, group sender-key rotation, native Android/iOS adoption of the session-key envelope, and the 3/10/50/100/500-device hardware experiments remain outstanding. Fragmentation makes a large payload transportable across a small-MTU link; it does not create bandwidth and is not evidence of 500-device capacity. Physical Bluetooth/Wi-Fi Direct validation still requires real devices. **ACK/retry with exponential backoff, user-visible delivery states (`queued`/`relaying`/`acked`/`expired`/`dead_letter`) and priority traffic classes are now implemented** in `services/mesh/reliability.go`, `priority.go` and `pfifo.go`, with 18 new tests in `services/mesh/reliability_test.go`. Group payloads stay best-effort: a group acknowledgement needs per-member keys, which remain outstanding.
