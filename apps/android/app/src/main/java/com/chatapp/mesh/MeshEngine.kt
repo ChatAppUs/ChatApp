@@ -20,6 +20,13 @@ import javax.crypto.spec.SecretKeySpec
 // Transport selection follows Anonymous.md §5.3: when there is no Internet the
 // app prefers local Wi-Fi / Wi-Fi Direct, then Bluetooth, then falls back to
 // store-and-forward until any link becomes available.
+//
+// Identity and crypto (MeshIdentity.kt): discovery beacons are Ed25519-signed
+// and advertise an X25519 key-agreement key; unicast payloads are sealed with
+// a per-peer AES-256 session key derived via ECDH + HKDF. A peer that never
+// held our private key cannot derive the session key. Peers are pinned on
+// first sight (TOFU), can be revoked, and per-source sequence numbers are
+// checked against a sliding replay window.
 
 /** A mesh packet, byte-compatible with the Go engine's Packet envelope. */
 data class MeshPacket(
@@ -33,6 +40,7 @@ data class MeshPacket(
     val payload: ByteArray,
     val nonce: ByteArray,
     val createdAt: Long,
+    val seq: Long = 0,
 )
 
 /** A known peer on the mesh. */
@@ -64,6 +72,24 @@ class MeshEngine(
     private val queue = ArrayDeque<MeshPacket>()
     private val queueLock = Any()
     private val random = SecureRandom()
+
+    /** Device identity: Ed25519 signing + X25519 key agreement. */
+    val identity = MeshIdentity()
+
+    /** Pinned device id -> Ed25519 public key (trust-on-first-use). */
+    private val pinnedKeys = ConcurrentHashMap<String, ByteArray>()
+
+    /** Revoked device id -> revoked Ed25519 public key. */
+    private val revokedKeys = ConcurrentHashMap<String, ByteArray>()
+
+    /** Peer device id -> advertised X25519 key-agreement key + epoch. */
+    private val peerKEM = ConcurrentHashMap<String, Pair<ByteArray, Long>>()
+
+    /** Per-source anti-replay windows. */
+    private val replay = ReplayFilter()
+
+    /** Monotonic per-sender sequence number. */
+    private var seqCtr: Long = 0
 
     @Volatile private var links: List<MeshLink> = emptyList()
 
@@ -106,21 +132,26 @@ class MeshEngine(
 
     fun neighborList(): List<MeshNeighbor> = neighbors.values.toList()
 
-    /** Serializes a presence beacon; carries routing metadata only, never content. */
-    fun beacon(seq: Long): ByteArray = JSONObject()
-        .put("device_id", deviceId)
-        .put("kind", if (relayOk) "relay" else "member")
-        .put("transport", activeTransport)
-        .put("addr", links.firstOrNull()?.kind ?: "")
-        .put("seq", seq)
-        .toString()
-        .toByteArray()
+    /**
+     * Serializes a signed presence beacon carrying routing metadata and this
+     * device's X25519 key-agreement advertisement. The signature binds the
+     * session-key exchange to the device identity, so a man-in-the-middle
+     * cannot substitute its own key-agreement key on a replayed beacon.
+     */
+    fun beacon(seq: Long): ByteArray = identity.signBeacon(
+        deviceId = deviceId,
+        kind = if (relayOk) "relay" else "member",
+        transport = activeTransport,
+        addr = links.firstOrNull()?.kind ?: "",
+        seq = seq,
+    )
 
     // ---- sending ---------------------------------------------------------
 
     /** Encrypts a payload and queues a packet for [dst]. Returns the packet id. */
     fun send(kind: String, dst: String, plaintext: ByteArray, groupId: String? = null): String {
-        val sealed = MeshCrypto.encrypt(key, plaintext)
+        val sessionKey = sessionKeyFor(dst)
+        val sealed = MeshCrypto.encrypt(sessionKey, plaintext)
         val p = MeshPacket(
             id = newId(),
             src = deviceId,
@@ -131,6 +162,7 @@ class MeshEngine(
             payload = sealed.ciphertext,
             nonce = sealed.nonce,
             createdAt = System.currentTimeMillis(),
+            seq = nextSeq(),
         )
         seen[p.id] = System.currentTimeMillis()
         enqueue(p)
@@ -164,12 +196,24 @@ class MeshEngine(
     // ---- receiving -------------------------------------------------------
 
     /**
-     * Handles a raw inbound datagram: a beacon registers a neighbour, a packet
-     * is deduplicated, delivered locally when addressed to us, or forwarded.
+     * Handles a raw inbound datagram: a signed beacon registers a neighbour,
+     * a packet is deduplicated, delivered locally when addressed to us, or
+     * forwarded.
      */
     fun handleInbound(addr: String, data: ByteArray, now: Long = System.currentTimeMillis()): MeshPacket? {
-        parseBeacon(data)?.let { b ->
-            upsertNeighbor(b.first, addr, b.second, b.third, now)
+        // Signed beacon: verify the signature and pinned-key binding before
+        // trusting the advertised route. A revoked identity is rejected.
+        identity.verifySignedBeacon(data, pinnedKeys, revokedKeys)?.let { b ->
+            upsertNeighbor(b.deviceId, addr, b.transport, b.kind == "relay", now)
+            // Pin the peer's advertised key-agreement key (signed, so it is
+            // bound to the verified device identity). A newer epoch replaces
+            // the stored key after a peer's rotation.
+            if (b.kemPub.size == MeshIdentity.KEY_SIZE) {
+                val prev = peerKEM[b.deviceId]
+                if (prev == null || b.kemEpoch >= prev.second) {
+                    peerKEM[b.deviceId] = b.kemPub to b.kemEpoch
+                }
+            }
             return null
         }
         val p = MeshPacketCodec.decode(data) ?: return null
@@ -180,7 +224,12 @@ class MeshEngine(
 
         if (p.dst == deviceId) {
             dequeue(p.id)
-            delivered?.invoke(p, MeshCrypto.decrypt(key, p.payload, p.nonce))
+            val pt = decryptPayload(p)
+            // Anti-replay runs AFTER the payload authenticates: a forged
+            // packet must never be able to advance or poison the replay window.
+            if (pt != null && (p.seq == 0L || replay.check(p.src, p.seq))) {
+                delivered?.invoke(p, pt)
+            }
             return p
         }
 
@@ -216,6 +265,61 @@ class MeshEngine(
         return sent
     }
 
+    // ---- identity / session-key helpers ---------------------------------
+
+    /**
+     * Selects the AEAD key for a payload: the per-peer ECDH session key when
+     * the destination has advertised a key-agreement key (the hardened path),
+     * otherwise the pre-shared identity key (legacy/native fallback until the
+     * peer advertises a KEM key).
+     */
+    private fun sessionKeyFor(dst: String): ByteArray {
+        if (dst.isEmpty()) return key
+        val adv = peerKEM[dst] ?: return key
+        return identity.sessionKey(deviceId, adv.first, dst) ?: key
+    }
+
+    /** Opens a delivered packet: the per-peer session key first, falling back
+     *  to the pre-shared identity key (interop with legacy/native senders). */
+    private fun decryptPayload(p: MeshPacket): ByteArray? {
+        if (p.dst == deviceId) {
+            val adv = peerKEM[p.src]
+            if (adv != null) {
+                val sk = identity.sessionKey(deviceId, adv.first, p.src)
+                if (sk != null) {
+                    val pt = MeshCrypto.decrypt(sk, p.payload, p.nonce)
+                    if (pt != null) return pt
+                }
+            }
+        }
+        return MeshCrypto.decrypt(key, p.payload, p.nonce)
+    }
+
+    /** Regenerates this device's key-agreement pair and bumps the epoch. */
+    fun rotateSessions() = identity.rotate()
+
+    /**
+     * Permanently rejects a previously pinned device key for this node and
+     * immediately withdraws its route and session advertisement. The expected
+     * public key must match the pinned key so a device id alone cannot revoke
+     * an unrelated identity.
+     */
+    fun revokePeer(deviceId: String, expectedPub: ByteArray): Boolean {
+        val pinned = pinnedKeys[deviceId] ?: return false
+        if (!pinned.contentEquals(expectedPub)) return false
+        revokedKeys[deviceId] = expectedPub
+        peerKEM.remove(deviceId)
+        neighbors.remove(deviceId)
+        return true
+    }
+
+    /** Whether this node has locally revoked a peer identity. */
+    fun isPeerRevoked(deviceId: String): Boolean = revokedKeys.containsKey(deviceId)
+
+    private fun nextSeq(): Long {
+        synchronized(this) { seqCtr += 1; return seqCtr }
+    }
+
     private fun pruneSeen() {
         val cutoff = System.currentTimeMillis() - maxAgeMs
         seen.entries.removeIf { it.value < cutoff }
@@ -225,14 +329,6 @@ class MeshEngine(
         val b = ByteArray(16)
         random.nextBytes(b)
         return b.joinToString("") { "%02x".format(it) }
-    }
-
-    private fun parseBeacon(data: ByteArray): Triple<String, String, Boolean>? = try {
-        val o = JSONObject(String(data))
-        val id = o.optString("device_id")
-        if (id.isEmpty()) null else Triple(id, o.optString("transport", "local_wifi"), o.optString("kind", "member") == "relay")
-    } catch (_: Exception) {
-        null
     }
 
     companion object {
@@ -255,6 +351,7 @@ object MeshPacketCodec {
         .put("payload", android.util.Base64.encodeToString(p.payload, android.util.Base64.NO_WRAP))
         .put("nonce", android.util.Base64.encodeToString(p.nonce, android.util.Base64.NO_WRAP))
         .put("created_at", p.createdAt)
+        .put("seq", p.seq)
         .toString()
         .toByteArray()
 
@@ -271,6 +368,7 @@ object MeshPacketCodec {
             payload = android.util.Base64.decode(o.optString("payload"), android.util.Base64.NO_WRAP),
             nonce = android.util.Base64.decode(o.optString("nonce"), android.util.Base64.NO_WRAP),
             createdAt = o.optLong("created_at", System.currentTimeMillis()),
+            seq = o.optLong("seq", 0),
         )
     } catch (_: Exception) {
         null
