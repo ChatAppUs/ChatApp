@@ -317,3 +317,67 @@ with zero failures** against a live API on PostgreSQL 15.19 with the Go SFU and 
 forwarder running. Route repair, multipath selection, group sender-key rotation, group
 acknowledgements, Tor/onion transport, physical radio validation, native release builds,
 configured providers, and production load/backup/DR certification remain explicitly open.
+
+## Competitive comparison and readiness decision — 2026-09-15
+
+Assessment date 2026-09-14. This compares the repository's implemented source surface with the product capabilities and operating maturity of Facebook, TikTok, X (formerly Twitter), Telegram and imo. The readiness decisions are engineering judgements based on the source scan.
+
+### Executive decision
+
+**ChatApp cannot currently compete head-to-head with any of the five at global scale.** It can compete as a differentiated early product in a narrower position: privacy-first social messaging with groups, calls over the Internet, creator/social features and a future finite offline store-and-forward mesh. The strongest near-term differentiators are ownership of the stack, privacy controls and the mesh direction; the largest weaknesses are release proof, network effects, safety operations, recommendation quality, mobile delivery and offline protocol correctness.
+
+| Competitor | Can ChatApp compete today? | Honest position |
+|---|---:|---|
+| Facebook | No | Broad social/community/commerce prototype; not a Facebook-scale network, ad, ranking or safety operation. |
+| TikTok | No | Has video/social/creator surfaces, but not TikTok-grade camera, effects, recommendation, creator economy or media delivery. |
+| X/Twitter | No | Has public-post, social, messaging and monetisation building blocks, but not X-grade public fan-out, search, Spaces, subscriptions, trust or anti-abuse. |
+| Telegram | No | Has serious messaging/call/group foundations, but not Telegram-grade cloud sync, large public communities, bot/mini-app ecosystem or proven multi-device reliability. |
+| imo | Not yet | The closest feature match for basic chat/calls, but weak-network reliability, released mobile clients, push/reconnect and call quality are not proven. |
+
+"Cannot compete today" is not a judgement that the code is empty. The repository is a broad, ambitious platform foundation. It means a global competitor is a service, network, safety programme and reliability operation as well as a list of screens and endpoints.
+
+### What ChatApp already has in source
+
+The source tree contains a Next.js web client with 60+ page surfaces, separate admin UI, Go API/SFU/mesh services, Rust authentication/security services, C++ realtime/media/counter services, Python ML endpoints, Android/iOS sources, a Tauri desktop shell, migrations, a feature registry, Go/C++/Python/static tests and CI workflows. Implemented product areas include account security, chat and groups, social feeds, stories/reels, channels/forums, live/broadcast/shop/marketplace, creator/monetisation, wallet/staking, notifications, privacy controls, bots/assistant/AI surfaces, calls over the Internet, and a mesh prototype. Route counts are not adoption, reliability or feature parity; the repository still needs release builds, device testing, load testing and operational evidence.
+
+### Per-competitor decisions
+
+- **Facebook:** ChatApp could target privacy-focused communities or local networks before attempting Facebook breadth. It cannot presently replace Facebook for general social discovery, business Pages, Groups, Events, Marketplace or advertising.
+- **TikTok:** ChatApp cannot compete with TikTok's discovery or creator economy now. It could compete with a smaller privacy-first short-video community after shipping capture quality, recommendations, rights, safety and delivery proof.
+- **X/Twitter:** ChatApp has building blocks for an X-like public feed but cannot compete on real-time public reach, search, trust, live conversation or creator monetisation today.
+- **Telegram:** Telegram is the clearest strategic benchmark for ChatApp's messaging direction. ChatApp is not yet a credible Telegram replacement until sync, public-community scale, bots and clients are proven.
+- **imo:** imo is the nearest practical benchmark. ChatApp could compete in feature breadth, but not yet in mobile reliability, call quality, weak-network performance or distribution.
+
+### P0/P1 roadmap status against current `main` (verified 2026-09-15)
+
+The P0/P1 roadmap from the competitive comparison was reconciled against the executable source on `main` (remote HEAD `3cedfbf`). Each item is marked **Done** (implemented and verified in source), **Partial** (source present but an environment gate remains), or **Open** (not implemented / not provable here).
+
+#### P0 — correctness before more features
+
+| Item | Status | Evidence |
+|---|---|---|
+| 1. Freeze one versioned mesh envelope + interoperable AEAD/key-agreement design for Go/Android/iOS; add known-answer fixtures | **Done** | `services/mesh/packet.go` stamps `EnvelopeVersion` (1) and rejects newer envelopes; `services/mesh/interop_test.go` carries a base64 AES-GCM known-answer fixture and cross-platform envelope test; Android `MeshIdentity.kt` / iOS `MeshIdentity.swift` adopt the X25519 + HKDF-SHA256 session-key design. |
+| 2. Fix native packet nonce/tag serialisation, forwarding queueing, route deduplication, secure device/group key lifecycle | **Partial** | Source present: Android `MeshEngine.kt`/`MeshIdentity.kt`, iOS `MeshEngine.swift`/`MeshIdentity.swift`, Go `groupkey.go` (per-group AES-256 sender-key rotation). Native compile is not verifiable here (no Android Gradle / Xcode toolchain). |
+| 3. MTU fragmentation/reassembly, ACKs, retries, expiry, route repair, congestion control, backpressure, delivery states | **Done** | `fragment.go` (bounded reassembly, digest-verified), `reliability.go` (ACK/retry/backoff, `queued`→`relaying`→`acked`/`expired`/`dead_letter`), `routerepair.go`, `congestion.go` (token-bucket byte budget), `priority.go`/`pfifo.go` (backpressure, priority classes). Full `services/mesh` suite passes `go build`, `go vet`, `go test -count=1`, and `go test -race`. |
+| 4. Build and run Android/iOS/desktop release artifacts in CI; hardware-in-the-loop mobile tests | **Open** | CI (`validate.yml`) runs Go/Rust/C++/web/admin/e2e-postgres jobs but has **no Android or iOS build step**; no hardware-in-the-loop mobile tests. Requires Android Gradle / Xcode toolchains and physical devices. |
+
+#### P1 — communication quality, network/creator competitiveness, operations
+
+| Item | Status | Evidence |
+|---|---|---|
+| Push/reconnect/background sync, multi-device history, resumable attachments | **Open** | Not implemented in source; requires mobile client + push infrastructure. |
+| Separate offline text/voice-note from Internet live calls; do not advertise offline live video until measured | **Partial** | Mesh store-and-forward + reliable delivery exist; live-call quality and offline-video claims are not measured. |
+| SFU/TURN/WebRTC under NAT, handoff, packet loss, reconnect, concurrent-call load | **Partial** | SFU + C++ TURN forwarder exist and pass `sfu_turn_test` (18/18); NAT/handoff/load testing is environment-dependent. |
+| Accessibility, localisation, abuse reporting, moderation queues, appeals, account/device revocation, transparency logs | **Partial** | Moderation/admin surfaces exist; accessibility/localisation/appeals/transparency at scale are not proven. |
+| Pick one wedge (privacy messenger / resilient mesh / creator social) | **Open** | Strategic decision; not a source item. |
+| Creator video: capture/effects/sounds, rights, recommendation, analytics, LIVE moderation, CDN/ABR, monetisation | **Partial** | Creator analytics + AI studio surfaces exist; TikTok-grade capture/rights/recommendation/CDN are not proven. |
+| Public conversation: search/indexing, trends, fan-out, handles, Communities/Spaces, trust, anti-spam | **Partial** | Forums/Pulse/search exist; X-grade fan-out/trust/anti-spam are not proven. |
+| Telegram-like messaging: cloud sync, large groups/channels, topics, bot API/mini-app SDK, migration | **Partial** | Groups/channels/forums exist; cloud sync, bot/mini-app SDK, migration are not proven. |
+| SLOs + p50/p95/p99 instrumentation | **Open** | `/metrics` exists; SLOs and percentile instrumentation are not defined. |
+| 3/10/50/100/500-device mesh experiments with latency/loss/throughput/battery/thermal results | **Open** | Requires physical devices; not run. |
+| Backups, restore drills, multi-region, incident response, support, app-store compliance, KYC/AML, privacy/legal review | **Open** | `scripts/backup-restore.sh` exists; production execution is environment-dependent. |
+| Secure providers (model, email/SMS, push, TURN, CDN, storage, payments, chain RPC); quotas, costs, retention, failover | **Open** | Requires configured providers and production infrastructure. |
+
+### Net position
+
+The P0 correctness cluster is substantially landed in source: versioned envelope, known-answer fixtures, MTU fragmentation, ACK/retry/expiry, route repair, congestion control, backpressure, delivery states, group sender-key rotation, group ACK, and network-wide revocation distribution are all implemented and the `services/mesh` suite is green (build/vet/test/race). The remaining P0 item — native release artifacts in CI with hardware-in-the-loop tests — and the P1 communication/network/operations items are environment-dependent and remain honestly open rather than falsely marked complete.
