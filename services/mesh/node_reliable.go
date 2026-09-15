@@ -100,6 +100,32 @@ func (n *Node) sendAck(dst, transferID string) {
 	}
 }
 
+// sendGroupAck returns a per-member acknowledgement for a group transfer to
+// its origin. The acknowledgement is sealed under the per-peer session key to
+// the origin, so only the origin can read it, and names the group and the
+// transfer id so the origin can attribute it to a member.
+func (n *Node) sendGroupAck(dst, groupID, transferID string) {
+	if dst == "" || groupID == "" || transferID == "" {
+		return
+	}
+	p := NewPacket(KindAck, n.DeviceID, dst, n.maxHops)
+	proof := []byte("chatapp-mesh-groupack-v1:" + groupID + ":" + transferID)
+	ct, nonce, err := Encrypt(n.sessionKeyFor(dst), proof)
+	if err != nil {
+		return
+	}
+	p.AckFor = transferID
+	p.Xfer = transferID
+	p.GroupID = groupID
+	p.Payload = ct
+	p.Nonce = nonce
+	p.Seq = n.nextSeq()
+	n.routes.Seen(p.ID)
+	if err := n.pfifo.Enqueue(p); err == nil {
+		n.flush()
+	}
+}
+
 // Tick advances the retry state machine once and transmits every transfer that
 // is due. It returns how many attempts were queued. Exposed so tests and
 // tooling can drive the machine deterministically instead of sleeping.
