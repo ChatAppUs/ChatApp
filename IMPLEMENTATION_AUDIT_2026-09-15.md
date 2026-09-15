@@ -1,40 +1,67 @@
 # Implementation audit — 2026-09-15
 
-This is an audit artifact, not a new product specification. The root specification files remain the source of truth. The audit was performed against the executable source on `main`; `agent.md`, prior assistant claims, and prior commits were not used as evidence of implementation.
+This is an audit artifact, not a product specification. The root Markdown files remain the sole requirements source. This verification was performed against the executable source on `main`; `agent.md`, prior assistant claims, and prior commits were not used as evidence of implementation.
 
-## Findings in this pass
+## Fresh source verification
 
-### Implemented / fixed in this pass
+The current `main` tree contains the documented multi-platform application, Go/Rust/C++/Python services, PostgreSQL migrations, mesh engine, native Android/iOS mesh implementations, web/admin clients, feature registry and validation scripts.
 
-1. **Packet-ID cryptographic fallback removed.** `services/mesh/packet.go` previously fell back from the operating-system CSPRNG to a timestamp-derived packet ID. Packet IDs participate in deduplication, transfer correlation and fragment grouping, so a predictable fallback weakened those invariants. The implementation now fails closed when the CSPRNG is unavailable instead of generating predictable identifiers.
-2. **Mesh deduplication metadata leak fixed.** `RouteTable` bounded the `seen` packet cache but not `bestTTL`. Long-lived relays could therefore accumulate one `bestTTL` entry per packet indefinitely. The pruning path now removes the corresponding `bestTTL` entry whenever the oldest `seen` entry is evicted.
-3. **Regression coverage added.** `services/mesh/routing_memory_test.go` verifies both deduplication maps remain bounded under sustained packet churn and that fresh packet IDs are accepted.
+A source search for common unfinished markers (`TODO`, `FIXME`, `STUB`, `MOCK`, fake implementation markers, and placeholder implementation errors) returned no matching unfinished implementation in the indexed repository source. This does **not** substitute for compilation or runtime testing.
 
-## Requirements audit status
+The Android mesh identity implementation currently contains the same hardened primitives documented by the Go engine: Ed25519 signed beacons, X25519 key agreement, HKDF-SHA256 per-peer keys, key rotation, trust-on-first-use pinning, revocation and sliding-window replay protection. Therefore the older documentation sentence claiming that native clients still use only the pre-shared-key path is stale and must not be treated as current evidence.
 
-The source-completable mesh requirements already present on `main` include AES-256-GCM envelopes, X25519/HKDF per-peer sessions, Ed25519 signed discovery, local key revocation, replay windows, authenticated layered forwarding, MTU fragmentation/reassembly, ACK/retry, delivery states, priority queues, store-and-forward, relay quotas, route scoring and native Android/iOS session-key adoption.
+## Source-completable functionality confirmed present
 
-The current root specifications still identify these as **not proven complete or still outstanding**:
+- AES-256-GCM mesh packet encryption with explicit nonce/tag handling.
+- Versioned packet envelope and strict packet validation.
+- CSPRNG packet identifiers with fail-closed behavior if the OS CSPRNG is unavailable.
+- Ed25519-signed discovery beacons and TOFU public-key pinning.
+- X25519/HKDF-SHA256 per-peer session keys and epoch rotation.
+- Local mesh key revocation and downgrade rejection.
+- Per-source replay windows and exactly-once application delivery for reliable transfers.
+- Authenticated layered forwarding.
+- MTU fragmentation/reassembly with bounded memory/time and SHA-256 integrity verification.
+- ACK/retry with bounded exponential backoff and explicit delivery states.
+- Priority/byte-bounded forwarding queues and per-source relay quotas.
+- Store-and-forward routing, neighbour expiry, route scoring and alternate-path retry.
+- Android/iOS native mesh session-key implementation.
+- Real backend/API/database/client implementations for the feature areas recorded as implemented in `IMPLEMENTATION_STATUS.md`.
 
-- physical Bluetooth/Wi-Fi Direct radio validation;
-- Android/iOS release compilation and signing in this environment;
-- Tor/onion IP-privacy transport and network-wide anonymity guarantees;
-- network-wide distribution of mesh revocation decisions;
-- congestion control, route repair and true multipath selection;
-- group sender-key lifecycle/rotation and group acknowledgements;
-- 3/10/50/100/500-device physical mesh experiments;
-- real-time offline mesh voice/video with codec adaptation, jitter buffering and loss recovery;
-- configured external AI, SMTP/SMS, payment/KYC, blockchain/RPC and other provider validation;
-- production load, observability, backup/restore and disaster-recovery execution.
+## Defects fixed in the preceding source pass
 
-These are not marked complete merely because related routes or abstractions exist. Some require real hardware, providers or deployed infrastructure; source-only work must not be represented as physical/runtime proof.
+1. Mesh packet IDs no longer fall back to predictable timestamps when the CSPRNG fails.
+2. Mesh deduplication metadata is bounded together: evicting `seen` also evicts its corresponding `bestTTL` entry.
+3. Regression tests cover sustained dedup churn and cryptographic packet-ID generation.
+
+## Remaining source/product gaps
+
+These remain deliberately **not claimed complete** because the repository source alone cannot establish the required behavior, or because the source requirement is genuinely incomplete:
+
+- congestion control with measured link feedback;
+- full route-repair state machine beyond bounded alternate-path retry;
+- true multi-path path selection with path-level metrics;
+- group sender-key lifecycle/rotation and cryptographically accountable group acknowledgements;
+- authenticated network-wide distribution of mesh revocation decisions;
+- Tor/onion IP-privacy transport and anonymity guarantees;
+- physical Bluetooth/Wi-Fi Direct interoperability, permissions, reconnect and background-execution validation;
+- Android/iOS release builds, signing and store distribution;
+- 3/10/50/100/500-device physical mesh experiments with latency/loss/throughput/battery/thermal evidence;
+- real-time offline mesh voice/video with codec adaptation, jitter/loss recovery and congestion-aware scheduling;
+- configured external AI/SMTP/SMS/payment/KYC/blockchain/provider validation;
+- production load, observability, backup/restore, regional failure and disaster-recovery execution;
+- independent security review and penetration testing.
+
+These are not replaced with simulations, fake providers, mock data, bypasses or hardcoded credentials. Where a real external dependency is required, the application must report truthful unavailable/configuration state rather than fabricate success.
 
 ## Validation boundary
 
-This environment has GitHub source access and repository write access, but it does not provide the repository's complete production runtime, Android/iOS toolchains, physical radio hardware, provider credentials, or a persistent deployment suitable for claiming production certification. Consequently this audit does not claim those external gates are complete.
+This execution environment has GitHub source access and repository write access, but it does not provide the complete production runtime, Android/iOS release toolchains, physical radio hardware, provider credentials, or a persistent production-like deployment. Therefore this audit does not certify those external gates.
 
-## Commits
+The repository's existing validation scripts and previously recorded passing checks remain useful evidence, but they are not a substitute for the environment-dependent gates above.
+
+## Commits already on `main`
 
 - `2f4f0e7fac87d024edda2b735f527ee971c1f2d9` — fail closed when mesh packet-ID CSPRNG is unavailable.
 - `f7e9c4d94671bd3b41f4f0c1d275b3638b87fbb9` — bound mesh deduplication TTL metadata.
-- `538fc70cf64338826d6ce38f459fbe9c96e83ee0` — add regression tests and this audit artifact.
+- `538fc70cf64338826d6ce38f459fbe9c96e83ee0` — regression tests.
+- `abf2a0136bd39b67dd4d8c0dc540b07346cde066` — prior audit/status record.
