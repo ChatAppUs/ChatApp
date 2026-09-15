@@ -2048,3 +2048,11 @@ The current source-vs-specification review, mesh interoperability fixes and rema
 ## Deep source-and-documentation audit — 2026-09-14
 
 The current implementation findings, native mesh interoperability fixes, signed device identity (Ed25519 beacons with key pinning), route scoring/expiry, dependency reduction and remaining physical-radio/live-media limits are recorded in `file 'ChatApp_Deep_Code_and_Documentation_Audit.md'`. Discovery beacons are now Ed25519-signed with per-device key pinning, closing the beacon-spoofing gap this document flagged.
+
+## Verification addendum — 2026-09-15
+
+This revision was checked against the executable source tree on `main`, not against prior commit prose. The repository contains the documented API, web/admin clients, native client source, PostgreSQL migrations, Go/Rust/C++/Python services, mesh cryptography and the existing end-to-end test harness. The web and admin type checks and production builds, feature-registry validation, route parity validation, and patch whitespace validation pass in this environment.
+
+A concrete security hardening pass is now implemented in `services/api/auth.go`: JWT parsing rejects oversized tokens, unsupported header algorithms, missing or non-positive expiry, and tokens issued more than five minutes in the future. Regression coverage is in `services/api/api_test.go`, and an executable Go fuzz target is in `services/api/auth_fuzz_test.go`. These checks reduce parser abuse and algorithm-confusion risk; they do not replace deployment key rotation, external security review, or device-level testing.
+
+**Status remains explicit.** Implemented means present in source and covered by available tests. Partial means the application boundary or fallback exists but a production dependency, provider, hardware path, or release toolchain is not available here. Outstanding items remain Tor/onion IP-privacy transport, physical Bluetooth/Wi-Fi Direct validation, native Android/iOS release builds, configured AI providers, live SMTP/SMS delivery, production load testing, disaster recovery execution, and deployed tracing/alerting. No claim of completion is made for those environment-dependent gates.

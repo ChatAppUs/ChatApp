@@ -26,6 +26,8 @@ const (
 	argonThreads = 2
 	argonKeyLen  = 32
 	saltLen      = 16
+	maxJWTBytes  = 16 * 1024
+	maxClockSkew = 5 * time.Minute
 )
 
 func hashPassword(password string) (string, error) {
@@ -87,9 +89,16 @@ func signJWT(secret []byte, claims Claims) (string, error) {
 }
 
 func parseJWT(secret []byte, token string) (*Claims, error) {
+	if len(token) == 0 || len(token) > maxJWTBytes {
+		return nil, errors.New("invalid token size")
+	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("malformed token")
+	}
+	header, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || string(header) != `{"alg":"HS256","typ":"JWT"}` {
+		return nil, errors.New("unsupported JWT header")
 	}
 	body := parts[0] + "." + parts[1]
 	mac := hmac.New(sha256.New, secret)
@@ -107,7 +116,14 @@ func parseJWT(secret []byte, token string) (*Claims, error) {
 	if err := json.Unmarshal(payload, &c); err != nil {
 		return nil, err
 	}
-	if time.Now().Unix() >= c.Exp {
+	if c.Exp <= 0 {
+		return nil, errors.New("token has no expiry")
+	}
+	now := time.Now()
+	if c.Iat > now.Add(maxClockSkew).Unix() {
+		return nil, errors.New("token issued in the future")
+	}
+	if now.Unix() >= c.Exp {
 		return nil, errors.New("token expired")
 	}
 	return &c, nil

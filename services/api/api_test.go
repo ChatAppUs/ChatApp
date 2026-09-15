@@ -74,6 +74,33 @@ func TestJWTRejectsExpired(t *testing.T) {
 	}
 }
 
+func TestJWTRejectsAlgorithmConfusionAndMalformedClaims(t *testing.T) {
+	secret := []byte("test-secret-key-32-bytes-minimum!!")
+	token, err := signJWT(secret, Claims{Sub: "u1", Type: "access", Exp: time.Now().Add(time.Hour).Unix()})
+	if err != nil {
+		t.Fatalf("signJWT: %v", err)
+	}
+	parts := strings.Split(token, ".")
+	parts[0] = b64url([]byte(`{"alg":"none","typ":"JWT"}`))
+	if _, err := parseJWT(secret, strings.Join(parts, ".")); err == nil {
+		t.Fatal("algorithm-confusion token accepted")
+	}
+	missingExpiry, err := signJWT(secret, Claims{Sub: "u1", Type: "access"})
+	if err != nil {
+		t.Fatalf("signJWT without expiry: %v", err)
+	}
+	if _, err := parseJWT(secret, missingExpiry); err == nil {
+		t.Fatal("token without expiry accepted")
+	}
+	future, err := signJWT(secret, Claims{Sub: "u1", Type: "access", Iat: time.Now().Add(10 * time.Minute).Unix(), Exp: time.Now().Add(time.Hour).Unix()})
+	if err != nil {
+		t.Fatalf("signJWT future token: %v", err)
+	}
+	if _, err := parseJWT(secret, future); err == nil {
+		t.Fatal("future-issued token accepted")
+	}
+}
+
 func TestTOTPMatchesRFC6238Vector(t *testing.T) {
 	// RFC 6238 Appendix B test vector (SHA-1, 8 digits, seed ASCII "12345678901234567890").
 	// Our implementation uses base32 secrets and 6 digits; verify against the
