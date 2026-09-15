@@ -1,4 +1,4 @@
-# Implementation audit — 2026-09-15
+# Implementation audit
 
 This is an audit artifact, not a product specification. The root Markdown files remain the sole requirements source. This verification was performed against the executable source on `main`; `agent.md`, prior assistant claims, and prior commits were not used as evidence of implementation.
 
@@ -58,10 +58,3 @@ These are not replaced with simulations, fake providers, mock data, bypasses or 
 This execution environment has GitHub source access and repository write access, but it does not provide the complete production runtime, Android/iOS release toolchains, physical radio hardware, provider credentials, or a persistent production-like deployment. Therefore this audit does not certify those external gates.
 
 The repository's existing validation scripts and previously recorded passing checks remain useful evidence, but they are not a substitute for the environment-dependent gates above.
-
-## Commits already on `main`
-
-- `2f4f0e7fac87d024edda2b735f527ee971c1f2d9` — fail closed when mesh packet-ID CSPRNG is unavailable.
-- `f7e9c4d94671bd3b41f4f0c1d275b3638b87fbb9` — bound mesh deduplication TTL metadata.
-- `538fc70cf64338826d6ce38f459fbe9c96e83ee0` — regression tests.
-- `abf2a0136bd39b67dd4d8c0dc540b07346cde066` — prior audit/status record.
