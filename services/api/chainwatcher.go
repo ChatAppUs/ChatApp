@@ -39,7 +39,6 @@ func (c *rpcClient) call(ctx context.Context, method string, params any, out any
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+secret)
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -376,6 +375,7 @@ func cosignWithdrawal(ctx context.Context, svcURL, secret, uid, message string) 
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+secret)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err

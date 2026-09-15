@@ -79,12 +79,11 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>, custody_seed: Arc<Option<
     let body = &req[body_start..];
 
     if path != "/health" {
-        let expected = format!("Bearer {}", String::from_utf8_lossy(&secret));
-        let authorized = req.lines().any(|line| {
-            line.strip_prefix("Authorization:")
-                .map(|value| ct_eq(value.trim().as_bytes(), expected.as_bytes()))
-                .unwrap_or(false)
-        });
+        let authorized = req
+            .lines()
+            .find_map(|line| line.strip_prefix("Authorization: Bearer "))
+            .map(|value| ct_eq(value.trim().as_bytes(), secret.as_slice()))
+            .unwrap_or(false);
         if !authorized {
             respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
             return;
@@ -113,18 +112,6 @@ fn handle(mut stream: TcpStream, secret: Arc<Vec<u8>>, custody_seed: Arc<Option<
         if !authorized {
             respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
             return;
-        }
-    }
-
-    if path != "/health" {
-        let expected = format!("Bearer {}", String::from_utf8_lossy(&secret));
-        let authorized = req.lines().any(|line| {
-            line.strip_prefix("Authorization: ")
-                .map(|value| ct_eq(value.as_bytes(), expected.as_bytes()))
-                .unwrap_or(false)
-        });
-        if !authorized {
-            return respond(&mut stream, "401 Unauthorized", "{\"error\":\"unauthorized\"}");
         }
     }
 
