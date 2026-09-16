@@ -159,7 +159,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var lockedUntil *time.Time
 	err := a.db.QueryRow(r.Context(),
 		`SELECT id, password_hash, status, deletion_scheduled_at, totp_secret, totp_enabled,
-			        failed_login_attempts, locked_until FROM users
+		        failed_login_attempts, locked_until FROM users
 			 WHERE username = $1 OR email = lower($1) OR phone_e164 = $1`, id).
 		Scan(&userID, &hash, &status, &deletionScheduled, &totpSecret, &totpEnabled,
 			new(int), &lockedUntil)
@@ -189,6 +189,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
+	}
+	// Failed login audit (record the attempt for the security log).
+	if userID != "" {
+		a.logSecurityEvent(r.Context(), "login_failed", userID, clientIP(r), r.UserAgent(), "bad credentials")
 	}
 	// Successful login resets the failure counter and clears any lockout.
 	_, _ = a.db.Exec(r.Context(),
@@ -223,6 +227,13 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "session creation failed")
 		return
+	}
+	// Security audit: log every successful login.
+	a.logSecurityEvent(r.Context(), "login_success", userID, clientIP(r), r.UserAgent(), "")
+	// New-device notification: alert the user when an unrecognised
+	// IP + user-agent pair signs in for the first time.
+	if isNew, _ := a.isNewDevice(r.Context(), userID, clientIP(r), r.UserAgent()); isNew {
+		a.sendNewDeviceNotification(r.Context(), userID, clientIP(r), r.UserAgent())
 	}
 	tokens["user_id"] = userID
 	writeJSON(w, http.StatusOK, tokens)
