@@ -50,6 +50,17 @@ func MarshalGroupMessage(m *GroupMessage) ([]byte, error) { return json.Marshal(
 func MarshalVoiceMessage(m *VoiceMessage) ([]byte, error) { return json.Marshal(m) }
 func MarshalCallSignal(m *CallSignal) ([]byte, error)     { return json.Marshal(m) }
 
+// mustJSON marshals v and panics on failure. It is only used with fixed,
+// fully-controlled payload structs whose fields always serialise cleanly.
+func mustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic("mesh: payload marshal failed: " + err.Error())
+	}
+	return b
+}
+
+
 // Unmarshal helpers.
 func UnmarshalMessage(b []byte) (*Message, error) {
 	var m Message

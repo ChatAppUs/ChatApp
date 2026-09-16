@@ -34,6 +34,8 @@ type Node struct {
 	routes     *RouteTable
 	queue      *Queue
 	handler    Handler
+	onVoiceNote func(src string, note *VoiceNote)
+	voiceNotes *VoiceNoteStore
 	maxHops    int
 	signer     *SigningKey
 	peerKeys   map[string][]byte        // device id -> pinned Ed25519 public key (TOFU)
@@ -628,7 +630,10 @@ func (n *Node) route(p *Packet) {
 			}
 			return
 		}
-		if n.handler != nil {
+		// Deliver to the application when a generic handler or the
+		// voice-note handler is installed; voice chunks are consumed
+		// by the assembler even without a generic handler.
+		if n.handler != nil || n.onVoiceNote != nil {
 			if pt, err := n.decryptPayload(p); err == nil {
 				if p.Seq != 0 && !n.replay.Check(p.Src, p.Seq) {
 					return
@@ -652,7 +657,9 @@ func (n *Node) route(p *Packet) {
 				// already delivered.
 				if p.Xfer != "" {
 					if n.transfers.MarkDelivered(p.Xfer) {
-						n.handler(p, full)
+						if !n.offerVoiceNote(p, full) && n.handler != nil {
+							n.handler(p, full)
+						}
 					}
 					// A group message is acknowledged per-member: the
 					// receiver returns a group ACK naming the group and
