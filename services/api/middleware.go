@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -88,8 +89,32 @@ func (l *rateLimiter) allow(key string) bool {
 }
 
 // limit wraps a handler with per-client-IP rate limiting.
+// X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset headers
+// follow the IETF draft standard so clients can throttle themselves.
 func (l *rateLimiter) limit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		l.mu.Lock()
+		key := clientIP(r)
+		now := time.Now()
+		b, ok := l.buckets[key]
+		if !ok {
+			b = &tokenBucket{tokens: l.burst, last: now}
+			l.buckets[key] = b
+		}
+		b.tokens += now.Sub(b.last).Seconds() * l.refill
+		b.last = now
+		if b.tokens > l.burst {
+			b.tokens = l.burst
+		}
+		remaining := int(b.tokens)
+		resetAt := now.Add(time.Duration(float64(time.Duration(b.burst-b.tokens)) / l.refill * float64(time.Second)))
+		limitVal := int(l.refill * 60) // per-minute ceiling
+		l.mu.Unlock()
+
+		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", limitVal))
+		w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetAt.Unix()))
+
 		if !l.allow(clientIP(r)) {
 			writeErr(w, http.StatusTooManyRequests, "too many requests; slow down and retry")
 			return
