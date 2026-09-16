@@ -36,16 +36,56 @@ func (l *SimLink) Close() error { l.mu.Lock(); l.closed = true; l.mu.Unlock(); r
 
 // SimBus is a simulated network: links attached by address, adjacency declared
 // with Wire/Unwire, delivery only along wired edges (partitions are real).
+// SetLossRate enables deterministic radio-style packet loss: each send is
+// dropped with probability p using a seeded PRNG, so the reliable-transfer
+// retransmission path can be exercised reproducibly.
 type SimBus struct {
-	mu    sync.Mutex
-	links map[string]*SimLink
-	wires map[string][]string // addr -> directly reachable peer addrs
-	drops int
+	mu       sync.Mutex
+	links    map[string]*SimLink
+	wires    map[string][]string // addr -> directly reachable peer addrs
+	drops    int
+	lossPct  int    // 0..100, chance a send is dropped
+	rng      uint64 // xorshift64* state, seeded in SetLossRate
+	lostLoss int    // count of loss-injected drops
 }
 
 // NewSimBus creates an empty simulated network.
 func NewSimBus() *SimBus {
 	return &SimBus{links: make(map[string]*SimLink), wires: make(map[string][]string)}
+}
+
+// SetLossRate turns on deterministic loss injection. pct is the percentage of
+// sends dropped (0..100); seed makes the sequence reproducible.
+func (b *SimBus) SetLossRate(pct int, seed uint64) {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	if seed == 0 {
+		seed = 0x9E3779B97F4A7C15
+	}
+	b.mu.Lock()
+	b.lossPct, b.rng = pct, seed
+	b.mu.Unlock()
+}
+
+// nextRand advances the xorshift64* state and returns a value in [0,100).
+func (b *SimBus) nextRand() int {
+	x := b.rng
+	x ^= x >> 12
+	x ^= x << 25
+	x ^= x >> 27
+	b.rng = x
+	return int((x * 0x2545F4914F6CDD1D >> 33) % 100)
+}
+
+// LossStats reports how many sends were dropped by loss injection.
+func (b *SimBus) LossStats() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lostLoss
 }
 
 // Attach creates a link for addr and wires its inbound callback to onPkt.
@@ -106,7 +146,18 @@ func (b *SimBus) deliver(srcAddr, dstAddr string, data []byte) error {
 	if !ok || !wired {
 		b.drops++
 	}
-	cb := l.onPkt
+	// Deterministic loss injection: drop the send before invoking the
+	// receiver callback, mirroring an unreliable radio link.
+	if ok && wired && b.lossPct > 0 && b.nextRand() < b.lossPct {
+		b.drops++
+		b.lostLoss++
+		b.mu.Unlock()
+		return fmt.Errorf("simulated loss %s -> %s", srcAddr, dstAddr)
+	}
+	var cb func(addr string, data []byte)
+	if ok {
+		cb = l.onPkt
+	}
 	b.mu.Unlock()
 	if !ok || !wired {
 		return fmt.Errorf("no route %s -> %s", srcAddr, dstAddr)

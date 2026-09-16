@@ -233,3 +233,39 @@ func TestSimLargeGridDelivery(t *testing.T) {
 		n.Stop()
 	}
 }
+
+// TestSimLossyChainDelivery drives the reliable-transfer retransmission path
+// through a 30%-loss radio chain: the message must still arrive, and the loss
+// counter must show the injections happened.
+func TestSimLossyChainDelivery(t *testing.T) {
+	bus := NewSimBus()
+	bus.SetLossRate(30, 42)
+	addrs := simAddrs(3)
+	got := make(chan string, 1)
+	a := newSimNode(t, bus, "d0", "member", nil, 16)
+	m := newSimNode(t, bus, "d1", "relay", nil, 16)
+	b := newSimNode(t, bus, "d2", "member", func(p *Packet, pt []byte) { got <- string(pt) }, 16)
+	wireChain(bus, addrs)
+	a.routes.Upsert(&Beacon{DeviceID: m.DeviceID, Kind: "relay", Transport: "local_wifi", Addr: addrs[1]})
+	m.routes.Upsert(&Beacon{DeviceID: a.DeviceID, Kind: "member", Transport: "local_wifi", Addr: addrs[0]})
+	m.routes.Upsert(&Beacon{DeviceID: b.DeviceID, Kind: "member", Transport: "local_wifi", Addr: addrs[2]})
+	b.routes.Upsert(&Beacon{DeviceID: m.DeviceID, Kind: "relay", Transport: "local_wifi", Addr: addrs[1]})
+
+	if _, err := a.SendReliable(KindMessage, b.DeviceID, []byte("through the noise")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case msg := <-got:
+		if msg != "through the noise" {
+			t.Fatalf("wrong payload %q", msg)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("reliable delivery did not converge under 30% loss")
+	}
+	if bus.LossStats() == 0 {
+		t.Fatal("loss injection never fired; test is not exercising retransmission")
+	}
+	for _, n := range []*Node{a, m, b} {
+		n.Stop()
+	}
+}
