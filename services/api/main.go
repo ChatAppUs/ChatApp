@@ -83,6 +83,7 @@ func main() {
 	app.startPriceWorker()
 	app.startMeshEngine()
 	app.startPulseTrendWorker()
+	app.startPayoutWorker()
 
 	origins := map[string]bool{}
 	for _, o := range strings.Split(cfg.AllowedOrigins, ",") {

@@ -53,6 +53,8 @@ type Node struct {
 	groupMembers map[string][]string
 	groupAcks    *groupAckTracker // per-member group acknowledgements (see groupack.go)
 	revStore     *revocationStore // network-wide revocation notices (see revocdist.go)
+	power        *PowerManager    // battery/resource governor (see power.go)
+	policy       *TransportPolicy // transport selection policy (see transport_policy.go)
 
 	seqCtr int64
 	stop   chan struct{}
@@ -148,6 +150,8 @@ func NewNode(cfg NodeConfig) *Node {
 		peerKEM:      make(map[string]AdvertisedKEM),
 		replay:       NewReplayFilter(),
 		frags:        NewReassembler(),
+		power:        NewPowerManager(DefaultPowerState(), DefaultScanIntervals(), DefaultConnectionLimits()),
+		policy:       NewTransportPolicy(),
 		stop:         make(chan struct{}),
 	}
 	// Wire the transport's inbound callback to this node. Any transport that
@@ -775,7 +779,7 @@ func (n *Node) flushTo(p *Packet) bool {
 	candidates = filtered
 
 	sent := false
-	for _, nb := range candidates {
+	for _, nb := range n.policy.Order(candidates, now) {
 		if n.sendTo(nb.Addr, p) {
 			n.routes.MarkSuccess(nb.DeviceID)
 			if !sent && p.Xfer != "" {
@@ -802,7 +806,11 @@ func (n *Node) sendTo(addr string, p *Packet) bool {
 	if err != nil {
 		return false
 	}
-	return n.transport.Send(addr, data) == nil
+	if n.transport.Send(addr, data) == nil {
+		n.power.MarkTraffic(time.Now())
+		return true
+	}
+	return false
 }
 
 // nextSeq returns the next per-sender sequence number (monotonic, used by
