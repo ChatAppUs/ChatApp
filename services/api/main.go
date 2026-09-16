@@ -924,6 +924,38 @@ func main() {
 	mux.HandleFunc("POST /api/admin/support/tickets/{id}/replies", app.requireAdmin("superadmin", "moderator")(app.handleAdminSupportReply))
 	mux.HandleFunc("POST /api/admin/support/tickets/{id}/status", app.requireAdmin("superadmin", "moderator")(app.handleAdminSupportStatus))
 
+	// ---- Gap pack 11 (migration 044): master-plan gaps ----
+	mux.HandleFunc("PUT /api/me/profile-details", app.requireAuth(app.handleUpdateProfileDetails))
+	mux.HandleFunc("GET /api/users/{id}/profile-details", app.requireAuth(app.handleRichProfile))
+	mux.HandleFunc("GET /api/me/relationships", app.requireAuth(app.handleListRelationships))
+	mux.HandleFunc("PUT /api/me/relationships/{userId}", app.requireAuth(app.handleSetRelationship))
+	mux.HandleFunc("DELETE /api/me/relationships/{userId}", app.requireAuth(app.handleRemoveRelationship))
+	mux.HandleFunc("PUT /api/comments/{id}", app.requireAuth(app.handleEditComment))
+	mux.HandleFunc("GET /api/comments/{id}/edits", app.requireAuth(app.handleCommentEdits))
+	mux.HandleFunc("GET /api/posts/{id}/comments/summary", app.requireAuth(app.handleCommentSummary))
+	mux.HandleFunc("POST /api/posts/{id}/share/target", app.requireAuth(app.handleSharePostTarget))
+	mux.HandleFunc("GET /api/fyp/why/{postId}", app.requireAuth(app.handleFYPWhy))
+	mux.HandleFunc("POST /api/fyp/feedback", app.requireAuth(app.handleFYPFeedback))
+	mux.HandleFunc("POST /api/fyp/reset", app.requireAuth(app.handleFYPReset))
+	mux.HandleFunc("POST /api/videos/{id}/chapters", app.requireAuth(app.handleAddChapter))
+	mux.HandleFunc("GET /api/videos/{id}/chapters", app.requireAuth(app.handleListChapters))
+	mux.HandleFunc("POST /api/videos/{id}/captions", app.requireAuth(app.handleAddCaptions))
+	mux.HandleFunc("GET /api/videos/{id}/captions", app.requireAuth(app.handleListCaptions))
+	mux.HandleFunc("PUT /api/me/continue-watching/{postId}", app.requireAuth(app.handleSetContinueWatching))
+	mux.HandleFunc("GET /api/me/continue-watching", app.requireAuth(app.handleListContinueWatching))
+	mux.HandleFunc("PUT /api/stories/{id}/extras", app.requireAuth(app.handleStoryExtras))
+	mux.HandleFunc("POST /api/events/{id}/tickets", app.requireAuth(app.handleCreateTicketTier))
+	mux.HandleFunc("POST /api/events/{id}/tickets/purchase", app.requireAuth(app.handlePurchaseTicket))
+	mux.HandleFunc("POST /api/events/{id}/waitlist", app.requireAuth(app.handleJoinWaitlist))
+	mux.HandleFunc("POST /api/events/{id}/checkin", app.requireAuth(app.handleEventCheckin))
+	mux.HandleFunc("GET /api/dev/apps", app.requireAuth(app.handleListDevApps))
+	mux.HandleFunc("POST /api/dev/apps", app.requireAuth(app.handleCreateDevApp))
+	mux.HandleFunc("POST /api/dev/apps/{id}/rotate-secret", app.requireAuth(app.handleRotateDevSecret))
+	mux.HandleFunc("POST /api/dev/apps/{id}/tokens", app.requireAuth(app.handleMintDevToken))
+	mux.HandleFunc("POST /api/dev/apps/{id}/webhook-test", app.requireAuth(app.handleDevWebhookTest))
+	mux.HandleFunc("GET /api/admin/domain-events", app.requireAdmin("superadmin")(app.handleAdminDomainEvents))
+	mux.HandleFunc("PUT /api/posts/{id}/rights", app.requireAuth(app.handlePostRights))
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           withSecurityHeaders(withCORS(withMetrics("", mux), cfg.AllowedOrigins)),
