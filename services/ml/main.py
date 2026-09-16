@@ -135,6 +135,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/providers/status")
+def providers_status() -> dict[str, Any]:
+    """Availability, limits and privacy posture of every configured provider."""
+    from providers import provider_status
+
+    return {"providers": provider_status()}
+
+
 # ---------- Watch-signal ranking (For You page) ----------
 
 
@@ -283,5 +291,7 @@ register_kyc_verify(app)
 # ---------- AI creator tools + assistant (dubbing, clips, assistant) ----------
 
 from creator_assistant import register_creator_assistant
+from providers import register_provider_endpoints
 
+register_provider_endpoints(app)
 register_creator_assistant(app)

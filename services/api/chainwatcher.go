@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,11 +26,79 @@ import (
 // Transfer logs. All crediting is idempotent via chain_deposits' unique key.
 
 type rpcClient struct {
-	url string
-	id  int
+	url     string
+	id      int
+	breaker *rpcBreaker
+}
+
+func (c *rpcClient) healthy() bool { return c.breaker == nil || c.breaker.allow() }
+
+// Circuit-breaker state for an RPC endpoint. After breakerMaxFails consecutive
+// failures the endpoint is 'open' and calls short-circuit until the cooldown
+// expires, so a dead node cannot stall every scan tick with 30s timeouts.
+type rpcBreaker struct {
+	mu           sync.Mutex
+	consecFails  int
+	openUntil    time.Time
+	lastErr      string
+	totalFails   int
+	totalSuccess int
+}
+
+const (
+	breakerMaxFails = 3
+	breakerCooldown = 2 * time.Minute
+)
+
+// allow reports whether a call may proceed.
+func (b *rpcBreaker) allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.openUntil.IsZero() || time.Now().After(b.openUntil)
+}
+
+func (b *rpcBreaker) record(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err == nil {
+		b.consecFails = 0
+		b.openUntil = time.Time{}
+		b.totalSuccess++
+		return
+	}
+	b.totalFails++
+	b.consecFails++
+	b.lastErr = err.Error()
+	if b.consecFails >= breakerMaxFails {
+		b.openUntil = time.Now().Add(breakerCooldown)
+		b.consecFails = 0
+		log.Printf("chain rpc breaker OPEN (last error: %s), cooldown %s", b.lastErr, breakerCooldown)
+	}
+}
+
+// status summarises breaker health for the ops surface.
+func (b *rpcBreaker) status() map[string]any {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	open := !b.openUntil.IsZero() && time.Now().Before(b.openUntil)
+	out := map[string]any{
+		"open":           open,
+		"total_success":  b.totalSuccess,
+		"total_failures": b.totalFails,
+	}
+	if open {
+		out["open_for_seconds"] = int(time.Until(b.openUntil).Seconds())
+	}
+	if b.lastErr != "" {
+		out["last_error"] = b.lastErr
+	}
+	return out
 }
 
 func (c *rpcClient) call(ctx context.Context, method string, params any, out any) error {
+	if c.breaker != nil && !c.breaker.allow() {
+		return errors.New("rpc circuit breaker open")
+	}
 	c.id++
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": c.id, "method": method, "params": params,
@@ -42,6 +111,9 @@ func (c *rpcClient) call(ctx context.Context, method string, params any, out any
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		if c.breaker != nil {
+			c.breaker.record(err)
+		}
 		return err
 	}
 	defer resp.Body.Close()
@@ -59,12 +131,40 @@ func (c *rpcClient) call(ctx context.Context, method string, params any, out any
 		return fmt.Errorf("rpc decode: %w", err)
 	}
 	if env.Error != nil {
-		return errors.New(env.Error.Message)
+		err := errors.New(env.Error.Message)
+		if c.breaker != nil {
+			c.breaker.record(err)
+		}
+		return err
 	}
 	if out != nil {
-		return json.Unmarshal(env.Result, out)
+		err = json.Unmarshal(env.Result, out)
+	} else {
+		err = nil
 	}
-	return nil
+	if c.breaker != nil {
+		c.breaker.record(err)
+	}
+	return err
+}
+
+// evmCatchUpBlocks bounds how far a single scan pass reaches past the
+// stored cursor, so a watcher left behind by an outage (or an open breaker)
+// reconciles the gap in batches instead of one unbounded historical scan.
+const evmCatchUpBlocks = 100
+
+// reconcileGap reports how many blocks the watcher is behind the confirmed
+// tip, bounded to maxCatchUp. A cursor ahead of the tip (reorg or clock
+// skew) reports no gap rather than a negative range.
+func reconcileGap(cursor, latest, maxCatchUp int64) int64 {
+	if latest <= cursor {
+		return 0
+	}
+	gap := latest - cursor
+	if gap > maxCatchUp {
+		return maxCatchUp
+	}
+	return gap
 }
 
 func hexToInt(s string) int64 {
@@ -152,9 +252,8 @@ func (a *App) scanEVMBlocks(ctx context.Context, rpc *rpcClient, chain string) {
 	if from >= latest {
 		return
 	}
-	if latest-from > 100 {
-		latest = from + 100 // bound catch-up batches
-	}
+	// Reconcile the outage gap in bounded batches (see reconcileGap).
+	latest = from + reconcileGap(from, latest, evmCatchUpBlocks)
 	for n := from + 1; n <= latest; n++ {
 		a.scanEVMBlock(ctx, rpc, chain, n)
 	}
@@ -401,13 +500,17 @@ func (a *App) startChainWatchers() {
 	wired := false
 	np := &nodeProvider{evm: map[string]*rpcClient{}}
 	if a.cfg.BTCRPCURL != "" {
-		np.btc = &rpcClient{url: a.cfg.BTCRPCURL}
+		btcBreaker := &rpcBreaker{}
+		np.btc = &rpcClient{url: a.cfg.BTCRPCURL, breaker: btcBreaker}
+		a.registerChainBreaker("bitcoin", btcBreaker)
 		go a.watchBTC(ctx, np.btc)
 		wired = true
 		log.Println("chain watcher: bitcoin node connected")
 	}
 	if a.cfg.EVMRPCURL != "" {
-		rpc := &rpcClient{url: a.cfg.EVMRPCURL}
+		evmBreaker := &rpcBreaker{}
+		rpc := &rpcClient{url: a.cfg.EVMRPCURL, breaker: evmBreaker}
+		a.registerChainBreaker("ethereum", evmBreaker)
 		// The EVM family name comes from platform_tokens rows; watch
 		// every enabled EVM-family chain through this endpoint.
 		np.evm["ethereum"] = rpc
@@ -420,3 +523,42 @@ func (a *App) startChainWatchers() {
 		log.Println("withdrawal broadcast: own-node provider active")
 	}
 }
+
+// registerChainBreaker records a watcher's breaker for the ops surface.
+func (a *App) registerChainBreaker(chain string, b *rpcBreaker) {
+	a.chainMu.Lock()
+	defer a.chainMu.Unlock()
+	if a.chainBreaker == nil {
+		a.chainBreaker = map[string]*rpcBreaker{}
+	}
+	a.chainBreaker[chain] = b
+}
+
+// handleAdminChainStatus reports watcher/breaker health and the per-chain
+// scan cursor so operations can see lag, catch-up state and breaker trips.
+func (a *App) handleAdminChainStatus(w http.ResponseWriter, r *http.Request) {
+	a.chainMu.Lock()
+	breakers := make(map[string]*rpcBreaker, len(a.chainBreaker))
+	for k, v := range a.chainBreaker {
+		breakers[k] = v
+	}
+	a.chainMu.Unlock()
+
+	chains := map[string]any{}
+	for chain, b := range breakers {
+		entry := b.status()
+		var cursor string
+		var updated any
+		if err := a.db.QueryRow(r.Context(),
+			`SELECT cursor, updated_at FROM chain_watcher_state WHERE chain=$1`, chain,
+		).Scan(&cursor, &updated); err == nil {
+			entry["cursor"] = cursor
+			entry["cursor_updated_at"] = updated
+		} else {
+			entry["cursor"] = ""
+		}
+		chains[chain] = entry
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chains": chains})
+}
+

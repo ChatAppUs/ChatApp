@@ -25,6 +25,8 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from providers import ProviderUnavailable, provider_chat
+
 # ---------------------------------------------------------------- models -----
 
 
@@ -140,18 +142,39 @@ def _speak(text: str, target_lang: str) -> tuple[bool, str, str]:
 
 
 def _translate_text(text: str, target_lang: str) -> tuple[bool, str, str]:
+    """Local transformer first; external provider adapter as fallback.
+    Both paths are real: neither fabricates a translation."""
     model_id = os.environ.get("TRANSLATE_MODEL", "").strip()
-    if not model_id:
-        return False, "TRANSLATE_MODEL not configured", ""
-    try:
-        from transformers import pipeline  # type: ignore
+    if model_id:
+        try:
+            from transformers import pipeline  # type: ignore
 
-        pipe = pipeline("translation", model=model_id)
-        result = pipe(text, max_length=512)
-        translated = (result[0].get("translation_text") or "").strip()
-        if not translated:
-            return False, "translation model returned no text", ""
-        return True, "", translated
+            pipe = pipeline("translation", model=model_id)
+            result = pipe(text, max_length=512)
+            translated = (result[0].get("translation_text") or "").strip()
+            if translated:
+                return True, "", translated
+        except Exception as exc:
+            print(f"local translation unavailable: {exc}")
+    # External provider fallback (rate-limited, budgeted, retrying).
+    try:
+        from providers import ProviderUnavailable, provider_chat
+
+        out = provider_chat(
+            [
+                {
+                    "role": "user",
+                    "content": f"Translate to {target_lang}. Reply with only the translation:\n{text[:2000]}",
+                }
+            ],
+            max_tokens=1024,
+        )
+        if out.get("text"):
+            return True, "", out["text"]
+        return False, "provider returned no translation", ""
+    except ProviderUnavailable as exc:
+        reason = f"TRANSLATE_MODEL not configured; {exc.reason}"
+        return False, reason, ""
     except Exception as exc:
         return False, f"translation failed: {exc}", ""
 
@@ -333,11 +356,26 @@ def register_creator_assistant(app: FastAPI) -> None:
     def assistant(req: AssistantRequest) -> dict[str, Any]:
         model_id = os.environ.get("ASSISTANT_MODEL", "").strip()
         if not model_id:
-            return {
-                "available": False,
-                "reason": "ASSISTANT_MODEL not configured",
-                "reply": "",
-            }
+            # External provider path (explicitly configured, metered).
+            try:
+                out = provider_chat(list(req.messages), max_tokens=256)
+                return {
+                    "available": True,
+                    "reason": "",
+                    "reply": out["text"],
+                    "provider": {
+                        "kind": "external",
+                        "base_url": out["base_url"],
+                        "data_residency": out["data_residency"],
+                        "privacy_class": out["privacy_class"],
+                    },
+                }
+            except ProviderUnavailable as exc:
+                return {
+                    "available": False,
+                    "reason": f"ASSISTANT_MODEL not configured; external provider unavailable: {exc.reason}",
+                    "reply": "",
+                }
         try:  # pragma: no cover - requires transformers weights
             from transformers import pipeline  # type: ignore
 

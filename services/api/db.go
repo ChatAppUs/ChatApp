@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,6 +25,9 @@ type App struct {
 
 	vapidKey *ecdsa.PrivateKey
 	mesh     *meshEngine
+
+	chainMu      sync.Mutex
+	chainBreaker map[string]*rpcBreaker // chain -> breaker (ops surface)
 }
 
 func connectDB(ctx context.Context, url string) (*pgxpool.Pool, error) {

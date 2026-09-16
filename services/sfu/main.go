@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -40,6 +41,13 @@ var (
 	publicIP   = getenv("PUBLIC_IP", "127.0.0.1")
 	listenAddr = getenv("SFU_LISTEN", ":8095")
 	turnPort   = getenv("TURN_PORT", "3478")
+)
+
+const (
+	// iceReconnectGrace is how long a disconnected ICE session is kept
+	// alive before the peer is removed — enough for Wi-Fi/cellular swaps
+	// and NAT rebinds, short enough to free dead seats quickly.
+	iceReconnectGrace = 15 * time.Second
 )
 
 func getenv(k, def string) string {
@@ -99,6 +107,12 @@ type peer struct {
 	pc   *webrtc.PeerConnection
 	ws   *websocket.Conn
 	wmu  sync.Mutex
+
+	// Quality telemetry (updated from the RTP pump and ICE callbacks).
+	bytesRelayed atomic.Int64
+	packetsRelayed atomic.Int64
+	iceState    atomic.Value // string
+	connectedAt atomic.Value // time.Time
 }
 
 func (p *peer) send(m signalMsg) {
@@ -240,6 +254,8 @@ func (r *room) handleTrack(p *peer, remote *webrtc.TrackRemote) {
 		if err != nil {
 			return
 		}
+		p.bytesRelayed.Add(int64(n))
+		p.packetsRelayed.Add(1)
 		if _, err := local.Write(buf[:n]); err != nil {
 			return
 		}
@@ -284,6 +300,30 @@ func wsHandler(w http.ResponseWriter, req *http.Request) {
 		j := c.ToJSON()
 		raw, _ := json.Marshal(j)
 		p.send(signalMsg{Type: "ice", Candidate: raw})
+	})
+	// ICE connection-state policy: 'disconnected' gets a reconnect grace
+	// window (network changes, NAT rebinds); 'failed' or 'closed' tears the
+	// peer down so its tracks stop being forwarded and the seat frees up.
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		p.iceState.Store(state.String())
+		switch state {
+		case webrtc.ICEConnectionStateConnected:
+			if v, ok := p.connectedAt.Load().(time.Time); !ok || v.IsZero() {
+				p.connectedAt.Store(time.Now())
+			}
+		case webrtc.ICEConnectionStateDisconnected:
+			log.Printf("room %s: %s ice disconnected (reconnect grace)", r.id, p.id)
+			go func() {
+				time.Sleep(iceReconnectGrace)
+				if s, _ := p.iceState.Load().(string); s == "disconnected" {
+					log.Printf("room %s: %s reconnect grace expired", r.id, p.id)
+					r.removePeer(p.id)
+				}
+			}()
+		case webrtc.ICEConnectionStateFailed, webrtc.ICEConnectionStateClosed:
+			log.Printf("room %s: %s ice %s", r.id, p.id, state.String())
+			r.removePeer(p.id)
+		}
 	})
 	pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		go r.handleTrack(p, remote)
@@ -353,6 +393,61 @@ func createRoomHandler(w http.ResponseWriter, req *http.Request) {
 	rooms.getOrCreate(body.RoomID, body.ConvID, body.Mode)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"room_id": body.RoomID, "status": "ok"})
+}
+
+// statsHandler reports per-room, per-peer quality telemetry for the ops
+// surface: participant counts, ICE states, session durations and relayed
+// byte/packet totals. Internal-only (shared-secret bearer).
+func statsHandler(w http.ResponseWriter, req *http.Request) {
+	if !internalAuth(req) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	type peerStats struct {
+		ID             string `json:"id"`
+		Role           string `json:"role"`
+		ICEState       string `json:"ice_state"`
+		ConnectedFor   int    `json:"connected_for_seconds"`
+		BytesRelayed   int64  `json:"bytes_relayed"`
+		PacketsRelayed int64  `json:"packets_relayed"`
+	}
+	type roomStats struct {
+		Mode        string      `json:"mode"`
+		Peers       []peerStats `json:"peers"`
+		TrackCount  int         `json:"track_count"`
+		EmptySeconds int        `json:"empty_seconds"`
+	}
+	out := map[string]any{"rooms": []roomStats{}}
+	rooms.mu.Lock()
+	for id, r := range rooms.rooms {
+		r.mu.Lock()
+		rs := roomStats{Mode: r.mode, TrackCount: len(r.tracks), Peers: []peerStats{}}
+		if len(r.peers) == 0 && !r.empty.IsZero() {
+			rs.EmptySeconds = int(time.Since(r.empty).Seconds())
+		}
+		for _, p := range r.peers {
+			ps := peerStats{
+				ID:             p.id,
+				Role:           p.role,
+				ICEState:       "new",
+				BytesRelayed:   p.bytesRelayed.Load(),
+				PacketsRelayed: p.packetsRelayed.Load(),
+			}
+			if s, ok := p.iceState.Load().(string); ok {
+				ps.ICEState = s
+			}
+			if v, ok := p.connectedAt.Load().(time.Time); ok && !v.IsZero() {
+				ps.ConnectedFor = int(time.Since(v).Seconds())
+			}
+			rs.Peers = append(rs.Peers, ps)
+		}
+		r.mu.Unlock()
+		out["rooms"] = append(out["rooms"].([]roomStats), rs)
+		_ = id
+	}
+	rooms.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func activeLiveHandler(w http.ResponseWriter, req *http.Request) {
@@ -431,6 +526,7 @@ func main() {
 	mux.HandleFunc("/ws", wsHandler)
 	mux.HandleFunc("POST /internal/rooms", createRoomHandler)
 	mux.HandleFunc("GET /internal/live", activeLiveHandler)
+	mux.HandleFunc("GET /internal/stats", statsHandler)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})

@@ -849,6 +849,7 @@ func main() {
 	mux.HandleFunc("POST /api/admin/wallet/tokens/{id}/status", app.requireAdmin("superadmin", "finance")(app.handleAdminSetTokenStatus))
 	mux.HandleFunc("POST /api/admin/wallet/tokens/{id}/features", app.requireAdminPerm("tokens.manage")(app.handleAdminSetTokenFeatures))
 	mux.HandleFunc("DELETE /api/admin/wallet/tokens/{id}", app.requireAdmin("superadmin")(app.handleAdminDeleteToken))
+	mux.HandleFunc("GET /api/admin/crypto/chain-status", app.requireAdmin("superadmin", "finance")(app.handleAdminChainStatus))
 	mux.HandleFunc("GET /api/admin/payouts", app.requireAdmin("superadmin", "finance")(app.handleAdminListPayouts))
 	mux.HandleFunc("POST /api/admin/payouts/{id}/review", app.requireAdmin("superadmin", "finance")(app.handleAdminReviewPayout))
 
