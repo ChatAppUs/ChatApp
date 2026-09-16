@@ -35,6 +35,7 @@ func (a *App) generateTOTP() (string, error) {
 		if s, ok := a.authn.totpGenerate(); ok {
 			return s, nil
 		}
+		return "", fmt.Errorf("authn service unavailable")
 	}
 	return generateTOTPSecret()
 }
@@ -74,10 +75,9 @@ func verifyTOTP(secret, code string, at time.Time) bool {
 	return false
 }
 
-// checkTOTP verifies a TOTP code. When the Rust authn service is configured
-// it owns this crypto (P0 delegation per RUST_CONVERSION_PLAN), followed by
-// the older security-service delegation, then the local RFC 6238
-// implementation — the login plane stays up in every chain of failures.
+// checkTOTP verifies a TOTP code. When the Rust authn service is configured it
+// owns this crypto (P0 delegation per RUST_CONVERSION_PLAN); an unavailable
+// configured trust boundary fails closed instead of silently downgrading.
 func (a *App) checkTOTP(secret, code string) bool {
 	if len(code) != 6 {
 		return false
@@ -86,6 +86,7 @@ func (a *App) checkTOTP(secret, code string) bool {
 		if remote, ok := a.authn.totpVerify(secret, code); ok {
 			return remote
 		}
+		return false
 	}
 	if a.cfg.SecuritySvcURL != "" {
 		if remote, ok := a.totpRemote(secret, code); ok {

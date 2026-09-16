@@ -88,6 +88,9 @@ func (c *authnClient) jwtMint(claims Claims) (string, bool) {
 		"sub": claims.Sub, "typ": claims.Type,
 		"exp": claims.Exp, "iat": claims.Iat,
 	}
+	if claims.JTI != "" {
+		in["jti"] = claims.JTI
+	}
 	if claims.Scope != "" {
 		in["scope"] = claims.Scope
 	}

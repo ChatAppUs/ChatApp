@@ -65,13 +65,14 @@ func hashOTP(salt, code string) string {
 }
 
 // otpMake is the delegated generator: when the Rust authn service is
-// configured it owns the code-generation RNG + hash (same distribution
-// contract); local implementations are the fail-open fallback.
+// configured it owns the code-generation RNG + hash. A configured but
+// unavailable trust boundary fails closed.
 func (a *App) otpMake() (code, salt, hash string, err error) {
 	if a.authn != nil {
 		if c, s, h, ok := a.authn.otpGenerate(); ok {
 			return c, s, h, nil
 		}
+		return "", "", "", errors.New("authn service unavailable")
 	}
 	code, err = generateOTP()
 	if err != nil {
@@ -91,6 +92,7 @@ func (a *App) otpHashOf(salt, code string) string {
 		if h, ok := a.authn.otpHash(salt, code); ok {
 			return h
 		}
+		return ""
 	}
 	return hashOTP(salt, code)
 }

@@ -70,6 +70,7 @@ type Claims struct {
 	Sub   string `json:"sub"`
 	Type  string `json:"typ"`             // "access" | "refresh" | "2fa_recovery"
 	Scope string `json:"scope,omitempty"` // "user" (default) | "admin"
+	JTI   string `json:"jti,omitempty"`   // database session id for access-token revocation
 	Exp   int64  `json:"exp"`
 	Iat   int64  `json:"iat"`
 }
@@ -145,15 +146,15 @@ func sha256hex(s string) string {
 // ---- authn delegation layer (Rust P0 surface) ----
 //
 // When AUTHN_SERVICE_URL is configured the Rust authn service owns the
-// trust-critical crypto (RUST_CONVERSION_PLAN P0 surface). Local
-// implementations stay available as the fail-open fallback so the login
-// plane survives an unreachable service, exactly like checkTOTP's
-// delegation.
+// trust-critical crypto (RUST_CONVERSION_PLAN P0 surface). A configured but
+// unreachable service is a hard failure: silently falling back to a second
+// implementation would make the security boundary deployment-dependent.
 func (a *App) passwordHash(pw string) (string, error) {
 	if a.authn != nil {
 		if h, ok := a.authn.passwordHash(pw); ok {
 			return h, nil
 		}
+		return "", errors.New("authn service unavailable")
 	}
 	return hashPassword(pw)
 }
@@ -163,6 +164,7 @@ func (a *App) passwordVerify(pw, hash string) bool {
 		if ok, done := a.authn.passwordVerify(pw, hash); done {
 			return ok
 		}
+		return false
 	}
 	return verifyPassword(pw, hash)
 }
@@ -172,6 +174,7 @@ func (a *App) mintClaims(claims Claims) (string, error) {
 		if tok, ok := a.authn.jwtMint(claims); ok {
 			return tok, nil
 		}
+		return "", errors.New("authn service unavailable")
 	}
 	return signJWT(a.cfg.JWTSecret, claims)
 }
@@ -184,6 +187,7 @@ func (a *App) parseClaims(token string) (*Claims, error) {
 			}
 			return cl, nil
 		}
+		return nil, errors.New("authn service unavailable")
 	}
 	return parseJWT(a.cfg.JWTSecret, token)
 }
@@ -193,6 +197,7 @@ func (a *App) randomNum(n int) (string, error) {
 		if tok, ok := a.authn.randomToken(n); ok {
 			return tok, nil
 		}
+		return "", errors.New("authn service unavailable")
 	}
 	return randomToken(n)
 }
@@ -211,11 +216,18 @@ func (a *App) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		claims, err := a.parseClaims(strings.TrimPrefix(h, "Bearer "))
-		if err != nil || claims.Type != "access" || claims.Scope == "admin" {
+		if err != nil || claims.Type != "access" || claims.Scope == "admin" || (claims.JTI == "" && claims.Scope != "guest") {
 			// Admin-scoped tokens are never accepted on user routes; the
 			// admin system is a fully separate plane.
 			writeErr(w, http.StatusUnauthorized, "invalid or expired token")
 			return
+		}
+		if claims.Scope != "guest" {
+			var active bool
+			if err := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > now())`, claims.JTI, claims.Sub).Scan(&active); err != nil || !active {
+				writeErr(w, http.StatusUnauthorized, "session revoked or expired")
+				return
+			}
 		}
 		ctx := context.WithValue(r.Context(), ctxUserID, claims.Sub)
 		next(w, r.WithContext(ctx))
@@ -244,21 +256,22 @@ func (a *App) bootstrapFirstAdmin(ctx context.Context, userID string) {
 
 func (a *App) issueTokens(ctx context.Context, userID, userAgent, ip string) (map[string]any, error) {
 	now := time.Now()
-	access, err := a.mintClaims(Claims{
-		Sub: userID, Type: "access",
-		Iat: now.Unix(), Exp: now.Add(a.cfg.AccessTokenTTL).Unix(),
-	})
-	if err != nil {
-		return nil, err
-	}
 	refresh, err := a.randomNum(32)
 	if err != nil {
 		return nil, err
 	}
-	_, err = a.db.Exec(ctx,
+	var sessionID string
+	err = a.db.QueryRow(ctx,
 		`INSERT INTO sessions (user_id, refresh_hash, user_agent, ip, expires_at)
-		 VALUES ($1,$2,$3,NULLIF($4,'')::inet,$5)`,
-		userID, sha256hex(refresh), userAgent, ip, now.Add(a.cfg.RefreshTokenTTL))
+		 VALUES ($1,$2,$3,NULLIF($4,'')::inet,$5) RETURNING id`,
+		userID, sha256hex(refresh), userAgent, ip, now.Add(a.cfg.RefreshTokenTTL)).Scan(&sessionID)
+	if err != nil {
+		return nil, err
+	}
+	access, err := a.mintClaims(Claims{
+		Sub: userID, Type: "access", JTI: sessionID,
+		Iat: now.Unix(), Exp: now.Add(a.cfg.AccessTokenTTL).Unix(),
+	})
 	if err != nil {
 		return nil, err
 	}

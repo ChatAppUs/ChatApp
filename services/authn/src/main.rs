@@ -297,12 +297,15 @@ fn b64url_dec(s: &str) -> Option<Vec<u8>> {
     URL_SAFE_NO_PAD.decode(s).ok()
 }
 
-fn jwt_mint(sub: &str, typ: &str, scope: &str, exp: i64, iat: i64) -> String {
+fn jwt_mint(sub: &str, typ: &str, scope: &str, jti: &str, exp: i64, iat: i64) -> String {
     let header = b64url(b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
     // Serialize in the Go struct field order: sub, typ, scope?, exp, iat.
     let mut payload = format!("{{\"sub\":\"{}\",\"typ\":\"{}\"", json_escape(sub), json_escape(typ));
     if !scope.is_empty() {
         payload.push_str(&format!(",\"scope\":\"{}\"", json_escape(scope)));
+    }
+    if !jti.is_empty() {
+        payload.push_str(&format!(",\"jti\":\"{}\"", json_escape(jti)));
     }
     payload.push_str(&format!(",\"exp\":{},\"iat\":{}}}", exp, iat));
     let body = format!("{}.{}", header, b64url(payload.as_bytes()));
@@ -480,13 +483,14 @@ fn handle(mut stream: TcpStream, secret: &str) {
             let sub = json_get(body, "sub").unwrap_or_default();
             let typ = json_get(body, "typ").unwrap_or_default();
             let scope = json_get(body, "scope").unwrap_or_default();
+            let jti = json_get(body, "jti").unwrap_or_default();
             let exp = json_get_num(body, "exp").unwrap_or(0);
             let iat = json_get_num(body, "iat").unwrap_or_else(now_unix_at_call);
             if sub.is_empty() || typ.is_empty() || exp <= 0 {
                 respond(&mut stream, "400 Bad Request", "{\"error\":\"sub, typ and positive exp required\"}");
                 return;
             }
-            let t = jwt_mint(&sub, &typ, &scope, exp, iat);
+            let t = jwt_mint(&sub, &typ, &scope, &jti, exp, iat);
             respond(&mut stream, "200 OK", &format!("{{\"token\":\"{}\"}}", json_escape(&t)));
         }
         ("POST", "/jwt/verify") => {
@@ -623,7 +627,7 @@ mod tests {
     #[test]
     fn jwt_cycle_and_forgery_rejection() {
         setup();
-        let t = jwt_mint("u1", "access", "", now_unix() + 60, now_unix());
+        let t = jwt_mint("u1", "access", "", "session-1", now_unix() + 60, now_unix());
         let claims = jwt_verify(&t).expect("self-minted token must verify");
         assert!(claims.contains("\"sub\":\"u1\""));
         // Forged signature must fail.
@@ -634,7 +638,7 @@ mod tests {
         // Expired tokens must fail.
         let old = {
             let now = now_unix();
-            jwt_mint("u1", "access", "", now - 10, now - 120)
+            jwt_mint("u1", "access", "", "session-1", now - 10, now - 120)
         };
         assert!(jwt_verify(&old).is_none());
     }

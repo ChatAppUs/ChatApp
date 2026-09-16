@@ -88,8 +88,13 @@ var upgrader = websocket.Upgrader{}
 func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	claims, err := a.parseClaims(token)
-	if err != nil || claims.Type != "access" {
+	if err != nil || claims.Type != "access" || claims.JTI == "" {
 		writeErr(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
+	var active bool
+	if err := a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM sessions WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > now())`, claims.JTI, claims.Sub).Scan(&active); err != nil || !active {
+		writeErr(w, http.StatusUnauthorized, "session revoked or expired")
 		return
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
