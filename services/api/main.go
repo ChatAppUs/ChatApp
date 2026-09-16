@@ -898,6 +898,32 @@ func main() {
 	mux.HandleFunc("GET /api/assistant/actions", app.requireAuth(app.handleAssistantActionList))
 	mux.HandleFunc("POST /api/assistant/actions/{id}/decide", app.requireAuth(app.handleAssistantActionDecide))
 
+	// ---- Gap pack 10 (migration 043): competitor-comparison gaps ----
+	mux.HandleFunc("GET /api/search", app.requireAuth(app.handleGlobalSearch))
+	mux.HandleFunc("POST /api/contacts/discover", app.requireAuth(app.handleContactDiscover))
+	mux.HandleFunc("POST /api/appeals", app.requireAuth(app.handleCreateAppeal))
+	mux.HandleFunc("GET /api/me/appeals", app.requireAuth(app.handleMyAppeals))
+	mux.HandleFunc("GET /api/admin/appeals", app.requireAdmin("superadmin", "moderator")(app.handleAdminListAppeals))
+	mux.HandleFunc("POST /api/admin/appeals/{id}/decision", app.requireAdmin("superadmin", "moderator")(app.handleAdminDecideAppeal))
+	mux.HandleFunc("POST /api/copyright/notices", app.requireAuth(app.handleCreateCopyrightNotice))
+	mux.HandleFunc("GET /api/copyright/notices/{id}", app.requireAuth(app.handleGetCopyrightNotice))
+	mux.HandleFunc("POST /api/copyright/notices/{id}/counter", app.requireAuth(app.handleFileCounterNotice))
+	mux.HandleFunc("GET /api/admin/copyright", app.requireAdmin("superadmin", "moderator")(app.handleAdminListCopyright))
+	mux.HandleFunc("POST /api/admin/copyright/{id}/resolve", app.requireAdmin("superadmin", "moderator")(app.handleAdminResolveCopyright))
+	mux.HandleFunc("POST /api/admin/legal-requests", app.requireAdmin("superadmin", "moderator")(app.handleCreateLegalRequest))
+	mux.HandleFunc("GET /api/admin/legal-requests", app.requireAdmin("superadmin", "moderator")(app.handleAdminListLegalRequests))
+	mux.HandleFunc("POST /api/admin/legal-requests/{id}/status", app.requireAdmin("superadmin", "moderator")(app.handleAdminUpdateLegalRequest))
+	mux.HandleFunc("PUT /api/me/date-of-birth", app.requireAuth(app.handleSetDateOfBirth))
+	mux.HandleFunc("GET /api/me/age-status", app.requireAuth(app.handleAgeStatus))
+	mux.HandleFunc("POST /api/admin/users/{id}/safety-mode", app.requireAdmin("superadmin", "moderator")(app.handleAdminSetSafetyMode))
+	mux.HandleFunc("POST /api/support/tickets", app.requireAuth(app.handleCreateSupportTicket))
+	mux.HandleFunc("GET /api/me/support/tickets", app.requireAuth(app.handleMySupportTickets))
+	mux.HandleFunc("GET /api/support/tickets/{id}", app.requireAuth(app.handleGetSupportTicket))
+	mux.HandleFunc("POST /api/support/tickets/{id}/replies", app.requireAuth(app.handleReplySupportTicket))
+	mux.HandleFunc("GET /api/admin/support/tickets", app.requireAdmin("superadmin", "moderator")(app.handleAdminListSupportTickets))
+	mux.HandleFunc("POST /api/admin/support/tickets/{id}/replies", app.requireAdmin("superadmin", "moderator")(app.handleAdminSupportReply))
+	mux.HandleFunc("POST /api/admin/support/tickets/{id}/status", app.requireAdmin("superadmin", "moderator")(app.handleAdminSupportStatus))
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           withSecurityHeaders(withCORS(withMetrics("", mux), cfg.AllowedOrigins)),
