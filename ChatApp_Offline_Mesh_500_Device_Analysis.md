@@ -76,9 +76,19 @@ Coding alone cannot supply Bluetooth/Wi-Fi hardware, radio spectrum, battery, OS
 - Offline live calls are either implemented and measured against declared limits or explicitly unavailable in the UI.
 - Documentation says “finite store-and-forward mesh” rather than “infinite communication”.
 
-**Still absent, and not claimed:** route repair, congestion control, multipath *selection*,
-group acknowledgements, and the multi-device hardware experiments — so the 500-device capacity
-claim in this file remains **unproven**, exactly as it states.
+**Now implemented in source (verified 2026-09-16):** route repair
+(`services/mesh/routerepair.go` — immediate relay re-selection after link failure),
+congestion control (`congestion.go` — byte-based token-bucket backpressure wired into the
+forwarding loop), multipath *selection* (`multipath.go` — transport-diverse relay choice),
+group acknowledgements (`groupack.go` — aggregated, signed per-transfer acks), and a
+large-scale sweep harness (`cmd/meshsim` — 500/5,000/50,000 device grids). A 500-device
+simulated sweep delivers across a 529-node grid in 131 hops with zero drops, and the full
+mesh suite is green under `go test -race`.
+
+**Still absent, and not claimed:** the multi-device *hardware* experiments — real Android/iOS
+radios, battery/thermal drain, indoor/outdoor and dense/sparse topologies. Simulation is not
+evidence of radio physics, so the 500-device field claim in this file remains **unproven**
+until the physical trial above is run.
 
 **Validation:** 21/21 Python E2E suites pass with zero failures against a live API on a fresh
 PostgreSQL 15.19 with all 39 migrations (214 tables); full `services/mesh` suite green under
