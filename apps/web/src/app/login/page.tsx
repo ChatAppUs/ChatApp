@@ -12,16 +12,22 @@ import CountryPicker from "@/components/CountryPicker";
 import { loginWithPasskey, passkeySupported } from "@/lib/passkey";
 import { startGuestSession } from "@/lib/api";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-// Identity spec §2: unified smart input — one field auto-detects email vs phone
-// in real time (no toggle/switch/dropdown mode selector).
+// Identity spec §2: one unified smart identifier field. The country selector is
+// auxiliary phone formatting; it never creates a second phone-number field.
 function detectMode(value: string): "email" | "phone" | "unknown" {
   const v = value.trim();
   if (!v) return "unknown";
   if (/^[+0-9][0-9()\-.\s]*$/.test(v) && /\d/.test(v)) return "phone";
   if (v.includes("@") || /[a-zA-Z]/.test(v)) return "email";
   return "phone";
+}
+
+function normalisePhone(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const hasPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/\D/g, "");
+  return hasPlus ? `+${digits}` : digits;
 }
 
 export default function LoginPage() {
@@ -36,30 +42,26 @@ export default function LoginPage() {
   const [showQR, setShowQR] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  // §3.1 item 5: 30-day passwordless login for previously trusted devices.
   const [deviceToken] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("chatapp.deviceToken") ?? ""
   );
   const [dial, setDial] = useState("+1");
   const [countryISO, setCountryISO] = useState("US");
-  const [phoneLocal, setPhoneLocal] = useState("");
 
   const mode = useMemo(() => detectMode(identifier), [identifier]);
   const isPhone = mode === "phone";
 
-  // Auto-sync a typed international phone (with +…) into the dial + local fields.
   const handleIdentifier = (raw: string) => {
-    if (/^\+[0-9]{1,15}$/.test(raw.replace(/[\s().\-]/g, ""))) {
-      const digits = raw.replace(/[\s().\-]/g, "");
-      for (const d of ["+1", "+44", "+91", "+86", "+49", "+33", "+81", "+7"]) {
-        if (digits.startsWith(d)) {
-          setDial(d);
-          setPhoneLocal(digits.slice(d.length));
-          break;
-        }
-      }
-    }
     setIdentifier(raw);
+  };
+
+  const handleCountryChange = (nextDial: string, iso: string) => {
+    setDial(nextDial);
+    setCountryISO(iso);
+    if (!isPhone) return;
+    const raw = normalisePhone(identifier);
+    const local = raw.replace(/^\+\d+/, "");
+    setIdentifier(`${nextDial}${local}`);
   };
 
   const passkeyLogin = async () => {
@@ -96,7 +98,6 @@ export default function LoginPage() {
     }
   };
 
-  // §3.1 item 5: passwordless login with a device enrolled for 30 days.
   const trustedLogin = async () => {
     setBusy(true);
     setError("");
@@ -115,7 +116,6 @@ export default function LoginPage() {
         setNeeds2FA(true);
         setError("Enter the 6-digit code from your authenticator app");
       } else {
-        // The trust token expired or was revoked — fall back to password login.
         localStorage.removeItem("chatapp.deviceToken");
         setError(msg);
       }
@@ -129,13 +129,7 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     try {
-      // Identity spec §2: backend receives an explicit type flag (email/phone).
-      const finalIdentifier = isPhone
-        ? (phoneLocal ? `${dial}${phoneLocal.replace(/\D/g, "")}` : identifier.replace(/[\s().\-]/g, ""))
-        : identifier.trim();
-      // Identity spec §3.1 step 2: probe account existence first; an unknown
-      // identifier is sent to Sign Up with a friendly message instead of a
-      // dead-end "invalid credentials" error.
+      const finalIdentifier = isPhone ? normalisePhone(identifier) : identifier.trim();
       const probe = await api<{ exists: boolean }>(
         "/api/auth/identifier/check",
         { method: "POST", body: JSON.stringify({ identifier: finalIdentifier }) },
@@ -147,13 +141,20 @@ export default function LoginPage() {
       }
       const tokens = await api<Tokens>(
         "/api/auth/login",
-        { method: "POST", body: JSON.stringify({ identifier: finalIdentifier, type: isPhone ? "phone" : "email", password, totp_code: totpCode }) },
+        {
+          method: "POST",
+          body: JSON.stringify({
+            identifier: finalIdentifier,
+            type: isPhone ? "phone" : "email",
+            country: isPhone ? countryISO : undefined,
+            password,
+            totp_code: totpCode,
+          }),
+        },
         false
       );
       const username = finalIdentifier.includes("@") ? undefined : finalIdentifier;
       saveTokens(tokens, username, rememberMe);
-      // §3.1 item 5: when Remember Me is set, enrol this device for 30-day
-      // passwordless sign-in next time.
       if (rememberMe) {
         try {
           const enrolled = await api<{ device_token: string }>(
@@ -162,7 +163,7 @@ export default function LoginPage() {
           );
           localStorage.setItem("chatapp.deviceToken", enrolled.device_token);
         } catch {
-          // enrolment is best-effort; password login still succeeded
+          // Trusted-device enrollment is best-effort; never block a successful login.
         }
       }
       router.push("/");
@@ -191,29 +192,15 @@ export default function LoginPage() {
             onChange={(e) => handleIdentifier(e.target.value)}
             placeholder="you@example.com  +41 55 555 2671"
             inputMode={isPhone ? "tel" : "email"}
-            autoComplete="email"
+            autoComplete="username"
             required
           />
           <p className="muted" style={{ fontSize: 12 }}>
-            {isPhone ? "Phone mode — country flag applies automatically" : "Email mode — RFC-style validation applies"}
+            {isPhone ? "Phone mode — choose a country code without changing this input" : "Email mode — RFC-style validation applies"}
           </p>
         </div>
         {isPhone && (
-          <>
-            <CountryPicker value={dial} onChange={(d, iso) => { setDial(d); setCountryISO(iso); }} />
-            <div>
-              <label>{t("phone")} (local)</label>
-              <div className="row">
-                <span className="badge">{dial}</span>
-                <input
-                  value={phoneLocal}
-                  onChange={(e) => setPhoneLocal(e.target.value)}
-                  placeholder="4155552671"
-                  inputMode="tel"
-                />
-              </div>
-            </div>
-          </>
+          <CountryPicker value={dial} onChange={handleCountryChange} />
         )}
         <div>
           <label>{t("password")}</label>
@@ -237,23 +224,13 @@ export default function LoginPage() {
           </div>
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
-          <input
-            type="checkbox"
-            checked={rememberMe}
-            onChange={(e) => setRememberMe(e.target.checked)}
-          />
+          <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
           {t("rememberMe")}
         </label>
         {needs2FA && (
           <div>
             <label>2FA code</label>
-            <input
-              value={totpCode}
-              onChange={(e) => setTotpCode(e.target.value)}
-              maxLength={6}
-              inputMode="numeric"
-              required
-            />
+            <input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} maxLength={6} inputMode="numeric" required />
           </div>
         )}
         {error && <div className="error-text">{error}</div>}
@@ -262,37 +239,22 @@ export default function LoginPage() {
       <div className="col" style={{ marginTop: 12 }}>
         <GoogleSignIn totpCode={totpCode} />
         <AppleSignIn totpCode={totpCode} />
-        {deviceToken && (
-          <button className="secondary" onClick={trustedLogin} disabled={busy}>
-            🔏 Sign in without password (trusted device)
-          </button>
-        )}
+        {deviceToken && <button className="secondary" onClick={trustedLogin} disabled={busy}>🔏 Sign in without password (trusted device)</button>}
         {passkeySupported() && (
-          <button
-            className="secondary"
-            onClick={passkeyLogin}
-            disabled={busy || !identifier.trim()}
-            title={!identifier.trim() ? "Enter your username first" : undefined}
-          >
+          <button className="secondary" onClick={passkeyLogin} disabled={busy || !identifier.trim()} title={!identifier.trim() ? "Enter your username first" : undefined}>
             🔑 Sign in with passkey (fingerprint / face / PIN)
           </button>
         )}
-        <button className="secondary" onClick={() => setShowQR((v) => !v)}>
-          {showQR ? "Hide QR code" : "📱 Log in by QR code"}
-        </button>
+        <button className="secondary" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide QR code" : "📱 Log in by QR code"}</button>
         {showQR && <QRLogin />}
       </div>
       <div className="col" style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-        <button className="secondary" onClick={continueAsGuest} disabled={busy}>
-          {t("continueWithoutAccount")}
-        </button>
+        <button className="secondary" onClick={continueAsGuest} disabled={busy}>{t("continueWithoutAccount")}</button>
         <p className="muted" style={{ fontSize: 12 }}>{t("guestHint")}</p>
       </div>
       <p className="muted">
-        <Link href="/forgot-password">{t("forgotPassword")}</Link>
-        {" · "}
-        <Link href="/register">{t("register")}</Link>
-        {" · "}
+        <Link href="/forgot-password">{t("forgotPassword")}</Link>{" · "}
+        <Link href="/register">{t("register")}</Link>{" · "}
         <Link href="/">{t("backToHome")}</Link>
       </p>
     </div>
