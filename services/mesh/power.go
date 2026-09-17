@@ -87,11 +87,11 @@ func ClampScanIntervals(in ScanIntervals) ScanIntervals {
 type ConnectionLimits struct {
 	// MaxPeers on battery; MaxPeersCharging when externally powered. Fewer
 	// peers means fewer radios held open.
-	MaxPeers          int
-	MaxPeersCharging  int
+	MaxPeers         int
+	MaxPeersCharging int
 	// MaxQueuePerLink bounds packets buffered per link. The priority queue
 	// enforces this and sheds lowest-class traffic first.
-	MaxQueuePerLink   int
+	MaxQueuePerLink int
 }
 
 // DefaultConnectionLimits returns the phone-sized defaults.
@@ -244,9 +244,9 @@ func (p *PowerManager) Status() map[string]any {
 			"idle_ms":   p.intervals.IdleMS,
 			"doze_ms":   p.intervals.DozeMS,
 		},
-		"max_peers":        p.limits.MaxPeers,
-		"max_peers_chg":    p.limits.MaxPeersCharging,
-		"max_queue":        p.limits.MaxQueuePerLink,
-		"relay_scale":      p.relayScale(),
+		"max_peers":     p.limits.MaxPeers,
+		"max_peers_chg": p.limits.MaxPeersCharging,
+		"max_queue":     p.limits.MaxQueuePerLink,
+		"relay_scale":   p.relayScale(),
 	}
 }

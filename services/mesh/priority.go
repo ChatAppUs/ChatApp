@@ -51,8 +51,13 @@ func (p Priority) String() string {
 // bulk transfer can never crowd out interactive traffic.
 func PriorityForKind(k PacketKind) Priority {
 	switch k {
-	case KindAck, KindCallSignal:
+	case KindAck, KindCallSignal, KindCallPing, KindCallPong, KindCallBye:
 		return PriorityControl
+	case KindCallMedia, KindCallFec:
+		// Live-call frames are voice-class: above bulk media, below text,
+		// so an active call survives a congested relay without starving
+		// chat traffic entirely.
+		return PriorityVoice
 	case KindMessage, KindGroupMessage:
 		return PriorityText
 	case KindVoiceMessage:

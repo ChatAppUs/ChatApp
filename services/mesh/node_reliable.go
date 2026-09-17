@@ -126,10 +126,11 @@ func (n *Node) sendGroupAck(dst, groupID, transferID string) {
 	}
 }
 
-// Tick advances the retry state machine once and transmits every transfer that
-// is due. It returns how many attempts were queued. Exposed so tests and
-// tooling can drive the machine deterministically instead of sleeping.
-func (n *Node) Tick() int {
+// reliabilityTickOnce advances the single-datagram retry state machine once
+// and transmits every transfer that is due. It returns how many attempts were
+// queued. Exposed so tests and tooling can drive the machine deterministically
+// instead of sleeping.
+func (n *Node) reliabilityTickOnce() int {
 	due := n.transfers.Tick()
 	sent := 0
 	for _, tr := range due {
@@ -150,7 +151,16 @@ func (n *Node) Tick() int {
 	return sent
 }
 
-// reliabilityLoop advances the retry machine on a fixed cadence.
+// Tick advances the retry machine and every time-driven subsystem that rides
+// its cadence: the fragmented-reliable retransmission windows
+// (fragreliable.go) and the live-call sessions (livecall.go: key-epoch
+// rotation, RTT probes, route-health handoff).
+func (n *Node) Tick() int {
+	n.largeRelTick()
+	n.calls.tick(n.now())
+	return n.reliabilityTickOnce()
+}
+
 func (n *Node) reliabilityLoop() {
 	ticker := time.NewTicker(reliabilityTick)
 	defer ticker.Stop()
@@ -191,10 +201,27 @@ func (n *Node) QueueStatus() map[string]any {
 	}
 }
 
-// SetNow overrides this node's clock (and its retry tracker's clock). Tests use
-// it to drive delivery states deterministically instead of sleeping.
+// SetNow overrides this node's clock for every time-driven subsystem: the
+// single-datagram retry tracker, the fragmented-reliable windows and the
+// live-call sessions. Tests use it to drive delivery states deterministically
+// instead of sleeping.
 func (n *Node) SetNow(now func() time.Time) {
+	n.mu.Lock()
+	n.nowFn = now
+	n.mu.Unlock()
 	n.transfers.SetNow(now)
+	n.largeRel.SetNow(now)
+}
+
+// now returns the node's injectable clock (defaults to the wall clock).
+func (n *Node) now() time.Time {
+	n.mu.Lock()
+	fn := n.nowFn
+	n.mu.Unlock()
+	if fn != nil {
+		return fn()
+	}
+	return time.Now()
 }
 
 // RetryAttempts reports how many transmissions have been made for a transfer.

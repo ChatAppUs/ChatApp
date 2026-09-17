@@ -37,9 +37,9 @@ type groupKeyEntry struct {
 
 // GroupKeyManager owns per-group sender keys and their rotation.
 type GroupKeyManager struct {
-	mu      sync.Mutex
-	groups  map[string]*groupKeyEntry
-	now     func() time.Time
+	mu     sync.Mutex
+	groups map[string]*groupKeyEntry
+	now    func() time.Time
 	// rotationInterval is how often a group key is rotated on the schedule.
 	rotationInterval time.Duration
 }

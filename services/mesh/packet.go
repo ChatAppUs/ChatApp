@@ -24,6 +24,11 @@ const (
 	KindGroupMessage PacketKind = "group_message"
 	KindVoiceMessage PacketKind = "voice_message"
 	KindCallSignal   PacketKind = "call_signal"
+	KindCallMedia    PacketKind = "call_media"
+	KindCallFec      PacketKind = "call_fec"
+	KindCallPing     PacketKind = "call_ping"
+	KindCallPong     PacketKind = "call_pong"
+	KindCallBye      PacketKind = "call_bye"
 	KindAck          PacketKind = "ack"
 )
 
@@ -57,7 +62,8 @@ const EnvelopeVersion byte = 1
 func VersionSupported(v byte) bool { return v <= EnvelopeVersion }
 func validPacketKind(kind PacketKind) bool {
 	switch kind {
-	case KindMessage, KindGroupMessage, KindVoiceMessage, KindCallSignal, KindAck:
+	case KindMessage, KindGroupMessage, KindVoiceMessage, KindCallSignal, KindAck,
+		KindCallMedia, KindCallFec, KindCallPing, KindCallPong, KindCallBye:
 		return true
 	default:
 		return false

@@ -60,7 +60,6 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-
 // Unmarshal helpers.
 func UnmarshalMessage(b []byte) (*Message, error) {
 	var m Message

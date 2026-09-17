@@ -311,8 +311,8 @@ func (p *TransportPolicy) Order(nbs []*Neighbor, now time.Time) []*Neighbor {
 	out := make([]ranked, 0, len(nbs))
 	for _, nb := range nbs {
 		c := TransportCandidate{
-			Name:        nb.DeviceID,
-			Class:       classForTransport(nb.Transport),
+			Name:          nb.DeviceID,
+			Class:         classForTransport(nb.Transport),
 			BandwidthKBps: int64(bandwidthHintFor(classForTransport(nb.Transport))),
 			LatencyMS:     int64(latencyHintFor(classForTransport(nb.Transport)) * 1000),
 			PrivacyScore:  1.0, // every in-engine transport is authenticated + encrypted

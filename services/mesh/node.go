@@ -15,6 +15,7 @@ package mesh
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"sort"
 	"sync"
@@ -30,26 +31,26 @@ type Node struct {
 	Key      *IdentityKey
 	Kind     string // "member" | "relay"
 
-	transport  Transport
-	routes     *RouteTable
-	queue      *Queue
-	handler    Handler
+	transport   Transport
+	routes      *RouteTable
+	queue       *Queue
+	handler     Handler
 	onVoiceNote func(src string, note *VoiceNote)
-	voiceNotes *VoiceNoteStore
-	maxHops    int
-	signer     *SigningKey
-	peerKeys   map[string][]byte        // device id -> pinned Ed25519 public key (TOFU)
-	revoked    map[string][]byte        // device id -> revoked pinned Ed25519 key
-	limiter    *RelayLimiter            // per-source relay quota (abuse prevention)
-	kem        *KeyExchange             // X25519 key agreement (per-peer session keys)
-	peerKEM    map[string]AdvertisedKEM // device id -> peer's advertised KEM key
-	replay     *ReplayFilter            // per-source anti-replay sequence windows
-	frags      *Reassembler             // MTU fragment reassembly (see fragment.go)
-	pfifo      *PriorityQueue           // priority-ordered forwarding buffer (see pfifo.go)
-	transfers  *transferTracker         // reliable delivery state machine (see reliability.go)
-	congestion *CongestionController    // byte-based radio backpressure
-	maxFanout  int                      // bounded multipath fan-out per attempt
-	groupKeys  *GroupKeyManager         // per-group sender keys and rotation (see groupkey.go)
+	voiceNotes  *VoiceNoteStore
+	maxHops     int
+	signer      *SigningKey
+	peerKeys    map[string][]byte        // device id -> pinned Ed25519 public key (TOFU)
+	revoked     map[string][]byte        // device id -> revoked pinned Ed25519 key
+	limiter     *RelayLimiter            // per-source relay quota (abuse prevention)
+	kem         *KeyExchange             // X25519 key agreement (per-peer session keys)
+	peerKEM     map[string]AdvertisedKEM // device id -> peer's advertised KEM key
+	replay      *ReplayFilter            // per-source anti-replay sequence windows
+	frags       *Reassembler             // MTU fragment reassembly (see fragment.go)
+	pfifo       *PriorityQueue           // priority-ordered forwarding buffer (see pfifo.go)
+	transfers   *transferTracker         // reliable delivery state machine (see reliability.go)
+	congestion  *CongestionController    // byte-based radio backpressure
+	maxFanout   int                      // bounded multipath fan-out per attempt
+	groupKeys   *GroupKeyManager         // per-group sender keys and rotation (see groupkey.go)
 	// groupMembers records the member list per group id so a group send can
 	// track per-member acknowledgements (see groupack.go). Guarded by mu.
 	groupMembers map[string][]string
@@ -57,6 +58,9 @@ type Node struct {
 	revStore     *revocationStore // network-wide revocation notices (see revocdist.go)
 	power        *PowerManager    // battery/resource governor (see power.go)
 	policy       *TransportPolicy // transport selection policy (see transport_policy.go)
+	calls        *CallManager     // offline live-call media plane (see livecall.go)
+	largeRel     *largeTracker    // fragmented reliable transfers (see fragreliable.go)
+	nowFn        func() time.Time // injectable clock (tests); nil = time.Now
 
 	seqCtr int64
 	stop   chan struct{}
@@ -156,6 +160,8 @@ func NewNode(cfg NodeConfig) *Node {
 		policy:       NewTransportPolicy(),
 		stop:         make(chan struct{}),
 	}
+	n.calls = newCallManager(n)
+	n.largeRel = newLargeTracker()
 	// Wire the transport's inbound callback to this node. Any transport that
 	// accepts a late-bound inbound callback (UDP, the Bluetooth/Wi-Fi Direct
 	// stream bridges, or the auto-selecting transport) is supported — not only
@@ -597,6 +603,17 @@ func (n *Node) route(p *Packet) {
 	// authenticates (see replay.go): a forged packet must never be able to
 	// advance or poison the receiver's replay window.
 	if p.Dst == n.DeviceID || (p.Dst == "" && p.GroupID != "") {
+		// Live-call plane packets (media, parity, probes, teardown) are
+		// consumed by the call manager and never reach the application
+		// handler. Anti-replay still applies: a replayed frame is dropped
+		// before it can reach a session.
+		if IsCallPlaneKind(p.Kind) {
+			if p.Seq != 0 && !n.replay.Check(p.Src, p.Seq) {
+				return
+			}
+			n.calls.InboundPlane(p, nil)
+			return
+		}
 		// An acknowledgement settles a reliable transfer and is consumed
 		// here. It is end-to-end control with no payload, so it is neither
 		// fragmented nor handed to the application handler.
@@ -622,11 +639,25 @@ func (n *Node) route(p *Packet) {
 				}
 				return
 			}
-			if string(proof) != "chatapp-mesh-ack-v1:"+p.AckFor {
+			if bytes.HasPrefix(proof, []byte("chatapp-mesh-ack-v1:")) {
+				if string(proof) != "chatapp-mesh-ack-v1:"+p.AckFor {
+					return
+				}
+				if first && p.AckFor != "" {
+					n.transfers.Ack(p.AckFor)
+				}
 				return
 			}
-			if first && p.AckFor != "" {
-				n.transfers.Ack(p.AckFor)
+			// A structured acknowledgement settles one fragment (or the
+			// whole group) of a fragmented reliable transfer
+			// (see fragreliable.go).
+			var fa fragAck
+			if json.Unmarshal(proof, &fa) == nil && fa.V == fragAckVersion && p.AckFor != "" {
+				if fa.Done {
+					n.largeRel.AckDone(p.AckFor)
+				} else {
+					n.largeRel.AckFrag(p.AckFor, fa.Index)
+				}
 			}
 			return
 		}
@@ -641,11 +672,29 @@ func (n *Node) route(p *Packet) {
 				// A fragmented payload is withheld from the application
 				// until every part has arrived and the digest verifies. A
 				// payload that was sent whole passes straight through.
+				n.calls.InboundSignal(p, pt)
 				full, complete, err := n.frags.Add(p, pt)
 				if err != nil {
 					return
 				}
+				// A reliable fragment group is acknowledged per copy so the
+				// sender's retransmission window advances even while the
+				// group is still incomplete (see fragreliable.go).
+				if p.FragTotal > 1 && p.Xfer != "" {
+					n.sendFragAck(p.Src, p.Xfer, p.FragID, p.FragIndex)
+				}
 				if !complete {
+					return
+				}
+				// A fragmented reliable transfer delivers exactly once
+				// through the large-transfer tracker.
+				if p.Xfer != "" && n.largeRel.Known(p.Xfer) {
+					if n.largeRel.MarkDelivered(p.Xfer) {
+						if !n.offerVoiceNote(p, full) && n.handler != nil {
+							n.handler(p, full)
+						}
+					}
+					n.sendFragDoneAck(p.Src, p.Xfer, p.FragID)
 					return
 				}
 				// A reliable transfer delivers to the application exactly
@@ -668,6 +717,14 @@ func (n *Node) route(p *Packet) {
 						n.sendGroupAck(p.Src, p.GroupID, p.Xfer)
 					} else {
 						n.sendAck(p.Src, p.Xfer)
+					}
+					// A fragmented transfer delivered through the generic
+					// reliable path (the receiver holds no sender-side
+					// tracker) still reports its completed reassembly so the
+					// origin's retransmission window can retire
+					// (see fragreliable.go).
+					if p.FragTotal > 1 && p.FragID != "" {
+						n.sendFragDoneAck(p.Src, p.Xfer, p.FragID)
 					}
 					return
 				}

@@ -44,6 +44,17 @@ const (
 	maxAssemblies    = 256
 	maxAssemblyBytes = 8 * 1024 * 1024
 	assemblyTTL      = 5 * time.Minute
+
+	// Per-source admission quota. Memory caps bound how much reassembly
+	// state exists in total, but a single hostile or malfunctioning peer
+	// could otherwise cycle groups at the global cap forever, starving
+	// every other source (a denial of service that costs the relay CPU and
+	// buffer slots without ever delivering anything). Each source may hold
+	// at most maxOpenPerSource open groups, and may open at most
+	// newGroupBurst groups immediately and newGroupRatePerSec afterwards.
+	maxOpenPerSource   = 8
+	newGroupRatePerSec = 16
+	newGroupBurst      = 16
 )
 
 var (
@@ -52,6 +63,10 @@ var (
 	// ErrFragmentDigestMismatch reports a reassembled payload that does not
 	// match the digest committed by the sender.
 	ErrFragmentDigestMismatch = errors.New("mesh: reassembled payload digest mismatch")
+	// ErrFragmentQuota reports that the fragment group was refused by the
+	// per-source admission quota: one device may not monopolise the
+	// reassembly buffers of a relay (see maxOpenPerSource).
+	ErrFragmentQuota = errors.New("mesh: fragment quota exceeded for source")
 )
 
 // SplitPayload divides a plaintext into MTU-bounded chunks. It returns the
@@ -88,6 +103,7 @@ func SplitPayload(plaintext []byte, maxPayload int) (chunks [][]byte, fragID str
 
 // assembly is one in-progress reassembly group.
 type assembly struct {
+	src     string
 	total   int
 	digest  []byte
 	parts   map[int][]byte
@@ -99,23 +115,29 @@ type assembly struct {
 // yields the complete payload once every part has arrived. It is safe for
 // concurrent use.
 type Reassembler struct {
-	mu       sync.Mutex
-	open     map[string]*assembly
-	bytes    int
-	ttl      time.Duration
-	maxOpen  int
-	maxBytes int
-	now      func() time.Time
+	mu        sync.Mutex
+	open      map[string]*assembly
+	bytes     int
+	ttl       time.Duration
+	maxOpen   int
+	maxBytes  int
+	now       func() time.Time
+	srcOpen   map[string]int     // per-source open-group count
+	srcTokens map[string]float64 // per-source new-group token bucket
+	srcLast   map[string]time.Time
 }
 
 // NewReassembler creates a reassembler with the default bounded limits.
 func NewReassembler() *Reassembler {
 	return &Reassembler{
-		open:     make(map[string]*assembly),
-		ttl:      assemblyTTL,
-		maxOpen:  maxAssemblies,
-		maxBytes: maxAssemblyBytes,
-		now:      time.Now,
+		open:      make(map[string]*assembly),
+		ttl:       assemblyTTL,
+		maxOpen:   maxAssemblies,
+		maxBytes:  maxAssemblyBytes,
+		now:       time.Now,
+		srcOpen:   make(map[string]int),
+		srcTokens: make(map[string]float64),
+		srcLast:   make(map[string]time.Time),
 	}
 }
 
@@ -147,7 +169,11 @@ func (r *Reassembler) Add(p *Packet, chunk []byte) ([]byte, bool, error) {
 			// Bounded memory: refuse a new group rather than evict or grow.
 			return nil, false, ErrFragmentInvalid
 		}
+		if err := r.admitLocked(p.Src, now); err != nil {
+			return nil, false, err
+		}
 		a = &assembly{
+			src:     p.Src,
 			total:   p.FragTotal,
 			digest:  append([]byte(nil), p.FragSum...),
 			parts:   make(map[int][]byte),
@@ -213,6 +239,44 @@ func (r *Reassembler) dropLocked(key string, a *assembly) {
 	if r.bytes < 0 {
 		r.bytes = 0
 	}
+	if a.src != "" {
+		r.srcOpen[a.src]--
+		if r.srcOpen[a.src] <= 0 {
+			delete(r.srcOpen, a.src)
+		}
+	}
+}
+
+// admitLocked applies the per-source admission quota to a would-be new
+// assembly group. It returns ErrFragmentQuota when the source has exhausted
+// its open-group slots or its new-group token budget, so one device cannot
+// churn the relay's reassembly state at the expense of everyone else.
+func (r *Reassembler) admitLocked(src string, now time.Time) error {
+	if src == "" {
+		return nil
+	}
+	if r.srcOpen[src] >= maxOpenPerSource {
+		return ErrFragmentQuota
+	}
+	last := r.srcLast[src]
+	if last.IsZero() {
+		last = now
+		r.srcTokens[src] = newGroupBurst
+	}
+	elapsed := now.Sub(last).Seconds()
+	if elapsed > 0 {
+		r.srcTokens[src] += elapsed * newGroupRatePerSec
+		if r.srcTokens[src] > newGroupBurst {
+			r.srcTokens[src] = newGroupBurst
+		}
+		r.srcLast[src] = now
+	}
+	if r.srcTokens[src] < 1 {
+		return ErrFragmentQuota
+	}
+	r.srcTokens[src] -= 1
+	r.srcOpen[src]++
+	return nil
 }
 
 // expireLocked discards groups whose missing fragments never arrived, so an

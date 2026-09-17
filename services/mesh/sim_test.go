@@ -269,3 +269,76 @@ func TestSimLossyChainDelivery(t *testing.T) {
 		n.Stop()
 	}
 }
+
+// TestSim500DeviceGridDelivery is the CI-sized stand-in for the hardware
+// fleet sweep (ChatApp_Offline_Mesh_Analysis.md §Required plan item 9): a
+// 25×20 grid of 500 devices — the smallest tier the analysis names — with
+// delivery between opposite corners, a bounded queue under load, and
+// hop/latency accounting from the bus stats. Skipped in -short mode.
+func TestSim500DeviceGridDelivery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("500-device grid is a long simulation; skipped in -short mode")
+	}
+	const cols, rows = 25, 20 // 25*20 = 500 devices
+	const n = cols * rows
+	bus := NewSimBus()
+	nodes := make(map[int]*Node, n)
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			id := "d" + itoa(r*cols+c)
+			kind := "relay"
+			if (r == 0 && c == 0) || (r == rows-1 && c == cols-1) {
+				kind = "member"
+			}
+			nodes[r*cols+c] = newSimNode(t, bus, id, kind, nil, HopsForDevices(n))
+		}
+	}
+	addr := func(r, c int) string { return "sim://d" + itoa(r*cols+c) }
+	kindOf := func(r, c int) string {
+		if (r == 0 && c == 0) || (r == rows-1 && c == cols-1) {
+			return "member"
+		}
+		return "relay"
+	}
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			i := r*cols + c
+			wire := func(j int) {
+				bus.Wire(addr(i/cols, i%cols), addr(j/cols, j%cols))
+				bus.Wire(addr(j/cols, j%cols), addr(i/cols, i%cols))
+				nodes[i].routes.Upsert(&Beacon{DeviceID: "d" + itoa(j), Kind: kindOf(j/cols, j%cols), Transport: "local_wifi", Addr: addr(j/cols, j%cols)})
+			}
+			if c+1 < cols {
+				wire(i + 1)
+			}
+			if c > 0 {
+				wire(i - 1)
+			}
+			if r+1 < rows {
+				wire(i + cols)
+			}
+			if r > 0 {
+				wire(i - cols)
+			}
+		}
+	}
+	start := time.Now()
+	got := make(chan string, 1)
+	corner := nodes[n-1]
+	corner.handler = func(p *Packet, pt []byte) { got <- string(pt) }
+	if _, err := nodes[0].Send(KindMessage, corner.DeviceID, []byte("500-device corner delivery")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case msg := <-got:
+		t.Logf("500-device grid: delivered %q in %s (bus stats: %v)", msg, time.Since(start).Round(time.Millisecond), bus.Stats())
+	case <-time.After(30 * time.Second):
+		t.Fatalf("grid delivery failed across %d devices", n)
+	}
+	if dropped := bus.Stats(); dropped > 0 {
+		t.Fatalf("unexpected drops: %d", dropped)
+	}
+	for _, nd := range nodes {
+		nd.Stop()
+	}
+}
