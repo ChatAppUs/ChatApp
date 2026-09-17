@@ -55,6 +55,9 @@ final class MeshEngine {
     static let defaultMaxHops = 64
     private static let maxSeen = 10_000
 
+    /// A neighbour beacon expires after three minutes (services/mesh/node.go).
+    static let neighbourTTL: TimeInterval = 3 * 60
+
     /// Envelope version this engine stamps; newer formats are rejected.
     static let meshVersion = 1
 
@@ -171,8 +174,18 @@ final class MeshEngine {
 
     func upsertNeighbor(deviceId: String, addr: String, transport: String, relayOk: Bool = true, now: Date = Date()) {
         lock.lock(); defer { lock.unlock() }
+        pruneNeighborsLocked(now)
         neighbors[deviceId] = MeshNeighbor(deviceId: deviceId, addr: addr,
                                            transport: transport, relayOk: relayOk, lastSeen: now)
+    }
+
+    /// Drops neighbours whose last beacon is older than the three-minute TTL
+    /// (parity with services/mesh/node.go's neighborMaxAge and the Android
+    /// engine's NEIGHBOUR_TTL_MS): a phone that slept or left must stop
+    /// receiving forwarded packets.
+    private func pruneNeighborsLocked(_ now: Date) {
+        let ttl = MeshEngine.neighbourTTL
+        neighbors = neighbors.filter { now.timeIntervalSince($0.value.lastSeen) <= ttl }
     }
 
     func neighborList() -> [MeshNeighbor] {
@@ -471,7 +484,7 @@ final class MeshEngine {
         guard let target = links.first(where: { $0.isAvailable() }) else { return 0 }
         var sent = 0
         for p in pending() {
-            for nb in neighborList() {
+            for nb in relayCandidates(for: p) {
                 if !relayOk && nb.deviceId != p.dst { continue }
                 if target.send(addr: nb.addr, data: MeshPacketCodec.encode(p)) {
                     dequeue(p.id)
@@ -481,6 +494,20 @@ final class MeshEngine {
             }
         }
         return sent
+    }
+
+    /// Fresh (unexpired) neighbours, relay-consenting first, then freshest —
+    /// mirroring services/mesh/routing.go candidate scoring.
+    private func relayCandidates(for p: MeshPacket) -> [MeshNeighbor] {
+        let cutoff = Date().addingTimeInterval(-MeshEngine.neighbourTTL)
+        return neighborList()
+            .filter { $0.lastSeen >= cutoff }
+            .sorted { a, b in
+                let ra = a.relayOk || a.deviceId == p.dst
+                let rb = b.relayOk || b.deviceId == p.dst
+                if ra != rb { return ra }
+                return a.lastSeen > b.lastSeen
+            }
     }
 
     // MARK: revocation

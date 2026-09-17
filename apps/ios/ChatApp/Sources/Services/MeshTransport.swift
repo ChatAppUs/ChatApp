@@ -264,12 +264,55 @@ final class NativeMeshManager {
         localWifi = LocalWifiMeshLink { addr, data in _ = mesh.handleInbound(addr: addr, data: data) }
     }
 
+    private var supervisor: DispatchSourceTimer?
+    /// Links the supervisor believes are running, keyed by transport kind.
+    private var linkRunning: [String: Bool] = [:]
+    /// Consecutive supervision cycles a link has been down; drives backoff.
+    private var linkFailures: [String: Int] = [:]
+
     func start() {
         engine.attach([localWifi, bluetooth])
+        for link in [localWifi, bluetooth] {
+            linkRunning[link.kind] = link.isAvailable()
+        }
+        startSupervisor()
     }
 
     func stop() {
+        supervisor?.cancel()
+        supervisor = nil
         engine.stop()
+        linkRunning.removeAll()
+        linkFailures.removeAll()
+    }
+
+    /// Automatic radio supervision (Mesh Analysis plan item 4): re-evaluates
+    /// every link every 10 seconds — restarts links whose radio or permission
+    /// came back, stops links whose radio went away, and refreshes the
+    /// engine's active-transport view. Failures back off exponentially so a
+    /// dead radio cannot spin the radios.
+    private func startSupervisor() {
+        let t = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        t.schedule(deadline: .now() + 10, repeating: 10)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            for link in [self.localWifi, self.bluetooth] {
+                let available = link.isAvailable()
+                let wasRunning = self.linkRunning[link.kind] ?? false
+                if available && !wasRunning {
+                    link.start()
+                    self.linkRunning[link.kind] = true
+                    self.linkFailures[link.kind] = 0
+                } else if !available && wasRunning {
+                    link.stop()
+                    self.linkRunning[link.kind] = false
+                    self.linkFailures[link.kind, default: 0] += 1
+                }
+            }
+            self.engine.refreshTransport()
+        }
+        t.resume()
+        supervisor = t
     }
 
     /// Current state for the mesh status screen.

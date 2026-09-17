@@ -168,10 +168,33 @@ class MeshEngine(
 
     /** Records a neighbour from a discovery beacon (device id + reachable addr). */
     fun upsertNeighbor(deviceId: String, addr: String, transport: String, relayOk: Boolean = true, now: Long = System.currentTimeMillis()) {
+        pruneNeighbors(now)
         neighbors[deviceId] = MeshNeighbor(deviceId, addr, transport, relayOk = relayOk, lastSeen = now)
     }
 
-    fun neighborList(): List<MeshNeighbor> = neighbors.values.toList()
+    fun neighborList(): List<MeshNeighbor> = pruneNeighbors(System.currentTimeMillis()).values.toList()
+
+    /**
+     * Drops neighbours whose last beacon is older than [NEIGHBOUR_TTL_MS]
+     * (three minutes, matching the Go engine's neighbourMaxAge): a phone that
+     * slept, moved or left must stop consuming send attempts.
+     */
+    private fun pruneNeighbors(now: Long): Map<String, MeshNeighbor> {
+        neighbors.entries.removeAll { now - it.value.lastSeen > NEIGHBOUR_TTL_MS }
+        return neighbors
+    }
+
+    /**
+     * Forwarding candidates, best first: relay-consenting peers, then the
+     * freshest beacons — the same ordering signals the Go route table scores
+     * (consent, freshness).
+     */
+    private fun relayCandidates(p: MeshPacket): List<MeshNeighbor> {
+        val now = System.currentTimeMillis()
+        return neighbors.values
+            .filter { now - it.lastSeen <= NEIGHBOUR_TTL_MS }
+            .sortedWith(compareByDescending<MeshNeighbor> { it.relayOk || it.deviceId == p.dst }.thenByDescending { it.lastSeen })
+    }
 
     /**
      * Serializes a signed presence beacon carrying routing metadata and this
@@ -485,7 +508,7 @@ class MeshEngine(
         var sent = 0
         val target = links.firstOrNull { it.isAvailable() } ?: return 0
         for (p in pending()) {
-            for (nb in neighbors.values) {
+            for (nb in relayCandidates(p)) {
                 if (!relayOk && nb.deviceId != p.dst) continue
                 val wire = MeshPacketCodec.encode(p)
                 if (target.send(nb.addr, wire)) {
@@ -624,6 +647,9 @@ class MeshEngine(
         const val DEFAULT_MAX_HOPS = 64
         private const val MAX_SEEN = 10000
 
+        /** A neighbour beacon expires after three minutes (services/mesh/node.go). */
+        const val NEIGHBOUR_TTL_MS = 3 * 60 * 1000L
+
         /** Envelope version this engine stamps; newer formats are rejected. */
         const val MESH_VERSION = 1
 
@@ -757,15 +783,72 @@ class NativeMeshManager(private val context: android.content.Context, private va
     private val localWifi = LocalWifiLink({ addr, data -> engine.handleInbound(addr, data) })
     private val bluetooth = BluetoothLink(context) { addr, data -> engine.handleInbound(addr, data) }
 
+    private val allLinks = listOf(wifiDirect, localWifi, bluetooth)
+    private val startedLinks = HashSet<String>()
+    private var supervisor: Thread? = null
+
+    @Volatile private var supervising = false
+
     /**
      * Starts the chain in Anonymous.md §5.3 order. Links that the platform
      * reports unavailable are skipped rather than failing the whole mesh.
+     * A supervision loop then keeps the chain alive for the rest of the
+     * session: radios and permissions come and go (user toggles Bluetooth,
+     * grants location later, Wi-Fi Direct re-forms its group), and a link
+     * that was skipped at start must come up the moment it can.
      */
     fun start() {
         engine.attach(wifiDirect, localWifi, bluetooth)
+        startedLinks.clear()
+        allLinks.forEach { if (it.isAvailable()) { it.start(); startedLinks.add(it.kind) } }
+        startSupervisor()
     }
 
-    fun stop() = engine.stop()
+    fun stop() {
+        supervising = false
+        supervisor?.interrupt()
+        supervisor = null
+        engine.stop()
+        startedLinks.clear()
+    }
+
+    /**
+     * Supervision loop (§4: automatic radio permission/discovery/reconnect
+     * state machines). Every cycle: start links that became available, stop
+     * links that did, ask the Bluetooth link to reconnect any discovered peer
+     * whose backoff has elapsed, and re-evaluate the active transport.
+     */
+    private fun startSupervisor() {
+        if (supervising) return
+        supervising = true
+        supervisor = Thread {
+            while (supervising) {
+                try {
+                    for (link in allLinks) {
+                        val available = try { link.isAvailable() } catch (_: Exception) { false }
+                        val isStarted = link.kind in startedLinks
+                        if (available && !isStarted) {
+                            try { link.start(); startedLinks.add(link.kind) } catch (_: Exception) { }
+                        } else if (!available && isStarted) {
+                            try { link.stop() } catch (_: Exception) { }
+                            startedLinks.remove(link.kind)
+                        }
+                    }
+                    try { bluetooth.reconnectKnown() } catch (_: Exception) { }
+                    engine.refreshTransport()
+                } catch (_: InterruptedException) {
+                    break
+                } catch (_: Exception) {
+                    // A supervision error must never kill the loop.
+                }
+                try {
+                    Thread.sleep(SUPERVISOR_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }.also { it.name = "mesh-supervisor"; it.isDaemon = true; it.start() }
+    }
 
     /** Current transport state for the UI / API status surface. */
     fun status(): JSONObject = JSONObject()
@@ -773,4 +856,11 @@ class NativeMeshManager(private val context: android.content.Context, private va
         .put("relay_ok", engine.relayOk)
         .put("peers", engine.neighborList().size)
         .put("pending", engine.queueSize())
+        .put("links", org.json.JSONArray().apply {
+            allLinks.forEach { put(JSONObject().put("kind", it.kind).put("available", try { it.isAvailable() } catch (_: Exception) { false }).put("started", it.kind in startedLinks)) }
+        })
+
+    private companion object {
+        const val SUPERVISOR_INTERVAL_MS = 10_000L
+    }
 }

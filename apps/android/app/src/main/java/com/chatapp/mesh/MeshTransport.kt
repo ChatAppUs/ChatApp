@@ -81,12 +81,35 @@ class BluetoothLink(
     private var serverSocket: BluetoothServerSocket? = null
     private var acceptThread: Thread? = null
 
+    // Reconnect state: discovered-but-unconnected peers, retried with
+    // exponential per-peer backoff so a flapping radio cannot busy-loop.
+    private val knownPeers = ConcurrentHashMap.newKeySet<String>()
+    private val lastAttempt = ConcurrentHashMap<String, Long>()
+    private val attemptCount = ConcurrentHashMap<String, Int>()
+
     /** Inbound scan results, delivered as discovered device addresses. */
     private val receiver = object : BroadcastReceiver() {
         @SuppressLint("MissingPermission")
         override fun onReceive(ctx: Context, intent: Intent) {
             when (intent.action) {
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> if (running) startDiscovery()
+                BluetoothAdapter.ACTION_FOUND -> {
+                    // A nearby ChatApp peer: remember it and connect when its
+                    // per-peer backoff has elapsed (mesh parity with the iOS
+                    // CoreBluetooth link, which reconnects on didDisconnect).
+                    @SuppressLint("MissingPermission")
+                    val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    val mac = device?.address ?: return
+                    if (mac.isNotBlank() && !peers.containsKey(mac)) {
+                        knownPeers.add(mac)
+                        maybeConnect(mac, System.currentTimeMillis())
+                    }
+                }
                 BluetoothAdapter.ACTION_STATE_CHANGED -> {
                     val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)
                     if (state == BluetoothAdapter.STATE_TURNING_OFF) stop()
@@ -115,9 +138,12 @@ class BluetoothLink(
     override fun start() {
         if (!canUseBluetooth() || running) return
         running = true
+        lastAttempt.clear()
+        attemptCount.clear()
 
         context.registerReceiver(receiver, IntentFilter().apply {
             addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+            addAction(BluetoothAdapter.ACTION_FOUND)
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
         })
 
@@ -154,17 +180,47 @@ class BluetoothLink(
     /** Connect to a discovered device and begin reading its packets. */
     @SuppressLint("MissingPermission")
     fun connectTo(macAddress: String): Boolean {
-        if (!canUseBluetooth() || peers.containsKey(macAddress)) return peers.containsKey(macAddress)
+        if (!canUseBluetooth()) return peers.containsKey(macAddress)
+        if (peers.containsKey(macAddress)) return true
         return try {
             val device = adapter!!.getRemoteDevice(macAddress)
             val socket = device.createRfcommSocketToServiceRecord(SERVICE_UUID)
             adapter.cancelDiscovery()
             socket.connect()
             registerSocket(socket)
+            attemptCount.remove(macAddress)
+            knownPeers.add(macAddress)
             true
         } catch (_: Exception) {
+            // Connection refused/refined: back off before the next try.
+            attemptCount.merge(macAddress, 1, Int::plus)
             false
         }
+    }
+
+    /**
+     * Reconnects to a known peer whose backoff window has elapsed. Backoff
+     * doubles per consecutive failure: 5s, 10s, 20s … capped at 60s.
+     */
+    @SuppressLint("MissingPermission")
+    fun maybeConnect(macAddress: String, now: Long = System.currentTimeMillis()): Boolean {
+        if (!running || peers.containsKey(macAddress)) return peers.containsKey(macAddress)
+        val attempts = attemptCount[macAddress] ?: 0
+        val backoff = minOf(60_000L, 5_000L shl minOf(attempts, 4))
+        val last = lastAttempt[macAddress] ?: 0L
+        if (now - last < backoff) return false
+        lastAttempt[macAddress] = now
+        return connectTo(macAddress)
+    }
+
+    /** Addresses this link has discovered but may not yet have connected. */
+    fun knownAddresses(): Set<String> = knownPeers.toSet()
+
+    /** Reconnect any discovered peer whose backoff has elapsed. */
+    fun reconnectKnown(now: Long = System.currentTimeMillis()): Int {
+        var n = 0
+        for (mac in knownPeers) if (maybeConnect(mac, now)) n++
+        return n
     }
 
     private fun registerSocket(socket: BluetoothSocket) {
@@ -187,6 +243,7 @@ class BluetoothLink(
                 // Peer dropped; fall through to cleanup.
             } finally {
                 peers.remove(addr)
+                knownPeers.add(addr)
                 try { socket.close() } catch (_: Exception) { }
             }
         }.also { it.name = "mesh-bt-read-$addr"; it.start() }
@@ -196,7 +253,7 @@ class BluetoothLink(
         val socket = peers[addr]
         if (socket == null) {
             // No live socket yet: try to establish one, then send.
-            if (!connectTo(addr)) return false
+            if (!maybeConnect(addr)) return false
         }
         return try {
             val out: OutputStream = peers[addr]!!.outputStream
@@ -216,6 +273,8 @@ class BluetoothLink(
         serverSocket = null
         peers.values.forEach { s -> try { s.close() } catch (_: Exception) { } }
         peers.clear()
+        lastAttempt.clear()
+        attemptCount.clear()
         try { adapter?.cancelDiscovery() } catch (_: Exception) { }
     }
 
