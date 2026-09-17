@@ -28,12 +28,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
+private fun detectIdentifierType(value: String): String {
+    val v = value.trim()
+    if (v.isEmpty()) return "unknown"
+    return if (v.matches(Regex("^[+0-9][0-9()\\-.\\s]*$") ) && v.any { it.isDigit() }) "phone" else "email"
+}
+
 @Composable
-fun LoginScreen(
-    api: ApiClient,
-    session: Session,
-    onLoggedIn: () -> Unit,
-) {
+fun LoginScreen(api: ApiClient, session: Session, onLoggedIn: () -> Unit) {
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var totp by remember { mutableStateOf("") }
@@ -43,192 +45,60 @@ fun LoginScreen(
     var rememberMe by remember { mutableStateOf(true) }
     var trustedLogin by remember { mutableStateOf(false) }
     var notFound by remember { mutableStateOf(false) }
-    // Identity spec §3.1 item 5: a 30-day trusted-device token allows signing
-    // in without typing the password at all.
     val hasTrustedToken = session.deviceTrustToken != null
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Identity spec §3.2/§4.2: the Apple OAuth round-trip lands in
-    // MainActivity via the chatapp://auth/apple deep link; finish the login
-    // here whenever a pending token appears.
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        while (true) {
-            val pending = com.chatapp.MainActivity.AppleAuth.pendingIdToken
-            if (!pending.isNullOrEmpty() && !busy) {
-                com.chatapp.MainActivity.AppleAuth.pendingIdToken = null
-                busy = true
-                error = null
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("ChatApp", style = MaterialTheme.typography.headlineLarge)
+        OutlinedTextField(value = identifier, onValueChange = { identifier = it; notFound = false }, label = { Text("Username / email / phone") }, modifier = Modifier.fillMaxWidth())
+        if (!trustedLogin) OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        if (needs2fa) OutlinedTextField(value = totp, onValueChange = { totp = it.filter(Char::isDigit).take(6) }, label = { Text("2FA code") }, modifier = Modifier.fillMaxWidth())
+        if (notFound) Text("No account found for \"$identifier\". Create an account from the Sign up screen, then come back.", color = MaterialTheme.colorScheme.tertiary)
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (!com.chatapp.BuildConfig.APPLE_CLIENT_ID.isNullOrEmpty()) {
+            OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+                val redirect = java.net.URLEncoder.encode(com.chatapp.BuildConfig.WEB_BASE_URL.trimEnd('/') + "/auth/apple/callback", "UTF-8")
+                val url = "https://appleid.apple.com/auth/authorize?response_type=id_token&response_mode=form_post&client_id=${com.chatapp.BuildConfig.APPLE_CLIENT_ID}&scope=name%20email&redirect_uri=$redirect"
+                try { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } catch (_: Exception) { error = "No browser available for Apple sign-in" }
+            }) { Text("Sign in with Apple") }
+        }
+        Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
+            busy = true; error = null
+            scope.launch {
                 try {
-                    val body = org.json.JSONObject().put("id_token", pending).put("totp_code", totp).toString()
-                    val resp = withContext(Dispatchers.IO) { api.post("/api/auth/apple", body, null) }
-                    applyTokens(session, JSONObject(resp))
+                    if (trustedLogin) {
+                        val body = JSONObject().put("device_token", session.deviceTrustToken ?: "").put("totp_code", totp).toString()
+                        applyTokens(session, JSONObject(withContext(Dispatchers.IO) { api.post("/api/auth/trusted-device/login", body, null) }))
+                        onLoggedIn(); return@launch
+                    }
+                    val trimmed = identifier.trim()
+                    val type = detectIdentifierType(trimmed)
+                    val check = JSONObject(withContext(Dispatchers.IO) { api.post("/api/auth/identifier/check", JSONObject().put("identifier", trimmed).toString(), null) })
+                    if (!check.optBoolean("exists", false)) { notFound = true; busy = false; return@launch }
+                    val body = JSONObject().put("identifier", trimmed).put("type", type).put("password", password).put("totp_code", totp).toString()
+                    val response = JSONObject(withContext(Dispatchers.IO) { api.post("/api/auth/login", body, null) })
+                    applyTokens(session, response)
+                    if (rememberMe) {
+                        try {
+                            val enroll = JSONObject(withContext(Dispatchers.IO) { api.post("/api/auth/trusted-device/enroll", "{}", response.getString("access_token")) })
+                            session.deviceTrustToken = enroll.getString("device_token")
+                        } catch (_: Exception) { }
+                    }
                     onLoggedIn()
                 } catch (e: java.io.IOException) {
-                    if (e.message?.contains("totp_required") == true) {
-                        needs2fa = true
-                        error = "Enter your authenticator code"
-                    } else {
-                        error = "Apple sign-in failed"
-                    }
-                } catch (e: Exception) {
-                    error = "Apple sign-in failed"
-                } finally {
-                    busy = false
-                }
+                    if (e.message?.contains("totp_required") == true) { needs2fa = true; error = "Enter your authenticator code" } else error = e.message ?: "Login failed"
+                } catch (e: Exception) { error = "Network error: ${e.message}" }
+                finally { busy = false }
             }
-            kotlinx.coroutines.delay(500)
-        }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("ChatApp", style = MaterialTheme.typography.headlineLarge)
-        OutlinedTextField(
-            value = identifier,
-            onValueChange = {
-                identifier = it
-                notFound = false
-            },
-            label = { Text("Username / email / phone") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (!trustedLogin) {
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        if (needs2fa) {
-            OutlinedTextField(
-                value = totp,
-                onValueChange = { totp = it },
-                label = { Text("2FA code") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        if (notFound) {
-            Text(
-                "No account found for \"$identifier\". Create one in Settings → Sign up on chatapp.zo.computer, then come back.",
-                color = MaterialTheme.colorScheme.tertiary,
-            )
-        }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        // Identity spec §3.2/§4.2: federated Apple sign-in through the system
-        // browser; the web callback bounces the id_token back via deep link.
-        if (!com.chatapp.BuildConfig.APPLE_CLIENT_ID.isNullOrEmpty()) {
-            OutlinedButton(
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    val redirect = java.net.URLEncoder.encode(
-                        com.chatapp.BuildConfig.WEB_BASE_URL.trimEnd('/') + "/auth/apple/callback", "UTF-8",
-                    )
-                    val url = "https://appleid.apple.com/auth/authorize" +
-                        "?response_type=id_token&response_mode=form_post" +
-                        "&client_id=" + com.chatapp.BuildConfig.APPLE_CLIENT_ID +
-                        "&scope=name%20email&redirect_uri=" + redirect
-                    try {
-                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-                    } catch (_: Exception) {
-                        error = "No browser available for Apple sign-in"
-                    }
-                },
-            ) {
-                Text(" Sign in with Apple")
-            }
-        }
-        Button(
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                busy = true
-                error = null
-                scope.launch {
-                    try {
-                        if (trustedLogin) {
-                            val body = JSONObject()
-                                .put("device_token", session.deviceTrustToken ?: "")
-                                .put("totp_code", totp)
-                                .toString()
-                            val resp = withContext(Dispatchers.IO) { api.post("/api/auth/trusted-device/login", body, null) }
-                            applyTokens(session, JSONObject(resp))
-                            onLoggedIn()
-                            return@launch
-                        }
-                        // Identity spec §3.1 step 2: probe the identifier first so an
-                        // unknown account gets a friendly sign-up pointer, not a dead end.
-                        val probe = JSONObject()
-                            .put("identifier", identifier.trim())
-                            .toString()
-                        val check = withContext(Dispatchers.IO) { api.post("/api/auth/identifier/check", probe, null) }
-                        if (!JSONObject(check).optBoolean("exists", false)) {
-                            notFound = true
-                            busy = false
-                            return@launch
-                        }
-                        val body = JSONObject()
-                            .put("identifier", identifier)
-                            .put("password", password)
-                            .put("totp_code", totp)
-                            .toString()
-                        val resp = withContext(Dispatchers.IO) { api.post("/api/auth/login", body, null) }
-                        applyTokens(session, JSONObject(resp))
-                        // §3.1 item 5: enroll this device for 30-day passwordless login.
-                        if (rememberMe) {
-                            try {
-                                val enroll = withContext(Dispatchers.IO) {
-                                    api.post("/api/auth/trusted-device/enroll", "{}", JSONObject(resp).getString("access_token"))
-                                }
-                                session.deviceTrustToken = JSONObject(enroll).getString("device_token")
-                            } catch (_: Exception) {
-                                // Trusted-device login is an enhancement; never block login on it.
-                            }
-                        }
-                        onLoggedIn()
-                    } catch (e: java.io.IOException) {
-                        if (e.message?.contains("totp_required") == true) {
-                            needs2fa = true
-                            error = "Enter your authenticator code"
-                        } else {
-                            error = e.message ?: "Login failed"
-                        }
-                    } catch (e: Exception) {
-                        error = "Network error: ${e.message}"
-                    } finally {
-                        busy = false
-                    }
-                }
-            },
-        ) {
-            Text(if (busy) "…" else if (trustedLogin) "Log in without password" else "Log in")
-        }
+        }) { Text(if (busy) "…" else if (trustedLogin) "Log in without password" else "Log in") }
         RowCheckbox(rememberMe) { rememberMe = it }
-        if (hasTrustedToken) {
-            OutlinedButton(
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    trustedLogin = !trustedLogin
-                    error = null
-                },
-            ) {
-                Text(if (trustedLogin) "Use password instead" else "This device is trusted — sign in without password")
-            }
-        }
+        if (hasTrustedToken) OutlinedButton(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = { trustedLogin = !trustedLogin; error = null }) { Text(if (trustedLogin) "Use password instead" else "This device is trusted — sign in without password") }
     }
 }
 
-@Composable
-private fun RowCheckbox(checked: Boolean, onChange: (Boolean) -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+@Composable private fun RowCheckbox(checked: Boolean, onChange: (Boolean) -> Unit) {
+    androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = checked, onCheckedChange = onChange)
         Text("Remember me and trust this device for 30 days")
     }
