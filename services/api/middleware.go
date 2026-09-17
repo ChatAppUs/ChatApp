@@ -107,7 +107,7 @@ func (l *rateLimiter) limit(next http.HandlerFunc) http.HandlerFunc {
 			b.tokens = l.burst
 		}
 		remaining := int(b.tokens)
-		resetAt := now.Add(time.Duration(float64(time.Duration(b.burst-b.tokens)) / l.refill * float64(time.Second)))
+		resetAt := now.Add(time.Duration(float64(l.burst-b.tokens) / l.refill * float64(time.Second)))
 		limitVal := int(l.refill * 60) // per-minute ceiling
 		l.mu.Unlock()
 

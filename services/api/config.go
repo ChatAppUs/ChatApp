@@ -35,6 +35,7 @@ type Config struct {
 	EVMRPCURL             string  // own geth/erigon JSON-RPC
 	TronRPCURL            string  // own tron full-node HTTP
 	SolanaRPCURL          string  // own solana JSON-RPC
+	AppleClientID         string
 	GoogleClientID        string
 	WebAuthnRPID          string
 	WebAuthnRPName        string
@@ -169,6 +170,7 @@ func loadConfig() Config {
 		// 48h default matches Telegram's edit window; X Premium is 1h.
 		PostEditWindowMinutes: atoi(getenv("POST_EDIT_WINDOW_MINUTES", "2880")),
 		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
+		AppleClientID:         os.Getenv("APPLE_CLIENT_ID"),
 		WebAuthnRPID:          getenv("WEBAUTHN_RP_ID", "localhost"),
 		WebAuthnRPName:        getenv("WEBAUTHN_RP_NAME", "ChatApp"),
 		WebAuthnOrigins:       getenv("WEBAUTHN_ORIGINS", "http://localhost:3000"),

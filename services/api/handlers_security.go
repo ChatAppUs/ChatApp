@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -294,7 +291,6 @@ func (a *App) handleE2EPublishKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleE2EGetKeys(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
 	var req struct {
 		IDs []string `json:"ids"`
 	}
@@ -312,18 +308,6 @@ func (a *App) handleE2EGetKeys(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
-}
-
-func (a *App) handleE2EVerify(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	var key string
-	err := a.db.QueryRow(r.Context(),
-		`SELECT identity_key FROM e2e_identity_keys WHERE user_id=$1`, uid).Scan(&key)
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "no identity key published")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"identity_key": key, "verified": "server_attested"})
 }
 
 // ---- Recovery codes (one-time backup) ----
@@ -558,6 +542,27 @@ func (a *App) handleCredentialChangeApply(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "credentials_updated"})
 }
 
+// freezeWithdrawals records the security cooldown required after a sensitive
+// account change (identity spec §8). The greatest deadline wins, so concurrent
+// changes cannot shorten an existing freeze.
+func freezeWithdrawalsTx(ctx context.Context, tx pgx.Tx, uid string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users
+		SET withdrawal_freeze_until = GREATEST(COALESCE(withdrawal_freeze_until, now()), now() + interval '48 hours'),
+		    updated_at = now()
+		WHERE id=$1`, uid)
+	return err
+}
+
+func (a *App) freezeWithdrawals(ctx context.Context, uid string) error {
+	_, err := a.db.Exec(ctx, `
+		UPDATE users
+		SET withdrawal_freeze_until = GREATEST(COALESCE(withdrawal_freeze_until, now()), now() + interval '48 hours'),
+		    updated_at = now()
+		WHERE id=$1`, uid)
+	return err
+}
+
 func (a *App) isWithdrawalFrozen(ctx context.Context, uid string) bool {
 	var until *time.Time
 	_ = a.db.QueryRow(ctx,
@@ -585,39 +590,3 @@ func (a *App) handleRevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- KYC ID attestation (face-match liveness) ----
-
-func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		FullName     string `json:"full_name"`
-		Country      string `json:"country"`
-		DocType      string `json:"doc_type"`
-		DocNumber    string `json:"doc_number"`
-		DocImageURL  string `json:"doc_image_url"`
-		SelfieURL    string `json:"selfie_url"`
-	}
-	if !decodeJSON(w, r, &req) || req.FullName == "" || req.DocImageURL == "" {
-		writeErr(w, http.StatusBadRequest, "full_name and doc_image_url required")
-		return
-	}
-	uid := userIDFrom(r)
-	if _, err := a.db.Exec(r.Context(),
-		`INSERT INTO kyc_submissions (user_id, full_name, country, doc_type, doc_number, doc_image_url, selfie_url, status)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')`,
-		uid, req.FullName, req.Country, req.DocType, req.DocNumber, req.DocImageURL, req.SelfieURL); err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to submit KYC")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "pending"})
-}
-
-func (a *App) handleKYCStatus(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	var status string
-	err := a.db.QueryRow(r.Context(),
-		`SELECT COALESCE(kyc_status,'none') FROM users WHERE id=$1`, uid).Scan(&status)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to load KYC status")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": status})
-}

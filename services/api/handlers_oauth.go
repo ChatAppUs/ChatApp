@@ -36,6 +36,12 @@ type jwksCache struct {
 var googleKeys = &jwksCache{keys: map[string]*rsa.PublicKey{}}
 
 func (c *jwksCache) get(kid string) (*rsa.PublicKey, error) {
+	return c.getWithURL(kid, googleJWKSURL)
+}
+
+// getWithURL fetches (and caches) the JWKS at the given URL; Google and Apple
+// share the cache implementation but pin different key endpoints.
+func (c *jwksCache) getWithURL(kid, jwksURL string) (*rsa.PublicKey, error) {
 	c.mu.RLock()
 	key, ok := c.keys[kid]
 	stale := time.Since(c.fetch) > 6*time.Hour
@@ -43,8 +49,8 @@ func (c *jwksCache) get(kid string) (*rsa.PublicKey, error) {
 	if ok && !stale {
 		return key, nil
 	}
-	if err := c.refresh(); err != nil {
-		if ok { // serve stale key rather than fail logins during a Google outage
+	if err := c.refreshWithURL(jwksURL); err != nil {
+		if ok { // serve stale key rather than fail logins during an IdP outage
 			return key, nil
 		}
 		return nil, err
@@ -58,7 +64,11 @@ func (c *jwksCache) get(kid string) (*rsa.PublicKey, error) {
 }
 
 func (c *jwksCache) refresh() error {
-	req, err := http.NewRequest(http.MethodGet, googleJWKSURL, nil)
+	return c.refreshWithURL(googleJWKSURL)
+}
+
+func (c *jwksCache) refreshWithURL(jwksURL string) error {
+	req, err := http.NewRequest(http.MethodGet, jwksURL, nil)
 	if err != nil {
 		return err
 	}
@@ -195,54 +205,108 @@ func verifyGoogleIDToken(idToken, clientID string) (*googleIDClaims, error) {
 	return &claims, nil
 }
 
-func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		IDToken  string `json:"id_token"`
-		TOTPCode string `json:"totp_code"`
+// ---- Apple sign-in (Identity spec §3.2 / §4.2) ----
+// The Apple client (web JS or native ASAuthorization) delivers an RS256
+// id_token; we verify it against Apple's JWKS and reuse the shared
+// find-or-create + 2FA enforcement path.
+
+const appleJWKSURL = "https://appleid.apple.com/auth/keys"
+
+var appleIssuers = map[string]bool{
+	"appleid.apple.com":         true,
+	"https://appleid.apple.com": true,
+}
+
+var appleKeys = &jwksCache{keys: map[string]*rsa.PublicKey{}}
+
+// verifyAppleIDToken validates an Apple identity token the same way
+// verifyGoogleIDToken does, but against Apple's JWKS and issuer set.
+func verifyAppleIDToken(idToken, clientID string) (*googleIDClaims, error) {
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("malformed id_token")
 	}
-	if !decodeJSON(w, r, &req) || req.IDToken == "" {
-		writeErr(w, http.StatusBadRequest, "id_token required")
-		return
+	var header struct {
+		Alg string `json:"alg"`
+		Kid string `json:"kid"`
 	}
-	if a.cfg.GoogleClientID == "" {
-		writeErr(w, http.StatusServiceUnavailable, "google sign-in not configured")
-		return
-	}
-	claims, err := verifyGoogleIDToken(req.IDToken, a.cfg.GoogleClientID)
+	hb, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		writeErr(w, http.StatusUnauthorized, "google verification failed: "+err.Error())
-		return
+		return nil, errors.New("bad header encoding")
 	}
+	if err := json.Unmarshal(hb, &header); err != nil {
+		return nil, errors.New("bad header")
+	}
+	if header.Alg != "RS256" {
+		return nil, fmt.Errorf("unexpected alg %q", header.Alg)
+	}
+	key, err := appleKeys.getWithURL(header.Kid, appleJWKSURL)
+	if err != nil {
+		return nil, err
+	}
+	signed := parts[0] + "." + parts[1]
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return nil, errors.New("bad signature encoding")
+	}
+	digest := sha256.Sum256([]byte(signed))
+	if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], sig); err != nil {
+		return nil, errors.New("invalid id_token signature")
+	}
+	cb, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, errors.New("bad claims encoding")
+	}
+	var claims googleIDClaims
+	if err := json.Unmarshal(cb, &claims); err != nil {
+		return nil, errors.New("bad claims")
+	}
+	if !appleIssuers[claims.Iss] {
+		return nil, errors.New("bad issuer")
+	}
+	if clientID != "" && claims.Aud != clientID {
+		return nil, errors.New("token not issued for this app")
+	}
+	if time.Now().Unix() > claims.Exp {
+		return nil, errors.New("id_token expired")
+	}
+	if claims.Sub == "" {
+		return nil, errors.New("missing subject")
+	}
+	return &claims, nil
+}
+
+// oauthFindOrCreate is the shared federated-login tail: link by provider_sub,
+// then by verified email, else provision a new account with an unguessable
+// password. TOTP 2FA is enforced on every path.
+func (a *App) oauthFindOrCreate(w http.ResponseWriter, r *http.Request, provider string, claims *googleIDClaims, totpCode string) {
 	ctx := r.Context()
 
-	// Existing link?
 	var userID string
-	err = a.db.QueryRow(ctx,
-		`SELECT user_id FROM oauth_accounts WHERE provider='google' AND provider_sub=$1`,
-		claims.Sub).Scan(&userID)
+	err := a.db.QueryRow(ctx,
+		`SELECT user_id FROM oauth_accounts WHERE provider=$1 AND provider_sub=$2`,
+		provider, claims.Sub).Scan(&userID)
 	if err == nil {
-		a.finishOAuthLogin(w, r, userID, req.TOTPCode)
+		a.finishOAuthLogin(w, r, userID, totpCode)
 		return
 	}
 
-	// Match by verified email, then link.
 	if claims.Email != "" && claims.EmailVerified {
 		err = a.db.QueryRow(ctx,
 			`SELECT id FROM users WHERE lower(email)=lower($1)`, claims.Email).Scan(&userID)
 		if err == nil {
 			if _, err := a.db.Exec(ctx,
 				`INSERT INTO oauth_accounts (user_id, provider, provider_sub, email)
-				 VALUES ($1,'google',$2,$3) ON CONFLICT DO NOTHING`,
-				userID, claims.Sub, claims.Email); err != nil {
+				 VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+				userID, provider, claims.Sub, claims.Email); err != nil {
 				writeErr(w, http.StatusInternalServerError, "failed to link account")
 				return
 			}
-			a.finishOAuthLogin(w, r, userID, req.TOTPCode)
+			a.finishOAuthLogin(w, r, userID, totpCode)
 			return
 		}
 	}
 
-	// New account: derive a unique username from the email local part.
 	base := strings.ToLower(strings.Split(claims.Email, "@")[0])
 	var b strings.Builder
 	for _, c := range base {
@@ -270,8 +334,8 @@ func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 	if display == "" {
 		display = username
 	}
-	// Random, unguessable password — the account is usable via Google/passkey;
-	// the user can set a password later in settings.
+	// Random, unguessable password — the account is usable via the federated
+	// provider/passkey; the user can set a password later in settings.
 	randomPW, _ := a.randomNum(24)
 	hash, err := a.passwordHash(randomPW)
 	if err != nil {
@@ -294,7 +358,7 @@ func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 	a.bootstrapFirstAdmin(ctx, userID)
 	if _, err := a.db.Exec(ctx,
 		`INSERT INTO oauth_accounts (user_id, provider, provider_sub, email)
-		 VALUES ($1,'google',$2,$3)`, userID, claims.Sub, claims.Email); err != nil {
+		 VALUES ($1,$2,$3,$4)`, userID, provider, claims.Sub, claims.Email); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to link account")
 		return
 	}
@@ -302,7 +366,49 @@ func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
 		_, _ = a.db.Exec(ctx, `UPDATE users SET avatar_url=$2 WHERE id=$1 AND avatar_url=''`,
 			userID, claims.Picture)
 	}
-	a.finishOAuthLogin(w, r, userID, req.TOTPCode)
+	a.finishOAuthLogin(w, r, userID, totpCode)
+}
+
+func (a *App) handleAppleAuth(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDToken  string `json:"id_token"`
+		TOTPCode string `json:"totp_code"`
+	}
+	if !decodeJSON(w, r, &req) || req.IDToken == "" {
+		writeErr(w, http.StatusBadRequest, "id_token required")
+		return
+	}
+	if a.cfg.AppleClientID == "" {
+		writeErr(w, http.StatusServiceUnavailable, "apple sign-in not configured")
+		return
+	}
+	claims, err := verifyAppleIDToken(req.IDToken, a.cfg.AppleClientID)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "apple verification failed: "+err.Error())
+		return
+	}
+	a.oauthFindOrCreate(w, r, "apple", claims, req.TOTPCode)
+}
+
+func (a *App) handleGoogleAuth(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDToken  string `json:"id_token"`
+		TOTPCode string `json:"totp_code"`
+	}
+	if !decodeJSON(w, r, &req) || req.IDToken == "" {
+		writeErr(w, http.StatusBadRequest, "id_token required")
+		return
+	}
+	if a.cfg.GoogleClientID == "" {
+		writeErr(w, http.StatusServiceUnavailable, "google sign-in not configured")
+		return
+	}
+	claims, err := verifyGoogleIDToken(req.IDToken, a.cfg.GoogleClientID)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "google verification failed: "+err.Error())
+		return
+	}
+	a.oauthFindOrCreate(w, r, "google", claims, req.TOTPCode)
 }
 
 func (a *App) finishOAuthLogin(w http.ResponseWriter, r *http.Request, userID, totpCode string) {
