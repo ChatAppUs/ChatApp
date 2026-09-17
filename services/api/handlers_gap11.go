@@ -18,12 +18,12 @@ package main
 //   §70   copyright           (rights owner + remix policy per post)
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1045,9 +1045,9 @@ WHERE id=$1`, postID, req.StoryKind, req.Link, question, countdown); err != nil 
 func (a *App) handleCreateTicketTier(w http.ResponseWriter, r *http.Request) {
 	uid, eventID := userIDFrom(r), r.PathValue("id")
 	var req struct {
-		Name        string `json:"name"`
-		PriceCents  int64  `json:"price_cents"`
-		Quantity    int    `json:"quantity"`
+		Name       string `json:"name"`
+		PriceCents int64  `json:"price_cents"`
+		Quantity   int    `json:"quantity"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -1078,7 +1078,6 @@ VALUES ($1,$2,$3,$4) RETURNING id::text`, eventID, req.Name, req.PriceCents, req
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tier_id": tierID})
 }
-
 
 // debitWalletLedger debits the caller's primary wallet account through the
 // immutable ledger (the same path as P2P sends). priceCents is converted to
@@ -1254,11 +1253,11 @@ FROM developer_apps WHERE owner_id=$1 ORDER BY created_at DESC`, userIDFrom(r))
 func (a *App) handleCreateDevApp(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	var req struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
+		Name         string   `json:"name"`
+		Description  string   `json:"description"`
 		RedirectURIs []string `json:"redirect_uris"`
-		Scopes      []string `json:"scopes"`
-		WebhookURL  string   `json:"webhook_url"`
+		Scopes       []string `json:"scopes"`
+		WebhookURL   string   `json:"webhook_url"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return

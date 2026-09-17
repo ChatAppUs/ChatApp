@@ -294,7 +294,8 @@ func (a *App) handleAdminResolveReport(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleAdminListKYC(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT k.id, k.user_id, u.username, u.display_name, k.status, k.created_at,
-		        k.auto_score, k.auto_checks
+		        k.auto_score, k.auto_checks,
+		        k.doc_image_url, k.doc_back_url, k.selfie_url
 		 FROM kyc_submissions k JOIN users u ON u.id = k.user_id
 		 WHERE k.status = 'pending' ORDER BY k.created_at ASC LIMIT 100`)
 	if err != nil {
@@ -311,12 +312,16 @@ func (a *App) handleAdminListKYC(w http.ResponseWriter, r *http.Request) {
 		CreatedAt  time.Time       `json:"created_at"`
 		AutoScore  *float64        `json:"auto_score"`
 		AutoChecks json.RawMessage `json:"auto_checks"`
+		// §7.2: reviewers see front, back and selfie captures side by side.
+		DocFront string `json:"doc_front_url"`
+		DocBack  string `json:"doc_back_url"`
+		Selfie   string `json:"selfie_url"`
 	}
 	out := []k{}
 	for rows.Next() {
 		var x k
 		if err := rows.Scan(&x.ID, &x.UserID, &x.Username, &x.Name, &x.Status, &x.CreatedAt,
-			&x.AutoScore, &x.AutoChecks); err == nil {
+			&x.AutoScore, &x.AutoChecks, &x.DocFront, &x.DocBack, &x.Selfie); err == nil {
 			out = append(out, x)
 		}
 	}

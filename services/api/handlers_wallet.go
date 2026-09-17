@@ -234,8 +234,10 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 		Country     string `json:"country"`
 		DocType     string `json:"doc_type"` // passport | national_id | driving_license
 		DocNumber   string `json:"doc_number"`
-		DocImageURL string `json:"doc_image_url"`
+		DocImageURL string `json:"doc_image_url"` // front side (§7.2)
+		DocBackURL  string `json:"doc_back_url"`  // back side (§7.2)
 		SelfieURL   string `json:"selfie_url"`
+		LivenessID  string `json:"liveness_challenge_id"` // §7.3 challenge binding
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -257,6 +259,22 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	// §7.3: a submission must reference a fresh, unused liveness challenge
+	// minted by POST /api/kyc/liveness/challenge shortly before capture.
+	livenessID := strings.TrimSpace(req.LivenessID)
+	if livenessID == "" {
+		writeErr(w, http.StatusBadRequest, "liveness_challenge_id required (request one via /api/kyc/liveness/challenge first)")
+		return
+	}
+	var claimed string
+	if err := tx.QueryRow(r.Context(), `
+		UPDATE kyc_liveness_challenges
+		SET used_at=now()
+		WHERE id=$1 AND user_id=$2 AND used_at IS NULL AND expires_at > now()
+		RETURNING id`, livenessID, uid).Scan(&claimed); err != nil {
+		writeErr(w, http.StatusForbidden, "liveness challenge is missing, expired, or already used")
+		return
+	}
 	hits := a.screenName(r.Context(), req.FullName)
 
 	// Own verification pipeline: the ML service scores the document and
@@ -271,11 +289,12 @@ func (a *App) handleKYCSubmit(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO kyc_submissions
 		   (user_id, provider, status, screening_hits, screened_at,
-		    full_name, country, doc_type, doc_number, doc_image_url, selfie_url,
-		    auto_score, auto_checks)
-		 VALUES ($1,'own','pending',$2, now(), $3,$4,$5,$6,$7,$8, $9, $10) RETURNING id`,
+		    full_name, country, doc_type, doc_number, doc_image_url, doc_back_url,
+		    selfie_url, liveness_challenge_id, auto_score, auto_checks)
+		    VALUES ($1,'own','pending',$2, now(), $3,$4,$5,$6,$7,$8,$9,$10, $11, $12) RETURNING id`,
 		uid, hits, req.FullName, req.Country, req.DocType, req.DocNumber,
-		req.DocImageURL, req.SelfieURL, autoScore, autoChecks).Scan(&id)
+		req.DocImageURL, req.DocBackURL, req.SelfieURL, livenessID,
+		autoScore, autoChecks).Scan(&id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "submission failed")
 		return

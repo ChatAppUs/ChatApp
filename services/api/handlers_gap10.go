@@ -509,8 +509,8 @@ func (a *App) handleGetCopyrightNotice(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleFileCounterNotice(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	var req struct {
-		Statement            string `json:"statement"`
-		ConsentJurisdiction  bool   `json:"consent_jurisdiction"`
+		Statement           string `json:"statement"`
+		ConsentJurisdiction bool   `json:"consent_jurisdiction"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return

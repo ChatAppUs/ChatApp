@@ -116,6 +116,7 @@ func main() {
 	smsCheckLimiter := newRateLimiter(rateLimitScale(15, 5))
 	oauthLimiter := newRateLimiter(rateLimitScale(60, 20))
 	qrLimiter := newRateLimiter(rateLimitScale(20, 5))
+	identityLimiter := newRateLimiter(rateLimitScale(15, 5))
 	guestLimiter := newRateLimiter(rateLimitScale(30, 10))
 	meshLimiter := newRateLimiter(rateLimitScale(120, 30))
 
@@ -148,6 +149,19 @@ func main() {
 	mux.HandleFunc("POST /api/auth/passkey/login/finish", oauthLimiter.limit(app.handlePasskeyLoginFinish))
 	mux.HandleFunc("POST /api/auth/qr/new", qrLimiter.limit(app.handleQRLoginNew))
 	mux.HandleFunc("GET /api/auth/qr/{token}", qrLimiter.limit(app.handleQRLoginStatus))
+	// Identity spec §3.1 step 2 / §5: account-existence probe so the UI can
+	// redirect unknown identifiers to Sign Up instead of a dead end.
+	mux.HandleFunc("POST /api/auth/identifier/check", identityLimiter.limit(app.handleIdentifierCheck))
+	// §3.1 item 5: 30-day passwordless login for enrolled trusted devices.
+	mux.HandleFunc("POST /api/auth/trusted-device/enroll", app.requireAuth(app.handleTrustedDeviceEnroll))
+	mux.HandleFunc("POST /api/auth/trusted-device/login", loginLimiter.limit(app.handleTrustedDeviceLogin))
+	mux.HandleFunc("POST /api/auth/trusted-device/revoke", app.requireAuth(app.handleTrustedDeviceRevoke))
+	// §5: OTP/2FA verification alternatives that mint a single-use reset token.
+	mux.HandleFunc("POST /api/auth/reset/verify", resetLimiter.limit(app.handleResetVerify))
+	// §6: dedicated 2FA reset (email+phone OTP, KYC face-match liveness, re-enrol).
+	mux.HandleFunc("POST /api/auth/2fa-reset/begin", resetLimiter.limit(app.handle2FAResetBegin))
+	mux.HandleFunc("POST /api/auth/2fa-reset/verify", resetLimiter.limit(app.handle2FAResetVerify))
+	mux.HandleFunc("POST /api/auth/2fa-reset/complete", resetLimiter.limit(app.handle2FAResetComplete))
 
 	// anonymous guest session (TorChat/SimpleX/Session/Briar-style) — device-local
 	// ephemeral identity; no server-side account row is created
@@ -314,7 +328,9 @@ func main() {
 	mux.HandleFunc("GET /api/wallet/history", app.requireAuth(app.handleWalletHistory))
 	mux.HandleFunc("POST /api/wallet/withdraw", app.requireAuth(app.handleWithdraw))
 	mux.HandleFunc("GET /api/wallet/withdrawals", app.requireAuth(app.handleListWithdrawals))
+	// §7.3: random instruction-based live verification challenge.
 	mux.HandleFunc("POST /api/kyc/submit", app.requireAuth(app.handleKYCSubmit))
+	mux.HandleFunc("POST /api/kyc/liveness/challenge", app.requireAuth(app.handleKYCLivenessChallenge))
 	mux.HandleFunc("GET /api/kyc/status", app.requireAuth(app.handleKYCStatus))
 
 	// crypto convert

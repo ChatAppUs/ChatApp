@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base32"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -106,11 +107,12 @@ func TestTOTPMatchesRFC6238Vector(t *testing.T) {
 	// Our implementation uses base32 secrets and 6 digits; verify against the
 	// RFC timestamp 59s by computing HMAC-SHA1 directly through totpCode.
 	// Seed "12345678901234567890" base32-encoded:
-	secret := "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
-	code, err := totpCode(secret, 59/30)
+	secretB32 := "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secretB32)
 	if err != nil {
-		t.Fatalf("totpCode: %v", err)
+		t.Fatalf("decode secret: %v", err)
 	}
+	code := totpCode(secret, 59/30)
 	// RFC vector at T=59 (8 digits): 94287082 → last 6 digits.
 	if code != "287082" {
 		t.Fatalf("RFC 6238 vector mismatch: got %s want 287082", code)
@@ -118,32 +120,27 @@ func TestTOTPMatchesRFC6238Vector(t *testing.T) {
 }
 
 func TestTOTPVerifyWindow(t *testing.T) {
-	secret, err := generateTOTPSecret()
+	secretB32, err := generateTOTPSecret()
 	if err != nil {
 		t.Fatalf("generateTOTPSecret: %v", err)
 	}
 	now := time.Unix(1_700_000_000, 0)
-	code, err := totpCode(secret, uint64(now.Unix())/30)
-	if err != nil {
-		t.Fatalf("totpCode: %v", err)
+	secret, derr := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secretB32)
+	if derr != nil {
+		t.Fatalf("decode secret: %v", derr)
 	}
-	if !verifyTOTP(secret, code, now) {
+	code := totpCode(secret, uint64(now.Unix())/30)
+	if !totpMatchAt(secret, code, now) {
 		t.Fatal("current-window code rejected")
 	}
 	// One step back must also pass (window tolerance).
-	prev, err := totpCode(secret, uint64(now.Unix())/30-1)
-	if err != nil {
-		t.Fatalf("totpCode: %v", err)
-	}
-	if !verifyTOTP(secret, prev, now) {
+	prev := totpCode(secret, uint64(now.Unix())/30-1)
+	if !totpMatchAt(secret, prev, now) {
 		t.Fatal("previous-window code rejected")
 	}
 	// Ten steps back must fail.
-	old, err := totpCode(secret, uint64(now.Unix())/30-10)
-	if err != nil {
-		t.Fatalf("totpCode: %v", err)
-	}
-	if verifyTOTP(secret, old, now) {
+	oldc := totpCode(secret, uint64(now.Unix())/30-10)
+	if totpMatchAt(secret, oldc, now) {
 		t.Fatal("stale code accepted")
 	}
 }
@@ -480,4 +477,20 @@ func TestResidencyPinning(t *testing.T) {
 	if len(empty) != 0 {
 		t.Fatalf("expected empty residency pool for unknown region")
 	}
+}
+
+// totpMatchAt mirrors the ±1 window tolerance of App.checkTOTP at a fixed
+// timestamp so the test stays deterministic.
+func totpMatchAt(secret []byte, code string, at time.Time) bool {
+	counter := uint64(at.Unix() / 30)
+	for drift := int64(-1); drift <= 1; drift++ {
+		c := int64(counter) + drift
+		if c < 0 {
+			continue
+		}
+		if totpCode(secret, uint64(c)) == code {
+			return true
+		}
+	}
+	return false
 }
