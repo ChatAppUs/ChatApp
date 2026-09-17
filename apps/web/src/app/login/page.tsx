@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api, saveTokens, Tokens } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import GoogleSignIn from "@/components/GoogleSignIn";
+import AppleSignIn from "@/components/AppleSignIn";
 import QRLogin from "@/components/QRLogin";
 import CountryPicker from "@/components/CountryPicker";
 import { loginWithPasskey, passkeySupported } from "@/lib/passkey";
@@ -35,6 +36,10 @@ export default function LoginPage() {
   const [showQR, setShowQR] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  // §3.1 item 5: 30-day passwordless login for previously trusted devices.
+  const [deviceToken] = useState(() =>
+    typeof window === "undefined" ? "" : localStorage.getItem("chatapp.deviceToken") ?? ""
+  );
   const [dial, setDial] = useState("+1");
   const [countryISO, setCountryISO] = useState("US");
   const [phoneLocal, setPhoneLocal] = useState("");
@@ -91,6 +96,34 @@ export default function LoginPage() {
     }
   };
 
+  // §3.1 item 5: passwordless login with a device enrolled for 30 days.
+  const trustedLogin = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const tokens = await api<Tokens>(
+        "/api/auth/trusted-device/login",
+        { method: "POST", body: JSON.stringify({ device_token: deviceToken, totp_code: totpCode }) },
+        false
+      );
+      saveTokens(tokens, undefined, rememberMe);
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t("error");
+      if (msg === "totp_required") {
+        setNeeds2FA(true);
+        setError("Enter the 6-digit code from your authenticator app");
+      } else {
+        // The trust token expired or was revoked — fall back to password login.
+        localStorage.removeItem("chatapp.deviceToken");
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -100,6 +133,18 @@ export default function LoginPage() {
       const finalIdentifier = isPhone
         ? (phoneLocal ? `${dial}${phoneLocal.replace(/\D/g, "")}` : identifier.replace(/[\s().\-]/g, ""))
         : identifier.trim();
+      // Identity spec §3.1 step 2: probe account existence first; an unknown
+      // identifier is sent to Sign Up with a friendly message instead of a
+      // dead-end "invalid credentials" error.
+      const probe = await api<{ exists: boolean }>(
+        "/api/auth/identifier/check",
+        { method: "POST", body: JSON.stringify({ identifier: finalIdentifier }) },
+        false
+      );
+      if (!probe.exists) {
+        router.push(`/register?identifier=${encodeURIComponent(finalIdentifier)}&reason=not_found`);
+        return;
+      }
       const tokens = await api<Tokens>(
         "/api/auth/login",
         { method: "POST", body: JSON.stringify({ identifier: finalIdentifier, type: isPhone ? "phone" : "email", password, totp_code: totpCode }) },
@@ -107,6 +152,19 @@ export default function LoginPage() {
       );
       const username = finalIdentifier.includes("@") ? undefined : finalIdentifier;
       saveTokens(tokens, username, rememberMe);
+      // §3.1 item 5: when Remember Me is set, enrol this device for 30-day
+      // passwordless sign-in next time.
+      if (rememberMe) {
+        try {
+          const enrolled = await api<{ device_token: string }>(
+            "/api/auth/trusted-device/enroll",
+            { method: "POST", body: JSON.stringify({ device_name: navigator.userAgent.slice(0, 80) }) }
+          );
+          localStorage.setItem("chatapp.deviceToken", enrolled.device_token);
+        } catch {
+          // enrolment is best-effort; password login still succeeded
+        }
+      }
       router.push("/");
       router.refresh();
     } catch (err) {
@@ -203,6 +261,12 @@ export default function LoginPage() {
       </form>
       <div className="col" style={{ marginTop: 12 }}>
         <GoogleSignIn totpCode={totpCode} />
+        <AppleSignIn totpCode={totpCode} />
+        {deviceToken && (
+          <button className="secondary" onClick={trustedLogin} disabled={busy}>
+            🔏 Sign in without password (trusted device)
+          </button>
+        )}
         {passkeySupported() && (
           <button
             className="secondary"

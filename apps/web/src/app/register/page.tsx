@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { api, saveTokens, Tokens } from "@/lib/api";
 import { startGuestSession } from "@/lib/api";
@@ -33,7 +34,7 @@ function passwordStrength(pw: string): { score: number; label: "weak" | "medium"
   return { score: s, label: "strong" };
 }
 
-export default function RegisterPage() {
+function RegisterForm() {
   const { t } = useI18n();
   const router = useRouter();
   const [form, setForm] = useState({
@@ -58,6 +59,28 @@ export default function RegisterPage() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
 
+  // §3.1/§5: the login and forgot-password flows redirect unknown identifiers
+  // here with a friendly "no account yet" message; pre-fill the field.
+  const params = useSearchParams();
+  const [cameFromLogin, setCameFromLogin] = useState(false);
+  useEffect(() => {
+    const pre = params.get("identifier");
+    if (pre) {
+      setCameFromLogin(true);
+      setForm((f) => ({ ...f, identifier: pre }));
+      if (/^\+?[0-9][0-9()\-.\s]*$/.test(pre) && /\d/.test(pre)) {
+        const digits = pre.replace(/[\s().\-]/g, "");
+        for (const d of ["+1", "+44", "+91", "+86", "+49", "+33", "+81", "+7"]) {
+          if (digits.startsWith(d)) {
+            setDial(d);
+            setPhoneLocal(digits.slice(d.length));
+            break;
+          }
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const mode = useMemo(() => detectMode(form.identifier), [form.identifier]);
   const isPhone = mode === "phone";
   const identifierValid = mode === "unknown" ? false : isPhone ? phoneLocal.length >= 7 : EMAIL_RE.test(form.identifier);
@@ -186,6 +209,11 @@ export default function RegisterPage() {
   return (
     <div className="card" style={{ maxWidth: 460, margin: "40px auto" }}>
       <h2>{t("register")}</h2>
+      {cameFromLogin && (
+        <p className="muted">
+          No account found for <code>{params.get("identifier")}</code> — create one below. Your details are already filled in.
+        </p>
+      )}
       <form onSubmit={submit} className="col">
         <div>
           <label>{t("username")}</label>
@@ -350,5 +378,13 @@ export default function RegisterPage() {
         <Link href="/">{t("backToHome")}</Link>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }
