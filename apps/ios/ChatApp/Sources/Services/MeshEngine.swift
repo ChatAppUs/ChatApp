@@ -74,10 +74,18 @@ final class MeshEngine {
     static let kindGroupMessage = "group_message"
     static let kindVoiceMessage = "voice_message"
     static let kindCallSignal = "call_signal"
+    static let kindCallMedia = "call_media"
+    static let kindCallFec = "call_fec"
+    static let kindCallPing = "call_ping"
+    static let kindCallPong = "call_pong"
+    static let kindCallBye = "call_bye"
     static let kindAck = "ack"
 
     /// Kinds the engine accepts, matching services/mesh Validate().
-    static let validKinds: Set<String> = [kindMessage, kindGroupMessage, kindVoiceMessage, kindCallSignal, kindAck]
+    static let validKinds: Set<String> = [
+        kindMessage, kindGroupMessage, kindVoiceMessage, kindCallSignal,
+        kindCallMedia, kindCallFec, kindCallPing, kindCallPong, kindCallBye, kindAck,
+    ]
 
     private let deviceId: String
     private let key: SymmetricKey
@@ -374,7 +382,7 @@ final class MeshEngine {
             }
             return nil
         }
-        guard let p = MeshPacketCodec.decode(data) else { return nil }
+        guard let p = MeshPacketCodec.decode(data), validatePacket(p) else { return nil }
 
         lock.lock()
         if seen[p.id] != nil { lock.unlock(); return nil }
@@ -396,6 +404,19 @@ final class MeshEngine {
         enqueue(forwarded)
         _ = flush()
         return forwarded
+    }
+
+    /// Applies the same structural envelope checks as Go Packet.Validate before
+    /// a packet can enter deduplication, decryption, or forwarding.
+    private func validatePacket(_ p: MeshPacket) -> Bool {
+        if p.id.isEmpty || p.id.count > 128 || p.src.isEmpty || p.src.count > 256 { return false }
+        if p.dst.count > 256 || (p.dst.isEmpty && (p.groupId ?? "").isEmpty) { return false }
+        if (p.groupId?.count ?? 0) > 256 || !(0...1024).contains(p.ttl) || !(0...1024).contains(p.hops) { return false }
+        if !p.payload.isEmpty && p.nonce.count != 12 { return false }
+        if p.fragTotal > 1 && (p.fragId == nil || !(0..<p.fragTotal).contains(p.fragIndex) || p.fragSum?.count != 32) { return false }
+        if p.fragTotal <= 1 && (p.fragIndex != 0 || p.fragTotal < 0) { return false }
+        if p.kind == MeshEngine.kindAck && (p.ackFor == nil || p.ackFor!.isEmpty || p.dst.isEmpty) { return false }
+        return true
     }
 
     /// Deliver-local path: acks are consumed; data is reassembled and delivered exactly once.
