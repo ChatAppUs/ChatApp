@@ -54,7 +54,7 @@ data class MeshPacket(
     /** Envelope format version; the engine stamps 1 and rejects newer formats. */
     val version: Int = MeshEngine.MESH_VERSION,
     /** The immediate hop this packet arrived from (relay bookkeeping). */
-    val hopSrc: String? = null,
+    var hopSrc: String? = null,
     /** The transfer this packet acknowledges. */
     val ackFor: String? = null,
     /** The reliable-transfer id shared by every (re)transmission. */
@@ -301,6 +301,7 @@ class MeshEngine(
                 groupId = if (group) target else null,
                 kind = kind,
                 ttl = maxHops,
+                hops = 0,
                 payload = sealed.ciphertext,
                 nonce = sealed.nonce,
                 createdAt = System.currentTimeMillis(),
@@ -345,6 +346,7 @@ class MeshEngine(
             dst = tr.dst,
             kind = tr.kind,
             ttl = maxHops,
+            hops = 0,
             payload = sealed.ciphertext,
             nonce = sealed.nonce,
             createdAt = now,
@@ -404,6 +406,7 @@ class MeshEngine(
             return null
         }
         val p = MeshPacketCodec.decode(data) ?: return null
+        if (!validatePacket(p)) return null
 
         if (seen.containsKey(p.id)) return null
         seen[p.id] = now
@@ -418,9 +421,26 @@ class MeshEngine(
         if (p.ttl <= 0) return null
         p.ttl -= 1
         p.hops += 1
+        p.hopSrc = deviceId
         enqueue(p)
         flush()
         return p
+    }
+
+    /**
+     * Applies the same structural envelope checks as Go Packet.Validate before
+     * a packet can enter deduplication, decryption, or forwarding.
+     * Authentication still happens in decryptPayload.
+     */
+    private fun validatePacket(p: MeshPacket): Boolean {
+        if (p.id.isEmpty() || p.id.length > 128 || p.src.isEmpty() || p.src.length > 256) return false
+        if (p.dst.length > 256 || (p.dst.isEmpty() && p.groupId.isNullOrEmpty())) return false
+        if ((p.groupId?.length ?: 0) > 256 || p.ttl !in 0..1024 || p.hops !in 0..1024) return false
+        if (p.payload.isNotEmpty() && p.nonce.size != 12) return false
+        if (p.fragTotal > 1 && (p.fragId.isNullOrEmpty() || p.fragIndex !in 0 until p.fragTotal || p.fragSum?.size != 32)) return false
+        if (p.fragTotal <= 1 && (p.fragIndex != 0 || p.fragTotal < 0)) return false
+        if (p.kind == KIND_ACK && (p.ackFor.isNullOrEmpty() || p.dst.isEmpty())) return false
+        return true
     }
 
     /** Application-layer delivery callback (decrypted packet). */
@@ -666,10 +686,19 @@ class MeshEngine(
         const val KIND_GROUP_MESSAGE = "group_message"
         const val KIND_VOICE_MESSAGE = "voice_message"
         const val KIND_CALL_SIGNAL = "call_signal"
+        const val KIND_CALL_MEDIA = "call_media"
+        const val KIND_CALL_FEC = "call_fec"
+        const val KIND_CALL_PING = "call_ping"
+        const val KIND_CALL_PONG = "call_pong"
+        const val KIND_CALL_BYE = "call_bye"
         const val KIND_ACK = "ack"
 
         /** Kinds the engine accepts, matching services/mesh Validate(). */
-        val VALID_KINDS = setOf(KIND_MESSAGE, KIND_GROUP_MESSAGE, KIND_VOICE_MESSAGE, KIND_CALL_SIGNAL, KIND_ACK)
+        val VALID_KINDS = setOf(
+            KIND_MESSAGE, KIND_GROUP_MESSAGE, KIND_VOICE_MESSAGE, KIND_CALL_SIGNAL,
+            KIND_CALL_MEDIA, KIND_CALL_FEC, KIND_CALL_PING, KIND_CALL_PONG,
+            KIND_CALL_BYE, KIND_ACK,
+        )
 
         fun sha256(data: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(data)
 
