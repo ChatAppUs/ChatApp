@@ -49,6 +49,28 @@ fun LoginScreen(api: ApiClient, session: Session, onLoggedIn: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            val pending = com.chatapp.MainActivity.AppleAuth.pendingIdToken
+            if (!pending.isNullOrEmpty() && !busy) {
+                com.chatapp.MainActivity.AppleAuth.pendingIdToken = null
+                busy = true
+                error = null
+                try {
+                    val body = JSONObject().put("id_token", pending).put("totp_code", totp).toString()
+                    val response = withContext(Dispatchers.IO) { api.post("/api/auth/apple", body, null) }
+                    applyTokens(session, JSONObject(response))
+                    onLoggedIn()
+                } catch (e: java.io.IOException) {
+                    if (e.message?.contains("totp_required") == true) { needs2fa = true; error = "Enter your authenticator code" }
+                    else error = "Apple sign-in failed"
+                } catch (_: Exception) { error = "Apple sign-in failed" }
+                finally { busy = false }
+            }
+            kotlinx.coroutines.delay(500)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("ChatApp", style = MaterialTheme.typography.headlineLarge)
         OutlinedTextField(value = identifier, onValueChange = { identifier = it; notFound = false }, label = { Text("Username / email / phone") }, modifier = Modifier.fillMaxWidth())
