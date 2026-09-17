@@ -44,6 +44,14 @@ class Session(context: Context) {
             return bytes
         }
 
+    // Identity spec §3.1 item 5: 30-day trusted-device login token. Only the
+    // server-side hash matters; here we keep the raw token in private prefs.
+    var deviceTrustToken: String?
+        get() = prefs.getString(KEY_DEVICE_TRUST, null)
+        set(v) = prefs.edit().apply {
+            if (v == null) remove(KEY_DEVICE_TRUST) else putString(KEY_DEVICE_TRUST, v)
+        }.apply()
+
     var darkTheme: Boolean
         get() = prefs.getBoolean(KEY_DARK, true)
         set(v) = prefs.edit().putBoolean(KEY_DARK, v).apply()
@@ -61,5 +69,6 @@ class Session(context: Context) {
         const val KEY_MESH_DEVICE = "mesh_device_key"
         const val KEY_MESH_KEY = "mesh_identity_key"
         const val KEY_DARK = "dark_theme"
+        const val KEY_DEVICE_TRUST = "device_trust_token"
     }
 }

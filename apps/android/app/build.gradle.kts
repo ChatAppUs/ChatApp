@@ -38,6 +38,11 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("CHATAPP_API_URL") ?: "http://10.0.2.2:8080"}\"")
         buildConfigField("String", "WS_BASE_URL", "\"${project.findProperty("CHATAPP_WS_URL") ?: "ws://10.0.2.2:8080"}\"")
         buildConfigField("String", "MEDIA_BASE_URL", "\"${project.findProperty("CHATAPP_MEDIA_URL") ?: "http://10.0.2.2:8100"}\"")
+        // Web origin hosting the Apple OAuth callback page that forwards the
+        // id_token into the chatapp://auth/apple deep link (Identity spec §3.2).
+        buildConfigField("String", "WEB_BASE_URL", "\"${project.findProperty("CHATAPP_WEB_URL") ?: "http://10.0.2.2:3000"}\"")
+        // Apple Services ID (the OAuth client identifier for web/Android flows).
+        buildConfigField("String", "APPLE_CLIENT_ID", "\"${project.findProperty("CHATAPP_APPLE_CLIENT_ID") ?: ""}\"")
     }
 }
 

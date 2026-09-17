@@ -14,6 +14,12 @@ final class SessionStore: ObservableObject {
         didSet { Self.save(key: "uid", value: userId) }
     }
 
+    // Identity spec §3.1 item 5: 30-day trusted-device login token, kept in
+    // the Keychain like the session tokens.
+    @Published var deviceTrustToken: String? {
+        didSet { Self.save(key: "device-trust", value: deviceTrustToken) }
+    }
+
     var meshDeviceKey: String {
         if let stored = Self.read(key: "mesh-device"), !stored.isEmpty { return stored }
         let value = "ios_" + UUID().uuidString
@@ -36,12 +42,14 @@ final class SessionStore: ObservableObject {
         accessToken = Self.read(key: "access")
         refreshToken = Self.read(key: "refresh")
         userId = Self.read(key: "uid")
+        deviceTrustToken = Self.read(key: "device-trust")
     }
 
     func logout() {
         accessToken = nil
         refreshToken = nil
         userId = nil
+        deviceTrustToken = nil
     }
 
     private static let service = "com.chatapp.ios.session"
@@ -53,11 +61,13 @@ final class SessionStore: ObservableObject {
             kSecAttrAccount as String: key,
         ]
         SecItemDelete(query as CFDictionary)
-        guard let value, let data = value.data(using: .utf8) else { return }
-        var attrs = query
-        attrs[kSecValueData as String] = data
-        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(attrs as CFDictionary, nil)
+        guard let value, !value.isEmpty,
+              let data = value.data(using: .utf8) else { return }
+        let add = query.merging([
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]) { current, _ in current }
+        SecItemAdd(add as CFDictionary, nil)
     }
 
     private static func read(key: String) -> String? {

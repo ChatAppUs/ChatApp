@@ -1,5 +1,7 @@
 package com.chatapp
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,6 +43,7 @@ import com.chatapp.ui.WalletScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleAppleDeepLink(intent)
         setContent {
             val session = remember { Session(applicationContext) }
             var dark by remember { mutableStateOf(session.darkTheme) }
@@ -53,6 +56,28 @@ class MainActivity : ComponentActivity() {
                     },
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleAppleDeepLink(intent)
+    }
+
+    // Identity spec §3.2/§4.2: Apple OAuth on Android runs through a Custom Tab
+    // and returns to us via the chatapp://auth/apple deep link with the
+    // identity token the web callback forwarded.
+    private fun handleAppleDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme == "chatapp" && data.host == "auth" && data.path == "/apple") {
+            AppleAuth.pendingIdToken = data.getQueryParameter("id_token")
+        }
+    }
+
+    companion object {
+        // Bridges the deep link into Compose state without touching nav graphs.
+        object AppleAuth {
+            var pendingIdToken: String? = null
         }
     }
 }

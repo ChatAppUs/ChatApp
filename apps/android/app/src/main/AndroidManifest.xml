@@ -41,6 +41,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Apple OAuth return (Identity spec §3.2/§4.2). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="chatapp" android:host="auth" android:path="/apple" />
+            </intent-filter>
         </activity>
 
         <activity
