@@ -24,8 +24,12 @@ func (a *App) handleCreateAnonymousAddress(w http.ResponseWriter, r *http.Reques
 		PublicKey   string `json:"public_key"`
 		PairwiseID  string `json:"pairwise_id"`
 	}
-	if !decodeJSON(w, r, &req) { return }
-	if req.AddressType == "" { req.AddressType = "onion" }
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.AddressType == "" {
+		req.AddressType = "onion"
+	}
 
 	var addr AnonymousAddress
 	err := a.db.QueryRow(r.Context(),
@@ -58,7 +62,9 @@ func (a *App) handleListAnonymousAddresses(w http.ResponseWriter, r *http.Reques
 			addrs = append(addrs, a)
 		}
 	}
-	if addrs == nil { addrs = []AnonymousAddress{} }
+	if addrs == nil {
+		addrs = []AnonymousAddress{}
+	}
 	writeJSON(w, http.StatusOK, addrs)
 }
 
