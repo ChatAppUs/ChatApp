@@ -10,9 +10,9 @@ import (
 
 func TestNormalisePhone(t *testing.T) {
 	cases := []struct {
-		in      string
-		want    string
-		wantOK  bool
+		in     string
+		want   string
+		wantOK bool
 	}{
 		{"+1 (415) 555-2671", "+14155552671", true},
 		{"+44 20 7946 0958", "+442079460958", true},
