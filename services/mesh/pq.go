@@ -303,7 +303,7 @@ func HybridEncapsulate(peerPubX25519, peerPubKyber []byte) (ciphertext, sharedSe
 	copy(ct[32:], kyberCt)
 
 	combined := append(dhShared, kyberSS...)
-	ss, err := hkdf.Key(sha256.New, combined, []byte("chatapp-hybrid-pq-v1"), []byte("hybrid-session-key"), KeySize)
+	ss, err := hkdf.Key(sha256.New, combined, []byte("chatapp-hybrid-pq-v1"), "hybrid-session-key", KeySize)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -339,7 +339,7 @@ func HybridDecapsulate(key *HybridKeyPair, ciphertext []byte) (sharedSecret []by
 	}
 
 	combined := append(dhShared, kyberSS...)
-	ss, err := hkdf.Key(sha256.New, combined, []byte("chatapp-hybrid-pq-v1"), []byte("hybrid-session-key"), KeySize)
+	ss, err := hkdf.Key(sha256.New, combined, []byte("chatapp-hybrid-pq-v1"), "hybrid-session-key", KeySize)
 	if err != nil {
 		return nil, err
 	}
