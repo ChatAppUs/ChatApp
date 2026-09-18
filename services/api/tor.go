@@ -32,10 +32,10 @@ import (
 
 // TorConfig holds the Tor integration settings.
 type TorConfig struct {
-	Enabled      bool
-	SOCKS5Addr   string
-	ControlAddr  string
-	ControlPass  string
+	Enabled       bool
+	SOCKS5Addr    string
+	ControlAddr   string
+	ControlPass   string
 	MaxCircuitAge time.Duration
 }
 
@@ -102,8 +102,8 @@ func (t *TorManager) HTTPClient() *http.Client {
 	}
 	return &http.Client{
 		Transport: &http.Transport{
-			DialContext: t.DialContext(context.Background()),
-			MaxIdleConns: 2,
+			DialContext:     t.DialContext(context.Background()),
+			MaxIdleConns:    2,
 			IdleConnTimeout: 30 * time.Second,
 		},
 		Timeout: 30 * time.Second,
