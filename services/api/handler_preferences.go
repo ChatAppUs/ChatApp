@@ -20,7 +20,7 @@ func defaultAnonymousPreferences() *AnonymousPreferences {
 	return &AnonymousPreferences{
 		TorRequired: true, IncognitoByDefault: false, ScreenshotBlock: true,
 		MetadataEncryption: true, ReadReceipts: false, TypingIndicators: false,
-		PerContact: make(map[string]any),
+		PerContact:         make(map[string]any),
 		TransportIsolation: map[string]bool{"tor": true, "bridge": false},
 	}
 }
@@ -44,7 +44,9 @@ func (a *App) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	var p AnonymousPreferences
-	if !decodeJSON(w, r, &p) { return }
+	if !decodeJSON(w, r, &p) {
+		return
+	}
 	data, _ := json.Marshal(p)
 	_, err := a.db.Exec(r.Context(), "UPDATE users SET anon_preferences=$2 WHERE id=$1", uid, data)
 	if err != nil {
