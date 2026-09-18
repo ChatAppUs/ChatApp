@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -29,7 +30,7 @@ import (
 func (a *App) handleEmergencySoftWipe(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
 	var req struct {
-		Password string `json:"password"`
+		Password  string `json:"password"`
 		PanicCode string `json:"panic_code"`
 	}
 	if !decodeJSON(w, r, &req) {
@@ -69,12 +70,12 @@ func (a *App) handleEmergencySoftWipe(w http.ResponseWriter, r *http.Request) {
 	a.fanoutToMembers(r.Context(), uid, []byte(`{"type":"session_terminated","reason":"emergency_soft_wipe"}`), uid)
 
 	// 5. Log security event
-	a.logSecurityEvent(r.Context(), uid, "emergency_soft_wipe",
+	a.logSecurityEvent(r.Context(), "emergency_soft_wipe", uid, clientIP(r), r.UserAgent(),
 		"all sessions revoked, account disabled, recovery queued")
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "soft_wipe_complete",
-		"message": "Account disabled. All sessions terminated. A recovery link has been sent to your email.",
+		"status":                "soft_wipe_complete",
+		"message":               "Account disabled. All sessions terminated. A recovery link has been sent to your email.",
 		"recovery_window_hours": 48,
 	})
 }
@@ -130,7 +131,7 @@ func (a *App) handleEmergencyHardWipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Log security event FIRST (before data deletion)
-	a.logSecurityEvent(r.Context(), uid, "emergency_hard_wipe",
+	a.logSecurityEvent(r.Context(), "emergency_hard_wipe", uid, clientIP(r), r.UserAgent(),
 		"permanent account deletion initiated")
 
 	// 2. Wipe messages
@@ -158,7 +159,7 @@ func (a *App) handleEmergencyHardWipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "hard_wipe_complete",
+		"status":  "hard_wipe_complete",
 		"message": "Account and all associated data have been permanently deleted.",
 	})
 }
@@ -186,19 +187,23 @@ func (a *App) handleEmergencyPanicCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to verify")
 		return
 	}
-	if !a.checkPassword(phash, req.Password) {
+	if !a.passwordVerify(req.Password, phash) {
 		writeErr(w, http.StatusForbidden, "invalid password")
 		return
 	}
 
 	// Store hashed panic code
-	panicHash := hashPassword(req.PanicCode) // re-use password hashing
+	panicHash, herr := hashPassword(req.PanicCode) // re-use password hashing
+	if herr != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to hash panic code")
+		return
+	}
 	if _, err := a.db.Exec(r.Context(),
 		`UPDATE users SET panic_code_hash = $2 WHERE id = $1`, uid, panicHash); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to set panic code")
 		return
 	}
-	a.logSecurityEvent(r.Context(), uid, "panic_code_set", "emergency panic code configured")
+	a.logSecurityEvent(r.Context(), "panic_code_set", uid, clientIP(r), r.UserAgent(), "emergency panic code configured")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "panic_code_set"})
 }
 
@@ -238,7 +243,7 @@ func (a *App) verifyEmergencyCredentials(ctx context.Context, uid, password, pan
 		var panicHash string
 		if err := a.db.QueryRow(ctx,
 			`SELECT panic_code_hash FROM users WHERE id = $1`, uid).Scan(&panicHash); err == nil {
-			if a.checkPassword(panicHash, panicCode) {
+			if a.passwordVerify(panicCode, panicHash) {
 				return true
 			}
 		}
@@ -248,7 +253,7 @@ func (a *App) verifyEmergencyCredentials(ctx context.Context, uid, password, pan
 		var phash string
 		if err := a.db.QueryRow(ctx,
 			`SELECT password_hash FROM users WHERE id = $1`, uid).Scan(&phash); err == nil {
-			return a.checkPassword(phash, password)
+			return a.passwordVerify(password, phash)
 		}
 	}
 	return false
@@ -275,12 +280,6 @@ func (a *App) queueEmergencyRecovery(uid string) {
 		"Your ChatApp account has been disabled via emergency soft wipe. "+
 			"You have 48 hours to recover it by logging in with your password. "+
 			"If no action is taken, the account will remain disabled.")
-}
-
-func (a *App) logSecurityEvent(ctx context.Context, uid, eventType, detail string) {
-	a.db.Exec(ctx,
-		`INSERT INTO security_events (user_id, event_type, detail, created_at) VALUES ($1, $2, $3, now())`,
-		uid, eventType, detail)
 }
 
 // ensure imports don't get stripped
