@@ -1,11 +1,11 @@
 package main
 
 import (
-	"encoding/base32"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"strings"
 	"testing"
 	"time"
