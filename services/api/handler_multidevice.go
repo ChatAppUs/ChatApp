@@ -22,7 +22,10 @@ func (a *App) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT id, device_id, device_name, platform, public_key, created_at, last_active_at
 		 FROM multi_device_sessions WHERE user_id=$1 AND revoked=false ORDER BY last_active_at DESC`, uid)
-	if err != nil { writeErr(w, http.StatusInternalServerError, "query failed"); return }
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	defer rows.Close()
 	var devices []DeviceSession
 	for rows.Next() {
@@ -41,7 +44,9 @@ func (a *App) handleLinkDevice(w http.ResponseWriter, r *http.Request) {
 		Platform   string `json:"platform"`
 		PublicKey  string `json:"public_key"`
 	}
-	if !decodeJSON(w, r, &req) { return }
+	if !decodeJSON(w, r, &req) {
+		return
+	}
 	token := make([]byte, 32)
 	rand.Read(token)
 	var ds DeviceSession
