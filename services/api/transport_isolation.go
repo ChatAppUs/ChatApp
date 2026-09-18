@@ -33,7 +33,9 @@ func (a *App) handleUpdateTransportConfig(w http.ResponseWriter, r *http.Request
 		BridgeCfg   json.RawMessage `json:"bridge_config"`
 		CustomRelay string          `json:"custom_relay"`
 	}
-	if !decodeJSON(w, r, &req) { return }
+	if !decodeJSON(w, r, &req) {
+		return
+	}
 	_, err := a.db.Exec(r.Context(),
 		`INSERT INTO transport_isolation_config (user_id, tor_enabled, bridge_type, bridge_config, custom_relay)
 		 VALUES ($1,$2,$3,$4,$5)
@@ -50,7 +52,10 @@ func (a *App) handleListBridges(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(),
 		`SELECT bridge_type, address, fingerprint, capacity, region, active
 		 FROM censorship_bridges WHERE active=true ORDER BY capacity DESC LIMIT 20`)
-	if err != nil { writeErr(w, http.StatusInternalServerError, "query failed"); return }
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	defer rows.Close()
 	type Bridge struct {
 		Type string `json:"type"`
