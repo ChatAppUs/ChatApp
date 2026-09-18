@@ -30,7 +30,9 @@ func (a *App) handleVerifyContact(w http.ResponseWriter, r *http.Request) {
 		TheirPubkey   string `json:"their_public_key"`
 		MyPubkey      string `json:"my_public_key"`
 	}
-	if !decodeJSON(w, r, &req) { return }
+	if !decodeJSON(w, r, &req) {
+		return
+	}
 	sn := computeSafetyNumber(req.TheirPubkey, req.MyPubkey)
 	_, err := a.db.Exec(r.Context(),
 		`INSERT INTO contact_verification_saf (user_id, contact_user_id, safety_number)
@@ -48,7 +50,10 @@ func (a *App) handleListVerifiedContacts(w http.ResponseWriter, r *http.Request)
 	rows, err := a.db.Query(r.Context(),
 		`SELECT user_id, contact_user_id, safety_number, verified_at
 		 FROM contact_verification_saf WHERE user_id=$1 ORDER BY verified_at DESC`, uid)
-	if err != nil { writeErr(w, http.StatusInternalServerError, "query failed"); return }
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 	defer rows.Close()
 	var contacts []VerifiedContact
 	for rows.Next() {
