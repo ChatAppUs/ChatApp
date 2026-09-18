@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -19,45 +18,6 @@ import (
 
 // POST /api/reports (already wired in main.go as handleCreateReport)
 // This is the non-admin reporting endpoint any user hits from the app.
-func (a *App) handleCreateReport(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	var req struct {
-		TargetType string `json:"target_type"` // post | comment | user | message | reel | live
-		TargetID   string `json:"target_id"`
-		Reason     string `json:"reason"`
-		Detail     string `json:"detail"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.TargetType == "" || req.TargetID == "" || req.Reason == "" {
-		writeErr(w, http.StatusBadRequest, "target_type, target_id, and reason are required")
-		return
-	}
-
-	// Rate limit: 5 reports per hour per user
-	var count int
-	if err := a.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM content_reports WHERE reporter_id=$1 AND created_at > NOW() - INTERVAL '1 hour'`,
-		uid).Scan(&count); err == nil && count >= 5 {
-		writeErr(w, http.StatusTooManyRequests, "report limit reached (5/hr); please try again later")
-		return
-	}
-
-	var reportID string
-	if err := a.db.QueryRow(r.Context(), `
-		INSERT INTO content_reports (reporter_id, target_type, target_id, reason, detail)
-		VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		uid, req.TargetType, req.TargetID, req.Reason, req.Detail).Scan(&reportID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to submit report")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{
-		"id":     reportID,
-		"status": "submitted",
-	})
-}
-
 // GET /api/reports/mine — user views their own report history.
 func (a *App) handleMyReports(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFrom(r)
@@ -96,124 +56,8 @@ func (a *App) handleMyReports(w http.ResponseWriter, r *http.Request) {
 // ---- Content appeals ---------------------------------------------------------
 
 // POST /api/appeals — user appeals a moderation decision.
-func (a *App) handleCreateAppeal(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	var req struct {
-		ActionID string `json:"action_id"` // the moderation action being appealed
-		Reason   string `json:"reason"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.ActionID == "" {
-		writeErr(w, http.StatusBadRequest, "action_id is required")
-		return
-	}
-
-	var targetUser string
-	if err := a.db.QueryRow(r.Context(),
-		`SELECT target_user_id FROM moderation_actions WHERE id=$1`,
-		req.ActionID).Scan(&targetUser); err != nil {
-		writeErr(w, http.StatusNotFound, "moderation action not found")
-		return
-	}
-	if targetUser != uid {
-		writeErr(w, http.StatusForbidden, "you can only appeal actions taken against your account")
-		return
-	}
-
-	var existing int
-	a.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM content_appeals WHERE action_id=$1 AND user_id=$2`,
-		req.ActionID, uid).Scan(&existing)
-	if existing > 0 {
-		writeErr(w, http.StatusConflict, "an appeal for this action already exists")
-		return
-	}
-
-	var appealID string
-	if err := a.db.QueryRow(r.Context(), `
-		INSERT INTO content_appeals (user_id, action_id, reason)
-		VALUES ($1,$2,$3) RETURNING id`,
-		uid, req.ActionID, req.Reason).Scan(&appealID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to create appeal")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"id": appealID, "status": "pending"})
-}
-
 // GET /api/appeals — user views their appeals.
-func (a *App) handleMyAppeals(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	rows, err := a.db.Query(r.Context(), `
-		SELECT a.id, a.action_id, a.reason, a.status, a.resolution, a.created_at
-		FROM content_appeals a WHERE a.user_id=$1
-		ORDER BY a.created_at DESC LIMIT 50`, uid)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to load appeals")
-		return
-	}
-	defer rows.Close()
-	type appeal struct {
-		ID         string    `json:"id"`
-		ActionID   string    `json:"action_id"`
-		Reason     string    `json:"reason"`
-		Status     string    `json:"status"`
-		Resolution string    `json:"resolution"`
-		CreatedAt  time.Time `json:"created_at"`
-	}
-	var out []appeal
-	for rows.Next() {
-		var ap appeal
-		if rows.Scan(&ap.ID, &ap.ActionID, &ap.Reason, &ap.Status, &ap.Resolution, &ap.CreatedAt) == nil {
-			out = append(out, ap)
-		}
-	}
-	if out == nil {
-		out = []appeal{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"appeals": out})
-}
-
 // ---- Admin: appeals queue ----------------------------------------------------
-
-func (a *App) handleAdminListAppeals(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.Query(r.Context(), `
-		SELECT a.id, a.user_id, a.action_id, a.reason, a.status, a.created_at,
-			COALESCE(ma.action_type,''), COALESCE(ma.target_type,''), COALESCE(ma.target_id,'')
-		FROM content_appeals a
-		LEFT JOIN moderation_actions ma ON ma.id = a.action_id
-		WHERE a.status = 'pending'
-		ORDER BY a.created_at LIMIT 100`)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to load appeals")
-		return
-	}
-	defer rows.Close()
-	type appealEntry struct {
-		ID         string    `json:"id"`
-		UserID     string    `json:"user_id"`
-		ActionID   string    `json:"action_id"`
-		Reason     string    `json:"reason"`
-		Status     string    `json:"status"`
-		ActionType string    `json:"action_type"`
-		TargetType string    `json:"target_type"`
-		TargetID   string    `json:"target_id"`
-		CreatedAt  time.Time `json:"created_at"`
-	}
-	var out []appealEntry
-	for rows.Next() {
-		var e appealEntry
-		if rows.Scan(&e.ID, &e.UserID, &e.ActionID, &e.Reason, &e.Status, &e.CreatedAt,
-			&e.ActionType, &e.TargetType, &e.TargetID) == nil {
-			out = append(out, e)
-		}
-	}
-	if out == nil {
-		out = []appealEntry{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"appeals": out})
-}
 
 func (a *App) handleAdminResolveAppeal(w http.ResponseWriter, r *http.Request) {
 	appealID := r.PathValue("id")
@@ -239,72 +83,6 @@ func (a *App) handleAdminResolveAppeal(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- Support tickets ---------------------------------------------------------
-
-func (a *App) handleCreateSupportTicket(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	var req struct {
-		Category string `json:"category"` // account | billing | bug | abuse | copyright | other
-		Subject  string `json:"subject"`
-		Body     string `json:"body"`
-		Priority string `json:"priority"` // low | normal | high
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.Subject == "" || req.Body == "" {
-		writeErr(w, http.StatusBadRequest, "subject and body are required")
-		return
-	}
-	if req.Category == "" {
-		req.Category = "other"
-	}
-	if req.Priority == "" {
-		req.Priority = "normal"
-	}
-	var ticketID string
-	if err := a.db.QueryRow(r.Context(), `
-		INSERT INTO support_tickets (user_id, category, subject, body, priority)
-		VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		uid, req.Category, req.Subject, req.Body, req.Priority).Scan(&ticketID); err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to create ticket")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"id": ticketID, "status": "open"})
-}
-
-func (a *App) handleMySupportTickets(w http.ResponseWriter, r *http.Request) {
-	uid := userIDFrom(r)
-	rows, err := a.db.Query(r.Context(), `
-		SELECT id, category, subject, status, priority, created_at, updated_at
-		FROM support_tickets WHERE user_id=$1
-		ORDER BY updated_at DESC LIMIT 50`, uid)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to load tickets")
-		return
-	}
-	defer rows.Close()
-	type ticket struct {
-		ID        string    `json:"id"`
-		Category  string    `json:"category"`
-		Subject   string    `json:"subject"`
-		Status    string    `json:"status"`
-		Priority  string    `json:"priority"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-	}
-	var out []ticket
-	for rows.Next() {
-		var t ticket
-		if rows.Scan(&t.ID, &t.Category, &t.Subject, &t.Status, &t.Priority,
-			&t.CreatedAt, &t.UpdatedAt) == nil {
-			out = append(out, t)
-		}
-	}
-	if out == nil {
-		out = []ticket{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"tickets": out})
-}
 
 func (a *App) handleAdminSupportTickets(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(), `
