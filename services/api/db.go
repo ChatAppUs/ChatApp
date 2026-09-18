@@ -25,6 +25,7 @@ type App struct {
 
 	vapidKey *ecdsa.PrivateKey
 	mesh     *meshEngine
+	tor      *TorManager
 
 	chainMu      sync.Mutex
 	chainBreaker map[string]*rpcBreaker // chain -> breaker (ops surface)
